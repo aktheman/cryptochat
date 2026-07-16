@@ -1,0 +1,7 @@
+id: cryptochat
+name: CryptoChat
+version: "1.0.0"
+port: 5000
+web: true
+description: End-to-end encrypted messaging app
+category: Social

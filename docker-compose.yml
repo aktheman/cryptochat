@@ -1,0 +1,13 @@
+services:
+  cryptochat:
+    build: .
+    ports:
+      - "5000:5000"
+    volumes:
+      - cryptochat-data:/app/data
+    environment:
+      - FLASK_ENV=production
+      - SECRET_KEY=***
+
+volumes:
+  cryptochat-data:
