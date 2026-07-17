@@ -205,10 +205,14 @@
         const isMe = message.sender === (window.__APP__?.username || '');
         const item = document.createElement('div');
         item.className = 'msg ' + (isMe ? 'sent' : 'received');
+        const fileBadge = message.type === 'file'
+          ? '<div class="badge">📎 ' + escapeHtml(message.filename || 'fil') + '</div>'
+          : '';
         item.innerHTML = (
           '<div class="meta"><span class="sender">' + escapeHtml(message.sender || '') + '</span><span class="time">' + escapeHtml(formatTime(message.timestamp)) + '</span></div>'
-          + '<div>' + escapeHtml(message.text || message.filename || message.type || '') + '</div>'
-          + '<div class="meta"><span class="read">' + (message.read ? 'Lest' : 'Ikke lest') + '</span></div>'
+          + fileBadge
+          + '<div>' + escapeHtml(message.text || '') + '</div>'
+          + '<div class="meta"><span class="read">' + (message.read === true ? 'Lest' : 'Ikke lest') + '</span></div>'
         );
         messagesBox.appendChild(item);
         messagesBox.scrollTop = messagesBox.scrollHeight;
