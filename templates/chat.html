@@ -1,86 +1,76 @@
 <!DOCTYPE html>
 <html lang="no">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-  <meta name="theme-color" content="#1a1a2e">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="description" content="CryptoChat Kryptert Meldinger">
-  <link rel="manifest" href="/manifest.json">
-  <link rel="apple-touch-icon" href="/static/img/icon-192.png">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f1424" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>CryptoChat</title>
-  <link rel="stylesheet" href="/static/css/style.css?v=2">
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="stylesheet" href="/static/css/style.css" />
 </head>
 <body>
   <div class="app">
-    <div class="subhead">
-      <aside class="sidebar" id="sidebar">
-        <div class="sidebar-header">
-          <div class="brand"><h1>CryptoChat</h1></div>
-          <button class="btn btn-small" id="logoutBtn">Logg ut</button>
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <div class="brand"><h1>CryptoChat</h1></div>
+        <button class="btn btn-small" id="logoutButton">Logg ut</button>
+      </div>
+
+      <div class="section">
+        <div class="section-title">MELDINGER</div>
+        <div id="users" class="list"></div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">GRUPPER</div>
+        <button class="btn btn-ghost btn-small" id="createGroupButton">+ Ny gruppe</button>
+        <div id="groups" class="list" style="margin-top:8px"></div>
+      </div>
+
+      <div class="sidebar-footer">
+        <button class="btn btn-ghost btn-small" id="themeToggle">🌙 Tema</button>
+        <button class="btn btn-ghost btn-small" id="enable2faButton">🔐 2FA</button>
+        <div class="presence" id="presenceStatus">🟡 Ikke registrert</div>
+      </div>
+    </aside>
+
+    <main class="chat-main">
+      <header class="chat-header">
+        <div>
+          <div class="chat-title" id="chatTitle">Velg en samtale</div>
+          <div class="chat-meta" id="chatMeta"></div>
         </div>
-        <div class="section">
-          <div class="section-title">Meldinger</div>
-          <div id="directUsersList" class="list"></div>
+        <div class="chat-actions">
+          <input id="searchPartner" class="input-text" placeholder="Kontakt for søk" />
+          <input id="searchInput" class="input-text" placeholder="Søk i meldinger..." />
+          <button class="btn btn-primary btn-small" id="searchButton">Søk</button>
         </div>
-        <div class="section">
-          <div class="section-title">Grupper</div>
-          <button class="btn btn-ghost" id="createGroupBtn">+ Ny gruppe</button>
-          <div id="groupsList" class="list"></div>
+      </header>
+
+      <div class="messages" id="messages">
+        <div class="empty-state" id="emptyState">
+          <div class="empty-icon">💬</div>
+          <h3>Ingen samtale valgt</h3>
+          <p>Velg en kontakt eller gruppe for å starte en sikker chat.</p>
         </div>
-        <div class="sidebar-footer">
-          <button class="btn btn-ghost" id="settingsBtn">⚙️ Innstillinger</button>
-          <div class="presence" id="presenceStatus">🟡 Ikke registrert</div>
+      </div>
+
+      <div class="composer" id="composer" style="display:none">
+        <div class="composer-actions">
+          <input type="file" id="fileInput" class="input-text" />
+          <input type="hidden" id="recipient" />
         </div>
-      </aside>
-      <main class="chat-main">
-        <header class="chat-header">
-          <div>
-            <div class="chat-title" id="chatTitle">Velg en samtale</div>
-            <div class="chat-meta" id="chatMeta"></div>
-          </div>
-          <div class="chat-actions" id="chatActions"></div>
-        </header>
-        <div class="key-bar" id="keyBar" style="display:none">
-          <div class="key-bar-inner">
-            <div>
-              <div class="section-title">🔑 Krypteringsnøkkel</div>
-              <div class="key-note">Del nøkkelen via en sikker kanal. Meldinger vises når begge har lagt til nøkkel.</div>
-            </div>
-            <div class="key-share">
-              <label>Din nøkkel</label>
-              <div class="copy-row">
-                <input id="myKey" class="input-text readonly" readonly>
-                <button class="btn btn-small" data-action="copy-my-key">Kopier</button>
-              </div>
-            </div>
-            <div class="key-share">
-              <label>Partnerens nøkkel</label>
-              <div class="copy-row">
-                <input id="partnerKey" class="input-text" placeholder="Lim inn partnerens nøkkel her">
-                <button class="btn btn-primary btn-small" data-action="add-partner-key">Legg til</button>
-              </div>
-            </div>
-          </div>
+        <div class="composer-row">
+          <input id="messageInput" class="input-text" placeholder="Skriv en kryptert melding..." autocomplete="off" />
+          <button class="btn btn-primary" id="sendButton">Send</button>
         </div>
-        <div class="messages" id="messagesArea">
-          <div class="empty-state" id="emptyState">
-            <div class="empty-icon">💬</div>
-            <h3>Ingen samtale valgt</h3>
-            <p>Velg en kontakt eller gruppe for å starte en sikker chat.</p>
-          </div>
-        </div>
-        <div class="composer" id="composer" style="display:none">
-          <div class="composer-actions" id="composerActions"></div>
-          <div class="composer-row">
-            <input id="messageText" class="input-text" placeholder="Skriv en kryptert melding..." autocomplete="off">
-            <button class="btn btn-primary" id="sendText">Send</button>
-          </div>
-        </div>
-      </main>
-    </div>
+      </div>
+    </main>
   </div>
+
+  <div id="status" class="status" style="display:none"></div>
 
   <div id="modalOverlay" class="modal-overlay" style="display:none">
     <div class="modal">
@@ -93,15 +83,14 @@
   </div>
 
   <div class="toast-container" id="toastContainer"></div>
-  
+
   <script>
     window.__APP__ = {
-      username: {{ session.get('username','') | tojson }},
+      username: {{ username | tojson }},
       partnerKey: localStorage.getItem('partnerKeys') ? JSON.parse(localStorage.getItem('partnerKeys')) : {},
       theme: localStorage.getItem('theme') || 'dark',
     };
   </script>
-  <script src="/static/js/crypto.js" defer></script>
   <script src="/static/js/chat.js" defer></script>
 </body>
 </html>
