@@ -114,12 +114,14 @@
 
       function renderUsers() {
         usersList.innerHTML = '';
-        users.forEach(u => {
+        const list = Array.isArray(users) ? users : [];
+        list.forEach(u => {
+          const name = typeof u === 'string' ? u : (u && u.username) || JSON.stringify(u);
           const item = document.createElement('div');
           item.className = 'item';
-          item.dataset.user = u;
-          item.innerHTML = `<div class="avatar">${escapeHtml(u[0])}</div><div class="name">${escapeHtml(u)}</div>`;
-          item.addEventListener('click', () => openChat(u));
+          item.dataset.user = name;
+          item.innerHTML = '<div class="avatar">' + escapeHtml(name[0]) + '</div><div class="name">' + escapeHtml(name) + '</div>';
+          item.addEventListener('click', () => openChat(name));
           usersList.appendChild(item);
         });
       }
