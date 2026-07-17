@@ -255,8 +255,14 @@
         activeChat = { type: 'group', target: groupId };
         chatTitle.textContent = group ? group.name : 'Gruppe';
         chatMeta.textContent = '';
+        chatE2EEStatus.textContent = '';
         messagesBox.innerHTML = '';
         composer.style.display = 'flex';
+        if (group && (group.members || []).length) {
+          let anyKey = false;
+          for (const member of group.members) { if (await getPeerPublicKeyPem(member)) { anyKey = true; break; } }
+          chatE2EEStatus.textContent = anyKey ? '🔒 Delvis E2EE i gruppe' : '';
+        }
         await loadGroup(groupId);
         const input = document.getElementById('messageInput');
         if (input) input.focus();
