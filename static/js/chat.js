@@ -120,7 +120,7 @@
           const item = document.createElement('div');
           item.className = 'item';
           item.dataset.user = name;
-          item.innerHTML = '<div class="avatar">' + escapeHtml(name[0]) + '</div><div class="name">' + escapeHtml(name) + '</div>';
+          item.innerHTML = '<div class="avatar-wrap"><div class="avatar">' + escapeHtml(name[0]) + '</div><div class="presence"></div></div><div class="name">' + escapeHtml(name) + '</div>';
           item.addEventListener('click', () => { activateItem(usersList, item); openChat(name); });
           usersList.appendChild(item);
         });
@@ -306,7 +306,26 @@
         if (activeChat?.type === 'group') loadGroup(activeChat.target);
         loadJSON('/users').then(data => { users.length = 0; users.push(...data.users); renderUsers(); }).catch(() => {});
         loadJSON('/groups').then(data => { groups.length = 0; groups.push(...data.groups); renderGroups(); }).catch(() => {});
+        updatePresence().catch(() => {});
       }, 2500);
+
+      function updatePresence() {
+        return loadJSON('/presence/batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ users: Array.isArray(users) ? users.map(u => typeof u === 'string' ? u : (u && u.username) || '') : [] })
+        }).then(data => {
+          if (!data.presence) return;
+          data.presence.forEach(entry => {
+            const items = usersList.querySelectorAll('.item');
+            items.forEach(item => {
+              if (item.dataset.user === entry.username) {
+                if (entry.online) item.classList.remove('offline'); else item.classList.add('offline');
+              }
+            });
+          });
+        });
+      }
 
       document.body.setAttribute('data-theme', window.__APP__?.theme || 'dark');
     } catch (e) {

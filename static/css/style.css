@@ -34,6 +34,9 @@ body.theme-light .toast { background:#ffffff; color:#111827; }
 .item { background:#141a2b; border:1px solid #1d2440; padding:10px 12px; border-radius:12px; cursor:pointer; display:flex; align-items:center; gap:10px; }
 .item:hover, .item.active { background:#1a2240; border-color:#3d35ff; }
 .avatar { width:32px; height:32px; border-radius:50%; background:linear-gradient(135deg,#7a3bff,#cf6fef); display:flex; align-items:center; justify-content:center; font-weight:700; color:#fff; flex-shrink:0; }
+.avatar-wrap { position:relative; width:32px; height:32px; flex-shrink:0; }
+.presence { position:absolute; bottom:-2px; right:-2px; width:10px; height:10px; border-radius:50%; background:#22c55e; border:2px solid #141a2b; }
+.item.offline .presence { background:#64748b; }
 .name { font-weight:600; color:#e9eaff; word-break:break-word; }
 
 .chat-main { flex:1; display:flex; flex-direction:column; min-height:0; background:#0f1826; }
