@@ -289,40 +289,41 @@
   }
 
   async function init() {
-    const userEl = qs('#current-user');
-    if (userEl) currentUser = userEl.textContent.trim();
-    if (!currentUser) {
-      window.location.href = '/login';
-      return;
-    }
-    startPolling();
-    await loadUsers();
-    await loadGroups();
-    if (qs('#search-button')) qs('#search-button').addEventListener('click', searchMessages);
-    if (qs('#theme-toggle')) qs('#theme-toggle').addEventListener('click', toggleTheme);
-    if (qs('#send-button')) qs('#send-button').addEventListener('click', sendMessage);
-    if (qs('#create-group-button')) qs('#create-group-button').addEventListener('click', createGroup);
-    if (qs('#enable-2fa-button')) qs('#enable-2fa-button').addEventListener('click', enable2FA);
-    if (qs('#logout-button')) qs('#logout-button').addEventListener('click', logout);
-    const keyInput = qs('#message-input');
-    if (keyInput) {
-      keyInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') sendMessage();
-      });
-    }
-    const fileInput = qs('#file-input');
-    if (fileInput) {
-      fileInput.addEventListener('change', () => {
-        if (fileInput.files[0]) uploadFile(fileInput.files[0]);
-      });
-    }
     try {
-      await fetch('/sw.js');
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/sw.js');
+      const userEl = qs('#current-user');
+      if (userEl) currentUser = (userEl.textContent || '').trim();
+      if (!currentUser) return; // session missing
+      startPolling();
+      await loadUsers();
+      await loadGroups();
+      if (qs('#search-button')) qs('#search-button').addEventListener('click', searchMessages);
+      if (qs('#theme-toggle')) qs('#theme-toggle').addEventListener('click', toggleTheme);
+      if (qs('#send-button')) qs('#send-button').addEventListener('click', sendMessage);
+      if (qs('#create-group-button')) qs('#create-group-button').addEventListener('click', createGroup);
+      if (qs('#enable-2fa-button')) qs('#enable-2fa-button').addEventListener('click', enable2FA);
+      if (qs('#logout-button')) qs('#logout-button').addEventListener('click', logout);
+      const keyInput = qs('#message-input');
+      if (keyInput) {
+        keyInput.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') sendMessage();
+        });
+      }
+      const fileInput = qs('#file-input');
+      if (fileInput) {
+        fileInput.addEventListener('change', () => {
+          if (fileInput.files[0]) uploadFile(fileInput.files[0]);
+        });
+      }
+      try {
+        await fetch('/sw.js');
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.register('/sw.js');
+        }
+      } catch (e) {
+        // SW optional
       }
     } catch (e) {
-      // SW optional
+      console.error('Chat init failed:', e);
     }
   }
 
