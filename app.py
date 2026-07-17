@@ -104,6 +104,8 @@ def is_user_session_active(username):
     created = parse_iso(session_token.get('created'))
     if not created:
         return False
+    if created.tzinfo:
+        created = created.replace(tzinfo=None)
     return (datetime.utcnow() - created) < timedelta(minutes=app.config['SESSION_TIMEOUT_MINUTES'])
 
 def invalidate_all_sessions(username):
