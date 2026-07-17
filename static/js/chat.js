@@ -95,7 +95,7 @@
               <input id="fileInput" type="file" class="input-text" />
               <div class="composer-row">
                 <input id="messageInput" class="input-text" placeholder="Skriv en melding..." autocomplete="off" />
-                <button id="sendBtn" class="btn btn-primary">Send</button>
+                <button id="sendBtn" class="btn btn-primary" disabled>Send</button>
               </div>
             </div>
           </main>
@@ -223,10 +223,13 @@
       async function sendMessage() {
         const input = document.getElementById('messageInput');
         const fileInput = document.getElementById('fileInput');
+        const sendBtn = document.getElementById('sendBtn');
         if (!input || !activeChat) return;
+        input.disabled = true;
+        sendBtn.disabled = true;
         const text = (input.value || '').trim();
-        const file = fileInput.files && fileInput.files[0];
-        if (!text && !file) return;
+        const file = fileInput && fileInput.files && fileInput.files[0];
+        if (!text && !file) { input.disabled = false; return; }
         try {
           if (file) {
             const form = new FormData();
@@ -240,17 +243,32 @@
             await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
           }
           input.value = '';
-          fileInput.value = '';
+          if (fileInput) fileInput.value = '';
           if (activeChat.type === 'user') await loadChat(activeChat.target); else await loadGroup(activeChat.target);
         } catch (e) {
           toast('Kunne ikke sende: ' + e.message);
+        } finally {
+          input.disabled = false;
+          sendBtn.disabled = !((input.value || '').trim() || (fileInput && fileInput.files && fileInput.files[0]));
         }
+      }
+
+      function updateSendButton() {
+        const input = document.getElementById('messageInput');
+        const fileInput = document.getElementById('fileInput');
+        const sendBtn = document.getElementById('sendBtn');
+        if (!input || !sendBtn) return;
+        const text = (input.value || '').trim();
+        const file = fileInput && fileInput.files && fileInput.files[0];
+        sendBtn.disabled = !(text || file);
       }
 
       document.getElementById('sendBtn').addEventListener('click', sendMessage);
       document.getElementById('messageInput').addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
       });
+      document.getElementById('messageInput').addEventListener('input', updateSendButton);
+      document.getElementById('fileInput').addEventListener('change', updateSendButton);
 
       document.getElementById('searchBtn').addEventListener('click', async () => {
         const query = document.getElementById('searchInput').value.trim();
