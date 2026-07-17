@@ -137,10 +137,29 @@
           item.className = 'item';
           item.dataset.groupId = g.id;
           const preview = groupLastMessages[g.id] || '';
-          item.innerHTML = '<div class="name">' + escapeHtml(g.name) + '</div><div class="preview">' + escapeHtml(preview || ((g.members || []).length + ' medlemmer')) + '</div>';
-          item.addEventListener('click', () => { activateItem(groupsList, item); openGroup(g.id); });
+          item.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;"><div style="min-width:0;flex:1;"><div class="name">' + escapeHtml(g.name) + '</div><div class="preview">' + escapeHtml(preview || ((g.members || []).length + ' medlemmer')) + '</div></div><button class="btn btn-small btn-ghost delete-group" data-id="' + escapeHtml(g.id) + '">Slett</button></div>';
+          item.addEventListener('click', (e) => { if (e.target.closest('.delete-group')) return; activateItem(groupsList, item); openGroup(g.id); });
+          const del = item.querySelector('.delete-group');
+          if (del) del.addEventListener('click', async () => { await deleteGroup(g.id); });
           groupsList.appendChild(item);
         });
+      }
+
+      async function deleteGroup(groupId) {
+        const nameInput = prompt('Skriv inn gruppenavn for å bekrefte sletting:');
+        if (!nameInput) return;
+        const groups = await loadJSON('/groups');
+        const group = (groups.groups || []).find(g => g.id === groupId);
+        if (!group || group.name !== nameInput) return toast('Navnet matcher ikke');
+        if (!confirm('Slett gruppen? Dette kan ikke angres.')) return;
+        try {
+          await fetch('/groups/' + encodeURIComponent(groupId), { method: 'DELETE' });
+          toast('Gruppen er slettet', 'success');
+          groups.length = 0; groups.push(...((await loadJSON('/groups')).groups || []));
+          renderGroups();
+        } catch (e) {
+          toast('Kunne ikke slette gruppe');
+        }
       }
 
       function activateItem(listContainer, item) {

@@ -651,6 +651,20 @@ def get_group_messages(group_id):
     filtered.sort(key=lambda x: x['timestamp'])
     return jsonify({'success': True, 'messages': filtered})
 
+@app.route('/groups/<group_id>', methods=['DELETE'])
+def delete_group(group_id):
+    if 'username' not in session:
+        return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
+    groups = load_json(GROUPS_FILE, [])
+    group = next((g for g in groups if g['id'] == group_id), None)
+    if not group:
+        return jsonify({'success': False, 'message': 'Gruppen finnes ikke.'}), 404
+    if session['username'] != group.get('created_by') and session['username'] not in group.get('members', []):
+        return jsonify({'success': False, 'message': 'Ingen tilgang.'}), 403
+    groups = [g for g in groups if g['id'] != group_id]
+    save_json(GROUPS_FILE, groups)
+    return jsonify({'success': True, 'message': 'Gruppen er slettet.'})
+
 @app.route('/groups/<group_id>/send', methods=['POST'])
 def send_group_message(group_id):
     if 'username' not in session:
