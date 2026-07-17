@@ -160,6 +160,7 @@
       let userScrolledUp = false;
 
       let lastMessages = {};
+      let presence = {};
 
       function renderUsers() {
         usersList.innerHTML = '';
