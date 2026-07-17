@@ -367,6 +367,7 @@
       });
 
       document.getElementById('logoutBtn').addEventListener('click', async () => {
+        if (!confirm('Logge ut?')) return;
         await fetch('/auth/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).catch(() => {});
         window.location.href = '/login';
       });
