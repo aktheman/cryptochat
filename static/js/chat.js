@@ -208,14 +208,25 @@
 
       async function sendMessage() {
         const input = document.getElementById('messageInput');
-        if (!input || !input.value.trim() || !activeChat) return;
-        const text = input.value.trim();
+        const fileInput = document.getElementById('fileInput');
+        if (!input || !activeChat) return;
+        const text = (input.value || '').trim();
+        const file = fileInput.files && fileInput.files[0];
+        if (!text && !file) return;
         try {
-          const url = activeChat.type === 'group' ? '/groups/' + encodeURIComponent(activeChat.target) + '/send' : '/send';
-          const body = { ciphertext: text };
-          if (activeChat.type === 'user') body.recipient = activeChat.target;
-          await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+          if (file) {
+            const form = new FormData();
+            form.append('file', file);
+            if (activeChat.type === 'user') form.append('recipient', activeChat.target); else form.append('groupId', activeChat.target);
+            await fetch('/upload', { method: 'POST', body: form });
+          } else {
+            const url = activeChat.type === 'group' ? '/groups/' + encodeURIComponent(activeChat.target) + '/send' : '/send';
+            const body = { ciphertext: text };
+            if (activeChat.type === 'user') body.recipient = activeChat.target;
+            await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+          }
           input.value = '';
+          fileInput.value = '';
           if (activeChat.type === 'user') await loadChat(activeChat.target); else await loadGroup(activeChat.target);
         } catch (e) {
           toast('Kunne ikke sende: ' + e.message);
@@ -223,7 +234,9 @@
       }
 
       document.getElementById('sendBtn').addEventListener('click', sendMessage);
-      document.getElementById('messageInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendMessage(); });
+      document.getElementById('messageInput').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+      });
 
       document.getElementById('searchBtn').addEventListener('click', async () => {
         const query = document.getElementById('searchInput').value.trim();

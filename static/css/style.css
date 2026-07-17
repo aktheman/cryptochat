@@ -11,13 +11,14 @@ body.theme-light .chat-main { background:#f4f6f9; }
 body.theme-light .messages { background:#f4f6f9; }
 body.theme-light .item { background:#ffffff; border-color:#e5e7eb; color:#0f172a; }
 body.theme-light .input-text { background:#ffffff; border-color:#e5e7eb; color:#0f172a; }
-body.theme-light .msg.sent { background:#ede9fe; border-color:#7c3aed; color:#0f172a; }
+body.theme-light .msg.sent { background:#ede9fe; border-color:#c4b5fd; color:#0f172a; }
 body.theme-light .msg.received { background:#ffffff; border-color:#e5e7eb; color:#0f172a; }
 body.theme-light .meta { color:#475569; }
 body.theme-light .empty-state { color:#374151; background:#ffffff; }
 body.theme-light .section-title { color:#6b7280; }
-body.theme-light .brand h1 { color:#6d28d9; }
+body.theme-light .brand h1 { color:#7c3aed; }
 body.theme-light .header-actions .btn { background:#f3f4f6; border-color:#d1d5db; color:#374151; }
+body.theme-light .toast { background:#ffffff; color:#111827; }
 
 #app { height:100%; display:flex; flex-direction:column; }
 .header { background:#0f1424; border-bottom:1px solid #151d30; padding:12px 16px; display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; min-height:56px; }
