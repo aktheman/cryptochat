@@ -4,9 +4,7 @@
   let currentUser = window.__APP__?.username || '';
   let activeChat = null;
   let polling = null;
-  let settingsOpen = false;
-
-  function ready(fn) { if (document.readyState !== 'loading') fn(); else document.addEventListener('DOMContentLoaded', fn); }
+  let sharedKeyCache = {};
 
   const qs = (sel, root = document) => root.querySelector(sel);
   const qsa = (sel, root = document) => Array.from(root.querySelectorAll(sel));
@@ -44,6 +42,79 @@
     setTimeout(() => item.remove(), 2500);
   }
 
+  async function getOrCreateIdentity() {
+    let stored = localStorage.getItem('identityKeyPair');
+    if (stored) return JSON.parse(stored);
+    const keyPair = await window.__CRYPTO__.generateKeyPair();
+    localStorage.setItem('identityKeyPair', JSON.stringify(keyPair));
+    return keyPair;
+  }
+
+  async function publishIdentity() {
+    const keyPair = await getOrCreateIdentity();
+    await postJSON('/key/publish', { publicKeyPem: keyPair.publicKeyPem });
+    return keyPair;
+  }
+
+  async function fetchPartnerPublicKey(username) {
+    const res = await fetch('/keys/' + encodeURIComponent(username));
+    const data = await res.json();
+    if (!data.success || !data.publicKey) throw new Error(data.message || 'Kunne ikke hente nøkkel');
+    return data.publicKey;
+  }
+
+  async function getSharedKey(partner) {
+    if (sharedKeyCache[partner]) return sharedKeyCache[partner];
+    const myKeyPair = await getOrCreateIdentity();
+    const theirPublicKeyPem = await fetchPartnerPublicKey(partner);
+    const sharedKey = await window.__CRYPTO__.getSharedKey(theirPublicKeyPem);
+    sharedKeyCache[partner] = sharedKey;
+    return sharedKey;
+  }
+
+  async function encryptFor(plaintext, partner) {
+    const key = await getSharedKey(partner);
+    const encrypted = await window.__CRYPTO__.encryptMessage(plaintext, key);
+    return JSON.stringify(encrypted);
+  }
+
+  async function decryptFrom(packed, partner) {
+    try {
+      const encrypted = JSON.parse(packed);
+      const key = await getSharedKey(partner);
+      return await window.__CRYPTO__.decryptMessage(encrypted, key);
+    } catch (e) {
+      return '[Kunne ikke dekryptere] ' + packed;
+    }
+  }
+
+  async function encryptGroupMessage(plaintext, groupId) {
+    const stored = localStorage.getItem('groupKeys') || '{}';
+    const keys = JSON.parse(stored);
+    if (!keys[groupId]) {
+      const groupKey = await window.crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
+      const exported = await window.crypto.subtle.exportKey('jwk', groupKey);
+      keys[groupId] = exported.k;
+      localStorage.setItem('groupKeys', JSON.stringify(keys));
+    }
+    const aesKey = await window.crypto.subtle.importKey('jwk', { kty: 'oct', alg: 'A256GCM', k: keys[groupId] }, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+    const encrypted = await window.__CRYPTO__.encryptMessage(plaintext, aesKey);
+    return JSON.stringify(encrypted);
+  }
+
+  async function decryptGroupMessage(packed, groupId) {
+    try {
+      const encrypted = JSON.parse(packed);
+      const stored = localStorage.getItem('groupKeys') || '{}';
+      const keys = JSON.parse(stored);
+      if (!keys[groupId]) throw new Error('Mangler gruppenøkkel');
+      const aesKey = await window.crypto.subtle.importKey('jwk', { kty: 'oct', alg: 'A256GCM', k: keys[groupId] }, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+      return await window.__CRYPTO__.decryptMessage(encrypted, aesKey);
+    } catch (e) {
+      return '[Kunne ikke dekryppere gruppe] ' + packed;
+    }
+  }
+
   function buildApp() {
     const app = qs('#app');
     if (!app) return;
@@ -71,18 +142,15 @@
 
   function buildBody() {
     const row = el('div', { class: 'app-row' });
-
     const sidebar = el('aside', { class: 'sidebar' });
     sidebar.appendChild(buildSidebarSection('MELDINGER', 'usersList', buildUsersList));
     sidebar.appendChild(buildSidebarSection('GRUPPER', 'groupsList', buildGroupsList, [
       el('button', { id: 'createGroupBtn', class: 'btn btn-small btn-ghost', text: '+ Ny gruppe' })
     ]));
-
     const chatMain = el('main', { class: 'chat-main' });
     chatMain.appendChild(buildChatHeader());
     chatMain.appendChild(buildMessages());
     chatMain.appendChild(buildComposer());
-
     row.appendChild(sidebar);
     row.appendChild(chatMain);
     return row;
@@ -101,11 +169,11 @@
     if (!list) return;
     list.innerHTML = '';
     (window.__APP__.users || []).forEach(u => {
-      const item = el('div', { class: 'item', 'data-user': u }, [
-        el('div', { class: 'avatar', text: u[0].toUpperCase() }),
-        el('div', { class: 'name', text: u }),
+      const item = el('div', { class: 'item', 'data-user': u.username || u }, [
+        el('div', { class: 'avatar', text: (u.username || u)[0].toUpperCase() }),
+        el('div', { class: 'name', text: u.username || u }),
       ]);
-      item.addEventListener('click', () => openChat(u));
+      item.addEventListener('click', () => openChat(u.username || u));
       list.appendChild(item);
     });
   }
@@ -155,7 +223,6 @@
     actions.appendChild(el('input', { id: 'fileInput', type: 'file', class: 'input-text' }));
     composer.appendChild(actions);
     composer.appendChild(row);
-
     composer.querySelector('#sendBtn').addEventListener('click', sendMessage);
     const input = composer.querySelector('#messageInput');
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendMessage(); });
@@ -206,7 +273,14 @@
       if (!(data.messages || []).length) {
         list.appendChild(el('div', { class: 'empty-state', html: '<div class="empty-icon">💬</div><p>Ingen meldinger enda</p>' }));
       } else {
-        (data.messages || []).forEach(m => appendMessage({ ...m, sender: m.sender }));
+        for (const m of data.messages || []) {
+          if (m.type === 'file') {
+            appendMessage({ ...m, text: m.filename || '[fil]' });
+          } else {
+            const decrypted = await decryptFrom(m.text || '', target);
+            appendMessage({ ...m, text: decrypted });
+          }
+        }
       }
       try { await postJSON('/read_receipts/' + encodeURIComponent(target), {}); } catch (e) {}
     } catch (e) {
@@ -233,7 +307,14 @@
       if (!(data.messages || []).length) {
         list.appendChild(el('div', { class: 'empty-state', html: '<div class="empty-icon">👥</div><p>Ingen gruppemeldinger enda</p>' }));
       } else {
-        (data.messages || []).forEach(m => appendMessage({ ...m, sender: m.sender }));
+        for (const m of data.messages || []) {
+          if (m.type === 'file') {
+            appendMessage({ ...m, text: m.filename || '[fil]' });
+          } else {
+            const decrypted = await decryptGroupMessage(m.text || '', groupId);
+            appendMessage({ ...m, text: decrypted });
+          }
+        }
       }
     } catch (e) {
       toast('Kunne ikke hente gruppemeldinger');
@@ -265,8 +346,15 @@
     if (!input || !input.value.trim() || !activeChat) return;
     const text = input.value.trim();
     try {
+      await publishIdentity();
+      let ciphertext;
+      if (activeChat.type === 'user') {
+        ciphertext = await encryptFor(text, activeChat.target);
+      } else {
+        ciphertext = await encryptGroupMessage(text, activeChat.target);
+      }
       const url = activeChat.type === 'group' ? '/groups/' + encodeURIComponent(activeChat.target) + '/send' : '/send';
-      const body = { ciphertext: text };
+      const body = { ciphertext };
       if (activeChat.type === 'user') body.recipient = activeChat.target;
       await postJSON(url, body);
       input.value = '';
@@ -295,7 +383,7 @@
   async function createGroup() {
     const name = prompt('Gruppenavn:');
     if (!name) return;
-    const members = (prompt('Medlemmer (kommaseparert):', '') || '').split(',').map(x => x.trim()).filter(Boolean);
+    const members = (prompt('Medlemmer (kommaseparert brukernavn):', '') || '').split(',').map(x => x.trim()).filter(Boolean);
     try {
       const data = await postJSON('/groups', { name, members });
       toast('Gruppe opprettet', 'success');
@@ -321,7 +409,10 @@
       const data = await res.json();
       const list = qs('#messages');
       list.innerHTML = '';
-      (data.messages || []).forEach(m => appendMessage({ ...m, sender: m.sender }));
+      (data.messages || []).forEach(async m => {
+        const decrypted = await decryptFrom(m.text || '', partner);
+        appendMessage({ ...m, text: decrypted });
+      });
       toast(data.messages.length + ' treff', 'success');
     } catch (e) {
       toast('Søk feilet: ' + e.message);
@@ -351,6 +442,7 @@
     window.__APP__.qrWrap = el('div', { id: 'qrWrap', style: 'display:none' });
     document.body.appendChild(window.__APP__.qrWrap);
     qs('#createGroupBtn')?.addEventListener('click', createGroup);
+    try { await publishIdentity(); } catch (e) { console.error(e); }
     await loadUsers();
     await loadGroups();
     startPolling();
@@ -358,13 +450,13 @@
 
   function startPolling() {
     stopPolling();
-    polling = setInterval(() => {
+    polling = setInterval(async () => {
       if (activeChat) {
-        if (activeChat.type === 'user') loadChat(activeChat.target);
-        else loadGroup(activeChat.target);
+        if (activeChat.type === 'user') await loadChat(activeChat.target);
+        else await loadGroup(activeChat.target);
       }
-      loadUsers();
-      loadGroups();
+      await loadUsers();
+      await loadGroups();
     }, 2500);
   }
 

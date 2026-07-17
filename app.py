@@ -343,6 +343,23 @@ def presence_batch():
     return jsonify({'success': True, 'presence': result})
 
 # ──────────────────────────────────────────────
+# Public key identity
+# ──────────────────────────────────────────────
+@app.route('/key/publish', methods=['POST'])
+def publish_public_key():
+    if 'username' not in session:
+        return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    public_key = (data.get('publicKeyPem') or '').strip()
+    if not public_key:
+        return jsonify({'success': False, 'message': 'Manglende offentlig nøkkel.'}), 400
+    users = load_json(USERS_FILE, {})
+    if session['username'] in users:
+        users[session['username']]['identity_public_key'] = public_key
+        save_json(USERS_FILE, users)
+    return jsonify({'success': True})
+
+# ──────────────────────────────────────────────
 # Theme & settings
 # ──────────────────────────────────────────────
 @app.route('/theme', methods=['GET'])
