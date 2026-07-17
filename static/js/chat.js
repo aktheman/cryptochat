@@ -218,10 +218,10 @@
         activeChat = { type: 'user', target: user };
         chatTitle.textContent = user;
         chatMeta.textContent = '';
-        chatMeta.textContent = activeChat?.peerPublicKey ? '🔒 Ende-til-ende-kryptert' : '';
         messagesBox.innerHTML = '';
         composer.style.display = 'flex';
         activeChat.peerPublicKey = await getPeerPublicKeyPem(user);
+        chatMeta.textContent = activeChat?.peerPublicKey ? '🔒 Ende-til-ende-kryptert' : '';
         await loadChat(user);
         const input = document.getElementById('messageInput');
         if (input) input.focus();
