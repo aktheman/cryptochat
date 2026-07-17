@@ -15,7 +15,7 @@
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-header">
         <div class="brand"><h1>CryptoChat</h1></div>
-        <button class="btn btn-small" id="logoutButton">Logg ut</button>
+        <button class="btn btn-small" id="logout-button">Logg ut</button>
       </div>
 
       <div class="section">
@@ -25,14 +25,14 @@
 
       <div class="section">
         <div class="section-title">GRUPPER</div>
-        <button class="btn btn-ghost btn-small" id="createGroupButton">+ Ny gruppe</button>
+        <button class="btn btn-ghost btn-small" id="create-group-button">+ Ny gruppe</button>
         <div id="groups" class="list" style="margin-top:8px"></div>
       </div>
 
       <div class="sidebar-footer">
-        <button class="btn btn-ghost btn-small" id="themeToggle">🌙 Tema</button>
-        <button class="btn btn-ghost btn-small" id="enable2faButton">🔐 2FA</button>
-        <div class="presence" id="presenceStatus">🟡 Ikke registrert</div>
+        <button class="btn btn-ghost btn-small" id="theme-toggle">🌙 Tema</button>
+        <button class="btn btn-ghost btn-small" id="enable-2fa-button">🔐 2FA</button>
+        <div class="presence" id="presence-status">🟡 Ikke registrert</div>
       </div>
     </aside>
 
@@ -43,9 +43,9 @@
           <div class="chat-meta" id="chatMeta"></div>
         </div>
         <div class="chat-actions">
-          <input id="searchPartner" class="input-text" placeholder="Kontakt for søk" />
-          <input id="searchInput" class="input-text" placeholder="Søk i meldinger..." />
-          <button class="btn btn-primary btn-small" id="searchButton">Søk</button>
+          <input id="search-partner" class="input-text" placeholder="Kontakt for søk" />
+          <input id="search-input" class="input-text" placeholder="Søk i meldinger..." />
+          <button class="btn btn-primary btn-small" id="search-button">Søk</button>
         </div>
       </header>
 
@@ -59,12 +59,12 @@
 
       <div class="composer" id="composer" style="display:none">
         <div class="composer-actions">
-          <input type="file" id="fileInput" class="input-text" />
+          <input type="file" id="file-input" class="input-text" />
           <input type="hidden" id="recipient" />
         </div>
         <div class="composer-row">
-          <input id="messageInput" class="input-text" placeholder="Skriv en kryptert melding..." autocomplete="off" />
-          <button class="btn btn-primary" id="sendButton">Send</button>
+          <input id="message-input" class="input-text" placeholder="Skriv en kryptert melding..." autocomplete="off" />
+          <button class="btn btn-primary" id="send-button">Send</button>
         </div>
       </div>
     </main>
@@ -84,13 +84,8 @@
 
   <div class="toast-container" id="toastContainer"></div>
 
-  <script>
-    window.__APP__ = {
-      username: {{ username | tojson }},
-      partnerKey: localStorage.getItem('partnerKeys') ? JSON.parse(localStorage.getItem('partnerKeys')) : {},
-      theme: localStorage.getItem('theme') || 'dark',
-    };
-  </script>
+  <div id="current-user" style="display:none">{{ username | tojson }}</div>
+
   <script src="/static/js/chat.js" defer></script>
 </body>
 </html>
