@@ -148,6 +148,7 @@
       const groupsList = document.getElementById('groupsList');
       const chatTitle = document.getElementById('chatTitle');
       const chatMeta = document.getElementById('chatMeta');
+
       const messagesBox = document.getElementById('messages');
       const composer = document.getElementById('composer');
 
@@ -217,6 +218,7 @@
         activeChat = { type: 'user', target: user };
         chatTitle.textContent = user;
         chatMeta.textContent = '';
+        chatMeta.textContent = activeChat?.peerPublicKey ? '🔒 Ende-til-ende-kryptert' : '';
         messagesBox.innerHTML = '';
         composer.style.display = 'flex';
         activeChat.peerPublicKey = await getPeerPublicKeyPem(user);
@@ -298,10 +300,14 @@
         const fileBadge = message.type === 'file'
           ? '<div class="badge">📎 ' + escapeHtml(message.filename || 'fil') + '</div>'
           : '';
+        const e2eeIndicator = (!isMe && message.type === 'text' && activeChat?.type === 'user' && activeChat?.peerPublicKey)
+          ? '<div class="meta"><span class="e2ee">🔒 E2EE</span></div>'
+          : '';
         item.innerHTML = (
           '<div class="meta"><span class="sender">' + escapeHtml(message.sender || '') + '</span><span class="time">' + escapeHtml(formatTime(message.timestamp)) + '</span></div>'
           + fileBadge
           + '<div>' + escapeHtml(renderedText) + '</div>'
+          + e2eeIndicator
           + '<div class="meta"><span class="read">' + (message.read === true ? 'Lest' : 'Ikke lest') + '</span></div>'
         );
         messagesBox.appendChild(item);
