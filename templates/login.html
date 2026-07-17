@@ -1,62 +1,112 @@
-* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-html,body { height: 100%; margin: 0; }
-body {
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
-  background: #0b0c12;
-  color: #e7e8f3;
-}
-.page { min-height: 100vh; display:flex; align-items:center; justify-content:center; padding:24px; }
-.container-center { width:100%; max-width:420px; }
-.auth-card {
-  background: #111322;
-  border:1px solid #22233a;
-  padding:24px;
-  border-radius:16px;
-  box-shadow: 0 20px 60px rgba(0,0,0,.35);
-}
-.brand h1 { margin: 0 0 6px; font-size: 2.1rem; letter-spacing: 0.5px; }
-.subtitle { color:#7c7e9a; margin: 0 0 18px; }
-.tabs { display:flex; gap:10px; margin-bottom:20px; }
-.tab-btn {
-  flex:1; padding:10px; background:transparent; color:#6e7191; border:2px solid transparent; border-radius:10px; cursor:pointer; font-weight:600;
-}
-.tab-btn.active { color:#cf6fef; border-color:#cf6fef; background:#150f22; }
-.feedback { margin-top:12px; padding:10px 12px; border-radius:8px; display:none; color:#d8d8fd; background:#1a1c30; }
-.feedback.error { background:#3d1212; color:#ffb3b3; }
-.feedback.success { background:#14301a; color:#a3ffb3; }
-.feedback.loading { background:#1a1c30; color:#c2c3ea; }
-.field { margin-bottom:14px; }
-.field label { display:block; font-size:0.8rem; color:#9d9fb2; margin-bottom:6px; }
-.field input { width:100%; padding:12px 14px; border-radius:10px; background:#0d0f1c; border:1px solid #232540; color:#f0f0ff; }
-.field input:focus { outline:none; border-color:#5b5cf5; }
-.actions { display:flex; gap:10px; }
-.btn {
-  display:inline-flex; align-items:center; gap:8px; padding:10px 14px; border-radius:10px; border:1px solid transparent; cursor:pointer; font-weight:600;
-}
-.btn-primary { background:#1c1030; color:#f3f1ff; border-color:#7a3bff; }
-.btn-ghost { background:transparent; color:#cfcfef; border-color:#2a2d48; }
-.btn-small { padding:8px 12px; font-size:0.85rem; }
-.input-text { padding:10px 14px; background:#0f1122; color:#f3f1ff; border:1px solid #232640; border-radius:10px; width:100%; }
-.input-text.readonly { background:#0a0c18; color:#98ff9d; font-family: ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace; }
-.copy-row { display:flex; gap:8px; align-items:center; }
-.copy-row .input-text { flex:1; }
-.qr-box { display:flex; justify-content:center; padding:12px; background:#fff; border-radius:12px; margin: 12px 0; }
-.send-row { display:flex; gap:8px; align-items:center; }
-.send-row .input-text { flex:1; }
+<!doctype html>
+<html lang="no">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CryptoChat</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+  <main class="page">
+    <div class="container-center">
+      <div class="auth-card">
+        <div class="brand">
+          <h1>CryptoChat</h1>
+          <p class="subtitle">Ende-til-ende-kryptert meldinger</p>
+        </div>
+        <div class="tabs">
+          <button class="tab-btn active" id="tab-register" onclick="switchTab('register')">Registrer</button>
+          <button class="tab-btn" id="tab-login" onclick="switchTab('login')">Logg inn</button>
+        </div>
 
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.55); display:flex; align-items:center; justify-content:center; padding:24px; backdrop-filter: blur(2px); z-index: 60; }
-.modal { width:100%; max-width:520px; background:#111322; border:1px solid #232540; border-radius:16px; padding:18px; box-shadow: 0 25px 80px rgba(0,0,0,0.40); }
-.modal-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
-.modal-header h3 { margin:0; }
-.toast-container { position:fixed; bottom: 20px; right: 20px; display:flex; flex-direction:column; gap:8px; z-index: 100; }
-.toast { padding: 10px 14px; border-radius: 10px; background: #1a1c30; color:#e8e8ff; border: 1px solid #2a2d48; box-shadow: 0 10px 30px rgba(0,0,0,0.35); }
-.toast.error { background:#3d1212; color:#ffb3b3; }
-.toast.success { background:#122b18; color:#b8ffc3; }
+        <form id="form-register">
+          <div class="field">
+            <label for="register-username">Brukernavn</label>
+            <input id="register-username" autocomplete="username" required />
+          </div>
+          <div class="field">
+            <label for="register-password">Passord</label>
+            <input id="register-password" type="password" autocomplete="new-password" required />
+          </div>
+          <div class="actions">
+            <button class="btn btn-primary" type="submit">Registrer</button>
+          </div>
+        </form>
 
-@media (min-width: 900px){
-  body { background: #0f101a; }
-  .auth-card { padding: 28px; }
-  .qr-box { width: min(220px, 60%); height: min(220px, 60%); }
-}
-.app {
-  build
+        <form id="form-login" style="display:none;">
+          <div class="field">
+            <label for="login-username">Brukernavn</label>
+            <input id="login-username" autocomplete="username" required />
+          </div>
+          <div class="field">
+            <label for="login-password">Passord</label>
+            <input id="login-password" type="password" autocomplete="current-password" required />
+          </div>
+          <div class="actions">
+            <button class="btn btn-primary" type="submit">Logg inn</button>
+          </div>
+        </form>
+
+        <div id="feedback" class="feedback" role="status" aria-live="polite"></div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    function showFeedback(message, type = 'error') {
+      const el = document.getElementById('feedback');
+      el.textContent = message;
+      el.className = 'feedback ' + type;
+      el.style.display = 'block';
+    }
+
+    function switchTab(tab) {
+      document.getElementById('tab-register').classList.toggle('active', tab === 'register');
+      document.getElementById('tab-login').classList.toggle('active', tab === 'login');
+      document.getElementById('form-register').style.display = tab === 'register' ? 'block' : 'none';
+      document.getElementById('form-login').style.display = tab === 'login' ? 'block' : 'none';
+      document.getElementById('feedback').style.display = 'none';
+    }
+
+    async function postJSON(url, body) {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body || {}),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || data.error || `HTTP ${res.status}`);
+      return data;
+    }
+
+    document.getElementById('form-register').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const username = document.getElementById('register-username').value.trim();
+      const password = document.getElementById('register-password').value;
+      try {
+        showFeedback('Registrerer...', 'loading');
+        await postJSON('/auth/register', { username, password });
+        showFeedback('Registrert! Logger inn...', 'success');
+        setTimeout(() => {
+          window.location.href = '/chat';
+        }, 500);
+      } catch (err) {
+        showFeedback('Registrering feilet: ' + err.message);
+      }
+    });
+
+    document.getElementById('form-login').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const username = document.getElementById('login-username').value.trim();
+      const password = document.getElementById('login-password').value;
+      try {
+        showFeedback('Logger inn...', 'loading');
+        await postJSON('/auth/login', { username, password });
+        window.location.href = '/chat';
+      } catch (err) {
+        showFeedback('Innlogging feilet: ' + err.message);
+      }
+    });
+  </script>
+</body>
+</html>
