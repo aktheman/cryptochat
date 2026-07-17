@@ -132,7 +132,7 @@
           const item = document.createElement('div');
           item.className = 'item';
           item.dataset.groupId = g.id;
-          item.innerHTML = `<div class="name">${escapeHtml(g.name)}</div>`;
+          item.innerHTML = '<div class="name">' + escapeHtml(g.name) + '</div><div class="meta">' + escapeHtml((g.members || []).length + ' medlemmer') + '</div>';
           item.addEventListener('click', () => { activateItem(groupsList, item); openGroup(g.id); });
           groupsList.appendChild(item);
         });
