@@ -223,7 +223,7 @@ def login_page():
 
 @app.route('/chat')
 def chat_page():
-    if 'username' not in session or not is_user_session_active(session.get('username')):
+    if 'username' not in session:
         return redirect(url_for('login_page'))
     return render_template('chat.html', username=session.get('username'))
 
