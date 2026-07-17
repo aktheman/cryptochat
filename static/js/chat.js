@@ -154,6 +154,8 @@
         messagesBox.innerHTML = '';
         composer.style.display = 'flex';
         await loadChat(user);
+        const input = document.getElementById('messageInput');
+        if (input) input.focus();
       }
 
       async function loadChat(user) {
@@ -183,6 +185,8 @@
         messagesBox.innerHTML = '';
         composer.style.display = 'flex';
         await loadGroup(groupId);
+        const input = document.getElementById('messageInput');
+        if (input) input.focus();
       }
 
       async function loadGroup(groupId) {
