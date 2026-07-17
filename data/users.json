@@ -56,5 +56,18 @@
       "public": "xxmEf-NgBCsIzjOtmb4AlWdIk_IL52f6ZkFkicGoLTo="
     },
     "notifications_enabled": true
+  },
+  "finaltest": {
+    "password_hash": "scrypt:32768:8:1$4xiA7qNhU0o0Evrm$6d403cea3fd8686c1d603278483939a3470089aac58c3c019590dd1a4ccfcd4731d4182cdb9d059d6b13e9ec3572f650d198dd73af6846e444994ebad1b390cc",
+    "created_at": "2026-07-17T01:08:28.199142Z",
+    "theme": "dark",
+    "twofa_enabled": true,
+    "twofa_secret_hash": "2JH3MHNFJ4E3TKSFRK5Q5JWOKQ3EEURC",
+    "twofa_plain_secret": "2JH3MHNFJ4E3TKSFRK5Q5JWOKQ3EEURC",
+    "identity_keypair": {
+      "private": "kI56GD_HjvXL_QvMKo3Bga3k8KJSoDwQXQPCGAFerFY=",
+      "public": "ZnPOwQ4gLFFbn9e7ZVSVfA0CWXs2UBS3a9B5B1Fg30s="
+    },
+    "notifications_enabled": true
   }
 }

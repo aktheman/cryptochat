@@ -1,42 +1,179 @@
 (() => {
-  const qs = (sel, root = document) => root.querySelector(sel);
-  let currentUser = '';
+  'use strict';
+  const API_BASE = '';
+  let currentUser = window.__APP__?.username || '';
   let activeChat = null;
+  let polling = null;
+  let settingsOpen = false;
 
-  function setStatus(msg, type = 'error') {
-    const el = qs('#status');
-    if (!el) return;
-    el.textContent = msg || '';
-    el.className = 'status ' + type;
-    el.style.display = msg ? 'block' : 'none';
+  function ready(fn) { if (document.readyState !== 'loading') fn(); else document.addEventListener('DOMContentLoaded', fn); }
+
+  const qs = (sel, root = document) => root.querySelector(sel);
+  const qsa = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+
+  function el(tag, attrs = {}, children = []) {
+    const node = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs || {})) {
+      if (k === 'text') node.textContent = v;
+      else if (k === 'html') node.innerHTML = v;
+      else if (k.startsWith('data-')) node.dataset[k.slice(5)] = v;
+      else if (k === 'class') node.className = v;
+      else node.setAttribute(k, v);
+    }
+    for (const child of children) {
+      node.appendChild(typeof child === 'string' ? document.createTextNode(child) : child);
+    }
+    return node;
   }
 
-  function appendMessage(message) {
-    const list = qs('#messages');
+  async function postJSON(path, body) {
+    const res = await fetch(API_BASE + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.message || data.error || 'HTTP ' + res.status);
+    return data;
+  }
+
+  function toast(message, type = 'error') {
+    let container = qs('#toasts');
+    if (!container) {
+      container = el('div', { id: 'toasts', class: 'toasts' });
+      document.body.appendChild(container);
+    }
+    const item = el('div', { class: 'toast ' + type, text: message });
+    container.appendChild(item);
+    setTimeout(() => item.remove(), 2500);
+  }
+
+  function buildApp() {
+    const app = qs('#app');
+    if (!app) return;
+    app.innerHTML = '';
+    app.appendChild(buildHeader());
+    app.appendChild(buildBody());
+  }
+
+  function buildHeader() {
+    const header = el('header', { class: 'header' }, [
+      el('div', { class: 'header-left' }, [
+        el('h1', { text: 'CryptoChat', class: 'brand' }),
+        el('button', { id: 'logoutBtn', class: 'btn btn-small btn-ghost', text: 'Logg ut' }),
+      ]),
+      el('div', { class: 'header-actions' }, [
+        el('button', { id: 'themeBtn', class: 'btn btn-small btn-ghost', text: '🌙 Tema' }),
+        el('button', { id: 'fa2Btn', class: 'btn btn-small btn-ghost', text: '🔐 2FA' }),
+      ]),
+    ]);
+    header.querySelector('#logoutBtn').addEventListener('click', logout);
+    header.querySelector('#themeBtn').addEventListener('click', toggleTheme);
+    header.querySelector('#fa2Btn').addEventListener('click', enable2FA);
+    return header;
+  }
+
+  function buildBody() {
+    const row = el('div', { class: 'app-row' });
+
+    const sidebar = el('aside', { class: 'sidebar' });
+    sidebar.appendChild(buildSidebarSection('MELDINGER', 'usersList', buildUsersList));
+    sidebar.appendChild(buildSidebarSection('GRUPPER', 'groupsList', buildGroupsList, [
+      el('button', { id: 'createGroupBtn', class: 'btn btn-small btn-ghost', text: '+ Ny gruppe' })
+    ]));
+
+    const chatMain = el('main', { class: 'chat-main' });
+    chatMain.appendChild(buildChatHeader());
+    chatMain.appendChild(buildMessages());
+    chatMain.appendChild(buildComposer());
+
+    row.appendChild(sidebar);
+    row.appendChild(chatMain);
+    return row;
+  }
+
+  function buildSidebarSection(title, listId, renderFn, extraChildren = []) {
+    const section = el('div', { class: 'section' });
+    section.appendChild(el('div', { class: 'section-title', text: title }));
+    section.appendChild(el('div', { id: listId, class: 'list' }));
+    extraChildren.forEach(c => section.appendChild(c));
+    return section;
+  }
+
+  function buildUsersList() {
+    const list = qs('#usersList');
     if (!list) return;
-    const item = document.createElement('div');
-    item.className = 'msg ' + (message.sender === currentUser ? 'self' : 'other');
-    item.innerHTML = '<div class="meta"><span class="sender">' + message.sender + '</span><span class="time">' + new Date(message.timestamp).toLocaleString('no-NO') + '</span></div><div>' + (message.text || message.filename || message.type) + '</div><div class="meta"><span class="read">' + (message.read ? 'Lest' : 'Ikke lest') + '</span></div>';
-    list.appendChild(item);
-    list.scrollTop = list.scrollHeight;
+    list.innerHTML = '';
+    (window.__APP__.users || []).forEach(u => {
+      const item = el('div', { class: 'item', 'data-user': u }, [
+        el('div', { class: 'avatar', text: u[0].toUpperCase() }),
+        el('div', { class: 'name', text: u }),
+      ]);
+      item.addEventListener('click', () => openChat(u));
+      list.appendChild(item);
+    });
+  }
+
+  function buildGroupsList() {
+    const list = qs('#groupsList');
+    if (!list) return;
+    list.innerHTML = '';
+    (window.__APP__.groups || []).forEach(g => {
+      const item = el('div', { class: 'item', 'data-group-id': g.id }, [
+        el('div', { class: 'name', text: g.name }),
+      ]);
+      item.addEventListener('click', () => openGroup(g.id));
+      list.appendChild(item);
+    });
+  }
+
+  function buildChatHeader() {
+    const header = el('header', { class: 'chat-header' }, [
+      el('div', {}, [
+        el('div', { id: 'chatTitle', class: 'chat-title', text: 'Velg en samtale' }),
+        el('div', { id: 'chatMeta', class: 'chat-meta', text: '' }),
+      ]),
+      el('div', { class: 'chat-actions' }, [
+        el('input', { id: 'searchPartner', class: 'input-text', placeholder: 'Kontakt for søk', autocomplete: 'off' }),
+        el('input', { id: 'searchInput', class: 'input-text', placeholder: 'Søk i meldinger...', autocomplete: 'off' }),
+        el('button', { id: 'searchBtn', class: 'btn btn-small btn-ghost', text: 'Søk' }),
+      ]),
+    ]);
+    header.querySelector('#searchBtn').addEventListener('click', searchMessages);
+    return header;
+  }
+
+  function buildMessages() {
+    const wrap = el('div', { class: 'messages' });
+    wrap.id = 'messages';
+    wrap.appendChild(el('div', { id: 'emptyState', class: 'empty-state', html: '<div class="empty-icon">💬</div><h3>Ingen samtale valgt</h3><p>Velg en kontakt eller gruppe for å starte en sikker chat.</p>' }));
+    return wrap;
+  }
+
+  function buildComposer() {
+    const composer = el('div', { id: 'composer', class: 'composer', style: 'display:none' });
+    const actions = el('div', { class: 'composer-actions' });
+    const row = el('div', { class: 'composer-row' });
+    row.appendChild(el('input', { id: 'messageInput', class: 'input-text', placeholder: 'Skriv en kryptert melding...', autocomplete: 'off' }));
+    row.appendChild(el('button', { id: 'sendBtn', class: 'btn btn-primary', text: 'Send' }));
+    actions.appendChild(el('input', { id: 'fileInput', type: 'file', class: 'input-text' }));
+    composer.appendChild(actions);
+    composer.appendChild(row);
+
+    composer.querySelector('#sendBtn').addEventListener('click', sendMessage);
+    const input = composer.querySelector('#messageInput');
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendMessage(); });
+    composer.querySelector('#fileInput').addEventListener('change', () => {
+      const file = qs('#fileInput').files[0];
+      if (file && activeChat) uploadFile(file);
+    });
+    return composer;
   }
 
   async function loadUsers() {
     try {
       const res = await fetch('/users');
       const data = await res.json();
-      const list = qs('#users');
-      if (!list) return;
-      list.innerHTML = '';
-      (data.users || []).forEach(u => {
-        const item = document.createElement('div');
-        item.className = 'item';
-        item.innerHTML = '<div class="avatar">' + u[0].toUpperCase() + '</div><div class="name">' + u + '</div>';
-        item.addEventListener('click', () => loadChat(u));
-        list.appendChild(item);
-      });
+      window.__APP__.users = data.users || [];
+      buildUsersList();
     } catch (e) {
-      setStatus('Kunne ikke hente brukere');
+      toast('Kunne ikke hente brukere');
     }
   }
 
@@ -44,42 +181,83 @@
     try {
       const res = await fetch('/groups');
       const data = await res.json();
-      const list = qs('#groups');
-      if (!list) return;
-      list.innerHTML = '';
-      (data.groups || []).forEach(g => {
-        const item = document.createElement('div');
-        item.className = 'item';
-        item.innerHTML = '<div class="name">' + g.name + '</div>';
-        item.addEventListener('click', () => loadGroup(g.id));
-        list.appendChild(item);
-      });
+      window.__APP__.groups = data.groups || [];
+      buildGroupsList();
     } catch (e) {
-      setStatus('Kunne ikke hente grupper');
+      toast('Kunne ikke hente grupper');
     }
   }
 
-  async function loadChat(target) {
-    activeChat = { target, type: 'user' };
-    qs('#recipient').value = target;
+  function openChat(target) {
+    setActiveTarget({ type: 'user', target });
     qs('#chatTitle').textContent = target;
-    const list = qs('#messages');
-    list.innerHTML = '';
-    const res = await fetch('/messages/' + encodeURIComponent(target));
-    const data = await res.json();
-    (data.messages || []).forEach(m => appendMessage({ ...m, sender: m.sender }));
-    try { await fetch('/read_receipts/' + encodeURIComponent(target), { method: 'POST' }); } catch (e) {}
+    qs('#chatMeta').textContent = '';
+    clearMessages();
+    loadChat(target);
+  }
+
+  async function loadChat(target) {
+    try {
+      const res = await fetch('/messages/' + encodeURIComponent(target));
+      const data = await res.json();
+      const list = qs('#messages');
+      if (!list) return;
+      list.innerHTML = '';
+      if (!(data.messages || []).length) {
+        list.appendChild(el('div', { class: 'empty-state', html: '<div class="empty-icon">💬</div><p>Ingen meldinger enda</p>' }));
+      } else {
+        (data.messages || []).forEach(m => appendMessage({ ...m, sender: m.sender }));
+      }
+      try { await postJSON('/read_receipts/' + encodeURIComponent(target), {}); } catch (e) {}
+    } catch (e) {
+      toast('Kunne ikke hente meldinger');
+    }
+  }
+
+  function openGroup(groupId) {
+    const group = (window.__APP__.groups || []).find(g => g.id === groupId);
+    setActiveTarget({ type: 'group', target: groupId });
+    qs('#chatTitle').textContent = group ? group.name : 'Gruppe';
+    qs('#chatMeta').textContent = '';
+    clearMessages();
+    loadGroup(groupId);
   }
 
   async function loadGroup(groupId) {
-    activeChat = { target: groupId, type: 'group' };
-    qs('#recipient').value = groupId;
-    qs('#chatTitle').textContent = 'Gruppe: ' + groupId;
+    try {
+      const res = await fetch('/groups/' + encodeURIComponent(groupId) + '/messages');
+      const data = await res.json();
+      const list = qs('#messages');
+      if (!list) return;
+      list.innerHTML = '';
+      if (!(data.messages || []).length) {
+        list.appendChild(el('div', { class: 'empty-state', html: '<div class="empty-icon">👥</div><p>Ingen gruppemeldinger enda</p>' }));
+      } else {
+        (data.messages || []).forEach(m => appendMessage({ ...m, sender: m.sender }));
+      }
+    } catch (e) {
+      toast('Kunne ikke hente gruppemeldinger');
+    }
+  }
+
+  function appendMessage(message) {
     const list = qs('#messages');
-    list.innerHTML = '';
-    const res = await fetch('/groups/' + encodeURIComponent(groupId) + '/messages');
-    const data = await res.json();
-    (data.messages || []).forEach(m => appendMessage({ ...m, sender: m.sender }));
+    if (!list) return;
+    const item = el('div', { class: 'msg ' + (message.sender === currentUser ? 'sent' : 'received') });
+    item.innerHTML = '<div class="meta"><span class="sender">' + (message.sender || '') + '</span><span class="time">' + new Date(message.timestamp).toLocaleString('no-NO') + '</span></div><div>' + (message.text || message.filename || message.type || '') + '</div><div class="meta"><span class="read">' + (message.read ? 'Lest' : 'Ikke lest') + '</span></div>';
+    list.appendChild(item);
+    list.scrollTop = list.scrollHeight;
+  }
+
+  function clearMessages() {
+    const list = qs('#messages');
+    if (list) list.innerHTML = '';
+  }
+
+  function setActiveTarget(chat) {
+    activeChat = chat;
+    const composer = qs('#composer');
+    if (composer) composer.style.display = chat ? 'flex' : 'none';
   }
 
   async function sendMessage() {
@@ -90,107 +268,112 @@
       const url = activeChat.type === 'group' ? '/groups/' + encodeURIComponent(activeChat.target) + '/send' : '/send';
       const body = { ciphertext: text };
       if (activeChat.type === 'user') body.recipient = activeChat.target;
-      const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      await postJSON(url, body);
+      input.value = '';
+      if (activeChat.type === 'user') await loadChat(activeChat.target); else await loadGroup(activeChat.target);
+    } catch (e) {
+      toast('Kunne ikke sende: ' + e.message);
+    }
+  }
+
+  async function uploadFile(file) {
+    if (!activeChat || !file) return;
+    const form = new FormData();
+    form.append('file', file);
+    form.append('recipient', activeChat.target);
+    try {
+      const res = await fetch('/upload', { method: 'POST', body: form });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Feil');
-      input.value = '';
-      if (activeChat.type === 'user') await loadChat(activeChat.target);
-      else await loadGroup(activeChat.target);
+      toast('Fil opplastet', 'success');
+      if (activeChat.type === 'user') await loadChat(activeChat.target); else await loadGroup(activeChat.target);
     } catch (e) {
-      setStatus('Kunne ikke sende: ' + e.message);
+      toast('Filopplasting feilet: ' + e.message);
     }
   }
 
   async function createGroup() {
     const name = prompt('Gruppenavn:');
     if (!name) return;
-    const members = prompt('Medlemmer (kommaseparert brukernavn):', '').split(',').map(x => x.trim()).filter(Boolean);
+    const members = (prompt('Medlemmer (kommaseparert):', '') || '').split(',').map(x => x.trim()).filter(Boolean);
     try {
-      const res = await fetch('/groups', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, members }) });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || 'Feil');
-      setStatus('Gruppe opprettet', 'success');
-      loadGroups();
+      const data = await postJSON('/groups', { name, members });
+      toast('Gruppe opprettet', 'success');
+      await loadGroups();
     } catch (e) {
-      setStatus('Kunne ikke opprette gruppe: ' + e.message);
+      toast('Kunne ikke opprette gruppe: ' + e.message);
     }
   }
 
   async function toggleTheme() {
     const next = document.body.dataset.theme === 'light' ? 'dark' : 'light';
     document.body.dataset.theme = next;
-    try { await fetch('/theme', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ theme: next }) }); } catch (e) {}
+    localStorage.setItem('theme', next);
+    try { await postJSON('/theme', { theme: next }); } catch (e) {}
   }
 
   async function searchMessages() {
     const query = qs('#searchInput')?.value.trim();
     const partner = qs('#searchPartner')?.value.trim();
-    if (!query || !partner) return setStatus('Søk trenger tekst og kontakt');
+    if (!query || !partner) return toast('Søk trenger tekst og kontakt');
     try {
       const res = await fetch('/search?q=' + encodeURIComponent(query) + '&partner=' + encodeURIComponent(partner));
       const data = await res.json();
       const list = qs('#messages');
       list.innerHTML = '';
       (data.messages || []).forEach(m => appendMessage({ ...m, sender: m.sender }));
-      setStatus(data.messages.length + ' treff', 'success');
+      toast(data.messages.length + ' treff', 'success');
     } catch (e) {
-      setStatus('Søk feilet: ' + e.message);
+      toast('Søk feilet: ' + e.message);
     }
   }
 
   async function enable2FA() {
     try {
-      const data = await fetch('/auth/2fa/enable', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then(r => r.json());
-      if (!data.success) throw new Error(data.message);
-      const qr = qs('#qrWrap');
-      if (qr) { qr.innerHTML = '<img src="https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' + encodeURIComponent(data.uri) + '" alt="2FA QR" />'; }
-      setStatus('2FA aktivert: ' + (data.secret || ''), 'success');
+      const data = await postJSON('/auth/2fa/enable', {});
+      const qr = window.__APP__.qrWrap;
+      if (!qr) return;
+      qr.innerHTML = '<img src="https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' + encodeURIComponent(data.uri) + '" alt="2FA QR" /><div>' + (data.secret || '') + '</div>';
+      toast('2FA-URI generert', 'success');
     } catch (e) {
-      setStatus('2FA feilet: ' + e.message);
+      toast('2FA feilet: ' + e.message);
     }
   }
 
   async function logout() {
-    try { await fetch('/auth/logout', { method: 'POST' }); } catch (e) {}
+    try { await postJSON('/auth/logout', {}); } catch (e) {}
     window.location.href = '/login';
   }
 
   async function init() {
-    const userEl = qs('#current-user');
-    currentUser = userEl ? (userEl.textContent || '').trim() : '';
     if (!currentUser) { window.location.href = '/login'; return; }
 
-    qs('#logoutBtn')?.addEventListener('click', logout);
-    qs('#sendBtn')?.addEventListener('click', sendMessage);
-    qs('#searchBtn')?.addEventListener('click', searchMessages);
-    qs('#themeBtn')?.addEventListener('click', toggleTheme);
-    qs('#createGroupBtn')?.addEventListener('click', createGroup);
-    qs('#fa2Btn')?.addEventListener('click', enable2FA);
+    window.__APP__.qrWrap = el('div', { id: 'qrWrap', style: 'display:none' });
+    document.body.appendChild(window.__APP__.qrWrap);
 
-    const msgInput = qs('#messageInput');
-    if (msgInput) msgInput.addEventListener('keydown', e => { if (e.key === 'Enter') sendMessage(); });
-
-    const fileInput = qs('#fileInput');
-    if (fileInput) fileInput.addEventListener('change', async () => {
-      const file = fileInput.files[0];
-      if (!file || !activeChat) return;
-      const form = new FormData();
-      form.append('file', file);
-      form.append('recipient', activeChat.target);
-      try {
-        const res = await fetch('/upload', { method: 'POST', body: form });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.message);
-        setStatus('Fil opplastet', 'success');
-        if (activeChat.type === 'user') await loadChat(activeChat.target); else await loadGroup(activeChat.target);
-      } catch (e) {
-        setStatus('Filopplasting feilet: ' + e.message);
-      }
-    });
+    qs('#createGroupBtn').addEventListener('click', createGroup);
 
     await loadUsers();
     await loadGroups();
+
+    startPolling();
   }
 
-  document.addEventListener('DOMContentLoaded', init);
+  function startPolling() {
+    stopPolling();
+    polling = setInterval(() => {
+      if (activeChat) {
+        if (activeChat.type === 'user') loadChat(activeChat.target);
+        else loadGroup(activeChat.target);
+      }
+      loadUsers();
+      loadGroups();
+    }, 2500);
+  }
+
+  function stopPolling() {
+    if (polling) { clearInterval(polling); polling = null; }
+  }
+
+  ready(init);
 })();

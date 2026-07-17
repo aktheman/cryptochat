@@ -3,62 +3,22 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f1424" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
   <title>CryptoChat</title>
-  <link rel="stylesheet" href="/static/css/style.css" />
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="stylesheet" href="/static/css/style.css?v=10" />
 </head>
 <body>
-  <div class="app">
-    <aside class="sidebar" id="sidebar">
-      <div class="brand"><h1>CryptoChat</h1></div>
-      <button id="logoutBtn">Logg ut</button>
-      <div class="section">
-        <div class="section-title">MELDINGER</div>
-        <div id="users" class="list"></div>
-      </div>
-      <div class="section">
-        <div class="section-title">GRUPPER</div>
-        <button id="createGroupBtn">+ Ny gruppe</button>
-        <div id="groups" class="list"></div>
-      </div>
-      <div class="section">
-        <button id="themeBtn">Tema</button>
-        <button id="fa2Btn">2FA</button>
-      </div>
-    </aside>
-
-    <main class="chat-main">
-      <header class="chat-header">
-        <div>
-          <div class="chat-title" id="chatTitle">Velg en samtale</div>
-          <div class="chat-meta" id="chatMeta"></div>
-        </div>
-        <div class="chat-actions">
-          <input id="searchPartner" placeholder="Partner" />
-          <input id="searchInput" placeholder="Søk..." />
-          <button id="searchBtn">Søk</button>
-        </div>
-      </header>
-
-      <div class="messages" id="messages"></div>
-
-      <div class="composer" id="composer" style="display:none">
-        <input type="file" id="fileInput" />
-        <input type="hidden" id="recipient" />
-        <div class="composer-row">
-          <input id="messageInput" placeholder="Skriv..." />
-          <button id="sendBtn">Send</button>
-        </div>
-      </div>
-    </main>
-  </div>
-
-  <div id="status" class="status" style="display:none"></div>
-
-  <div id="current-user" style="display:none">{{ username | tojson }}</div>
+  <div id="app" class="app"></div>
 
   <script>
-    window.__APP__ = { username: {{ username | tojson }} };
+    window.__APP__ = {
+      username: {{ username | tojson }},
+      partnerKeys: localStorage.getItem('partnerKeys') ? JSON.parse(localStorage.getItem('partnerKeys')) : {},
+      theme: localStorage.getItem('theme') || 'dark'
+    };
   </script>
-  <script src="/static/js/chat.js" defer></script>
+  <script src="/static/js/chat.js?v=10" defer></script>
 </body>
 </html>
