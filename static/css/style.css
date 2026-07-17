@@ -66,6 +66,7 @@ body.theme-light .toast { background:#ffffff; color:#111827; }
 .input-text:focus { outline:none; border-color:#5b5cf5; }
 
 .btn { display:inline-flex; align-items:center; gap:6px; padding:8px 12px; border-radius:10px; border:1px solid transparent; cursor:pointer; font-weight:600; background:transparent; color:#cfcfef; white-space:nowrap; }
+.btn:disabled { opacity:0.55; cursor:not-allowed; }
 .btn-primary { background:#1c1030; color:#f3f1ff; border-color:#7a3bff; }
 .btn-ghost { border-color:#2a2d48; }
 .btn-small { padding:6px 10px; font-size:.85rem; }
