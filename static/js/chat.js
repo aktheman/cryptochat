@@ -111,6 +111,7 @@
 
       let activeChat = null;
       let interval = null;
+      let userScrolledUp = false;
 
       let lastMessages = {};
 
@@ -235,7 +236,7 @@
           + '<div class="meta"><span class="read">' + (message.read === true ? 'Lest' : 'Ikke lest') + '</span></div>'
         );
         messagesBox.appendChild(item);
-        messagesBox.scrollTop = messagesBox.scrollHeight;
+        if (!userScrolledUp) messagesBox.scrollTop = messagesBox.scrollHeight;
       }
 
       async function sendMessage() {
@@ -279,6 +280,14 @@
         const text = (input.value || '').trim();
         const file = fileInput && fileInput.files && fileInput.files[0];
         sendBtn.disabled = !(text || file);
+      }
+
+      if (messagesBox) {
+        messagesBox.addEventListener('scroll', () => {
+          const container = messagesBox;
+          const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+          userScrolledUp = distanceFromBottom > 100;
+        });
       }
 
       document.getElementById('sendBtn').addEventListener('click', sendMessage);
