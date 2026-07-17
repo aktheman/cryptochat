@@ -3,36 +3,26 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#0f1424" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>CryptoChat</title>
-  <link rel="manifest" href="/manifest.json" />
   <link rel="stylesheet" href="/static/css/style.css" />
 </head>
 <body>
   <div class="app">
     <aside class="sidebar" id="sidebar">
-      <div class="sidebar-header">
-        <div class="brand"><h1>CryptoChat</h1></div>
-        <button class="btn btn-small" id="logout-button">Logg ut</button>
-      </div>
-
+      <div class="brand"><h1>CryptoChat</h1></div>
+      <button id="logoutBtn">Logg ut</button>
       <div class="section">
         <div class="section-title">MELDINGER</div>
         <div id="users" class="list"></div>
       </div>
-
       <div class="section">
         <div class="section-title">GRUPPER</div>
-        <button class="btn btn-ghost btn-small" id="create-group-button">+ Ny gruppe</button>
-        <div id="groups" class="list" style="margin-top:8px"></div>
+        <button id="createGroupBtn">+ Ny gruppe</button>
+        <div id="groups" class="list"></div>
       </div>
-
-      <div class="sidebar-footer">
-        <button class="btn btn-ghost btn-small" id="theme-toggle">🌙 Tema</button>
-        <button class="btn btn-ghost btn-small" id="enable-2fa-button">🔐 2FA</button>
-        <div class="presence" id="presence-status">🟡 Ikke registrert</div>
+      <div class="section">
+        <button id="themeBtn">Tema</button>
+        <button id="fa2Btn">2FA</button>
       </div>
     </aside>
 
@@ -43,28 +33,20 @@
           <div class="chat-meta" id="chatMeta"></div>
         </div>
         <div class="chat-actions">
-          <input id="search-partner" class="input-text" placeholder="Kontakt for søk" />
-          <input id="search-input" class="input-text" placeholder="Søk i meldinger..." />
-          <button class="btn btn-primary btn-small" id="search-button">Søk</button>
+          <input id="searchPartner" placeholder="Partner" />
+          <input id="searchInput" placeholder="Søk..." />
+          <button id="searchBtn">Søk</button>
         </div>
       </header>
 
-      <div class="messages" id="messages">
-        <div class="empty-state" id="emptyState">
-          <div class="empty-icon">💬</div>
-          <h3>Ingen samtale valgt</h3>
-          <p>Velg en kontakt eller gruppe for å starte en sikker chat.</p>
-        </div>
-      </div>
+      <div class="messages" id="messages"></div>
 
       <div class="composer" id="composer" style="display:none">
-        <div class="composer-actions">
-          <input type="file" id="file-input" class="input-text" />
-          <input type="hidden" id="recipient" />
-        </div>
+        <input type="file" id="fileInput" />
+        <input type="hidden" id="recipient" />
         <div class="composer-row">
-          <input id="message-input" class="input-text" placeholder="Skriv en kryptert melding..." autocomplete="off" />
-          <button class="btn btn-primary" id="send-button">Send</button>
+          <input id="messageInput" placeholder="Skriv..." />
+          <button id="sendBtn">Send</button>
         </div>
       </div>
     </main>
@@ -72,20 +54,11 @@
 
   <div id="status" class="status" style="display:none"></div>
 
-  <div id="modalOverlay" class="modal-overlay" style="display:none">
-    <div class="modal">
-      <div class="modal-header">
-        <h3 id="modalTitle">Innstillinger</h3>
-        <button class="btn btn-ghost" id="closeModal">×</button>
-      </div>
-      <div id="modalBody"></div>
-    </div>
-  </div>
-
-  <div class="toast-container" id="toastContainer"></div>
-
   <div id="current-user" style="display:none">{{ username | tojson }}</div>
 
+  <script>
+    window.__APP__ = { username: {{ username | tojson }} };
+  </script>
   <script src="/static/js/chat.js" defer></script>
 </body>
 </html>

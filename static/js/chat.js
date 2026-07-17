@@ -1,205 +1,115 @@
 (() => {
-  const API_BASE = '';
-  let currentUser = null;
-  let activeChat = null; // { type: 'user'|'group', target: string }
-  let polling = null;
-  let presenceTimers = {};
+  const qs = (sel, root = document) => root.querySelector(sel);
+  let currentUser = '';
+  let activeChat = null;
 
-  function qs(selector, root = document) {
-    return root.querySelector(selector);
-  }
-
-  function el(tag, attrs = {}, children = []) {
-    const node = document.createElement(tag);
-    for (const [k, v] of Object.entries(attrs || {})) {
-      if (k === 'text') node.textContent = v;
-      else if (k.startsWith('data-')) node.dataset[k.slice(5)] = v;
-      else if (k === 'class') node.className = v;
-      else node.setAttribute(k, v);
-    }
-    for (const child of children) {
-      node.appendChild(typeof child === 'string' ? document.createTextNode(child) : child);
-    }
-    return node;
-  }
-
-  async function postJSON(url, body) {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body || {}),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.message || data.error || 'HTTP ' + res.status);
-    return data;
-  }
-
-  function setStatus(message, type = 'error') {
-    const out = qs('#status');
-    if (!out) return;
-    out.textContent = message || '';
-    out.className = 'status ' + type;
-    out.style.display = message ? 'block' : 'none';
+  function setStatus(msg, type = 'error') {
+    const el = qs('#status');
+    if (!el) return;
+    el.textContent = msg || '';
+    el.className = 'status ' + type;
+    el.style.display = msg ? 'block' : 'none';
   }
 
   function appendMessage(message) {
     const list = qs('#messages');
     if (!list) return;
-    const item = el('div', { class: 'message ' + (message.self ? 'self' : 'other') }, [
-      el('div', { class: 'message-meta', text: message.sender + ' · ' + new Date(message.timestamp).toLocaleString('no-NO') }),
-      message.self_destruct_at ? el('div', { class: 'message-meta', text: 'Selvødeleggende' }) : null,
-      el('div', { class: 'message-text', text: message.text || message.filename || message.type }),
-      el('div', { class: 'message-meta', text: message.read ? 'Lest' : 'Ikke lest' }),
-    ].filter(Boolean));
+    const item = document.createElement('div');
+    item.className = 'msg ' + (message.sender === currentUser ? 'self' : 'other');
+    item.innerHTML = '<div class="meta"><span class="sender">' + message.sender + '</span><span class="time">' + new Date(message.timestamp).toLocaleString('no-NO') + '</span></div><div>' + (message.text || message.filename || message.type) + '</div><div class="meta"><span class="read">' + (message.read ? 'Lest' : 'Ikke lest') + '</span></div>';
     list.appendChild(item);
     list.scrollTop = list.scrollHeight;
-  }
-
-  async function loadChat(target, type = 'user') {
-    activeChat = { target, type };
-    qs('#recipient').value = target;
-    const list = qs('#messages');
-    list.innerHTML = '';
-    const res = await fetch(`/messages/${encodeURIComponent(target)}`);
-    const data = await res.json();
-    if (data.messages) {
-      data.messages.forEach((m) => appendMessage({ ...m, self: m.sender === currentUser }));
-    }
-    await markRead(target);
-  }
-
-  async function loadGroup(groupId) {
-    activeChat = { target: groupId, type: 'group' };
-    qs('#recipient').value = groupId;
-    const list = qs('#messages');
-    list.innerHTML = '';
-    const res = await fetch(`/groups/${encodeURIComponent(groupId)}/messages`);
-    const data = await res.json();
-    if (data.messages) {
-      data.messages.forEach((m) => appendMessage({ ...m, self: m.sender === currentUser }));
-    }
-  }
-
-  async function markRead(target) {
-    try {
-      await postJSON(`/read_receipts/${encodeURIComponent(target)}`, {});
-    } catch (e) {
-      // non-critical
-    }
-  }
-
-  async function sendMessage() {
-    const input = qs('#message-input');
-    if (!input) return;
-    const text = input.value.trim();
-    if (!text || !activeChat) return;
-    try {
-      const url = activeChat.type === 'group' ? `/groups/${encodeURIComponent(activeChat.target)}/send` : '/send';
-      const body = { ciphertext: text };
-      if (activeChat.type === 'user') body.recipient = activeChat.target;
-      await postJSON(url, body);
-      input.value = '';
-      await refreshActiveChat();
-    } catch (e) {
-      setStatus('Kunne ikke sende melding: ' + e.message);
-    }
-  }
-
-  async function refreshActiveChat() {
-    if (!activeChat) return;
-    if (activeChat.type === 'user') await loadChat(activeChat.target);
-    else await loadGroup(activeChat.target);
-  }
-
-  async function uploadFile(file) {
-    if (!activeChat || !file) return;
-    const form = new FormData();
-    form.append('file', file);
-    form.append('recipient', activeChat.target);
-    try {
-      const res = await fetch('/upload', { method: 'POST', body: form });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || 'Opplasting feilet');
-      setStatus('Fil opplastet', 'success');
-      await refreshActiveChat();
-    } catch (e) {
-      setStatus('Filopplasting feilet: ' + e.message);
-    }
   }
 
   async function loadUsers() {
     try {
       const res = await fetch('/users');
       const data = await res.json();
-      renderUserList(data.users || []);
+      const list = qs('#users');
+      if (!list) return;
+      list.innerHTML = '';
+      (data.users || []).forEach(u => {
+        const item = document.createElement('div');
+        item.className = 'item';
+        item.innerHTML = '<div class="avatar">' + u[0].toUpperCase() + '</div><div class="name">' + u + '</div>';
+        item.addEventListener('click', () => loadChat(u));
+        list.appendChild(item);
+      });
     } catch (e) {
       setStatus('Kunne ikke hente brukere');
     }
-  }
-
-  function renderUserList(users) {
-    const list = qs('#users');
-    if (!list) return;
-    list.innerHTML = '';
-    if (!users.length) {
-      list.appendChild(el('div', { text: 'Ingen andre brukere', class: 'empty' }));
-      return;
-    }
-    users.forEach((u) => {
-      const item = el('div', { class: 'user-row', 'data-user': u }, [
-        el('span', { text: u }),
-        el('button', { text: 'Chat', class: 'btn btn-ghost btn-small', 'data-user': u }),
-      ]);
-      item.addEventListener('click', (e) => {
-        const btn = e.target.closest('button');
-        if (btn) loadChat(btn.dataset.user);
-      });
-      list.appendChild(item);
-    });
   }
 
   async function loadGroups() {
     try {
       const res = await fetch('/groups');
       const data = await res.json();
-      renderGroupList(data.groups || []);
+      const list = qs('#groups');
+      if (!list) return;
+      list.innerHTML = '';
+      (data.groups || []).forEach(g => {
+        const item = document.createElement('div');
+        item.className = 'item';
+        item.innerHTML = '<div class="name">' + g.name + '</div>';
+        item.addEventListener('click', () => loadGroup(g.id));
+        list.appendChild(item);
+      });
     } catch (e) {
       setStatus('Kunne ikke hente grupper');
     }
   }
 
-  function renderGroupList(groups) {
-    const list = qs('#groups');
-    if (!list) return;
+  async function loadChat(target) {
+    activeChat = { target, type: 'user' };
+    qs('#recipient').value = target;
+    qs('#chatTitle').textContent = target;
+    const list = qs('#messages');
     list.innerHTML = '';
-    if (!groups.length) {
-      list.appendChild(el('div', { text: 'Ingen grupper', class: 'empty' }));
-      return;
+    const res = await fetch('/messages/' + encodeURIComponent(target));
+    const data = await res.json();
+    (data.messages || []).forEach(m => appendMessage({ ...m, sender: m.sender }));
+    try { await fetch('/read_receipts/' + encodeURIComponent(target), { method: 'POST' }); } catch (e) {}
+  }
+
+  async function loadGroup(groupId) {
+    activeChat = { target: groupId, type: 'group' };
+    qs('#recipient').value = groupId;
+    qs('#chatTitle').textContent = 'Gruppe: ' + groupId;
+    const list = qs('#messages');
+    list.innerHTML = '';
+    const res = await fetch('/groups/' + encodeURIComponent(groupId) + '/messages');
+    const data = await res.json();
+    (data.messages || []).forEach(m => appendMessage({ ...m, sender: m.sender }));
+  }
+
+  async function sendMessage() {
+    const input = qs('#messageInput');
+    if (!input || !input.value.trim() || !activeChat) return;
+    const text = input.value.trim();
+    try {
+      const url = activeChat.type === 'group' ? '/groups/' + encodeURIComponent(activeChat.target) + '/send' : '/send';
+      const body = { ciphertext: text };
+      if (activeChat.type === 'user') body.recipient = activeChat.target;
+      const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Feil');
+      input.value = '';
+      if (activeChat.type === 'user') await loadChat(activeChat.target);
+      else await loadGroup(activeChat.target);
+    } catch (e) {
+      setStatus('Kunne ikke sende: ' + e.message);
     }
-    groups.forEach((g) => {
-      const item = el('div', { class: 'user-row', 'data-group-id': g.id }, [
-        el('span', { text: g.name }),
-        el('button', { text: 'Åpne', class: 'btn btn-ghost btn-small', 'data-group-id': g.id }),
-      ]);
-      item.addEventListener('click', (e) => {
-        const btn = e.target.closest('button');
-        if (btn) loadGroup(btn.dataset.groupId);
-      });
-      list.appendChild(item);
-    });
   }
 
   async function createGroup() {
-    const nameInput = qs('#group-name');
-    const membersInput = qs('#group-members');
-    const name = nameInput?.value.trim();
-    const members = (membersInput?.value || '').split(',').map((x) => x.trim()).filter(Boolean);
-    if (!name) return setStatus('Gruppenavn er påkrevd');
+    const name = prompt('Gruppenavn:');
+    if (!name) return;
+    const members = prompt('Medlemmer (kommaseparert brukernavn):', '').split(',').map(x => x.trim()).filter(Boolean);
     try {
-      await postJSON('/groups', { name, members });
+      const res = await fetch('/groups', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, members }) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Feil');
       setStatus('Gruppe opprettet', 'success');
-      nameInput.value = '';
-      membersInput.value = '';
       loadGroups();
     } catch (e) {
       setStatus('Kunne ikke opprette gruppe: ' + e.message);
@@ -207,27 +117,22 @@
   }
 
   async function toggleTheme() {
-    const current = document.body.dataset.theme || 'dark';
-    const next = current === 'dark' ? 'light' : 'dark';
+    const next = document.body.dataset.theme === 'light' ? 'dark' : 'light';
     document.body.dataset.theme = next;
-    try {
-      await postJSON('/theme', { theme: next });
-    } catch (e) {
-      // ignore
-    }
+    try { await fetch('/theme', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ theme: next }) }); } catch (e) {}
   }
 
   async function searchMessages() {
-    const query = qs('#search-input')?.value.trim();
-    const partner = qs('#search-partner')?.value.trim();
+    const query = qs('#searchInput')?.value.trim();
+    const partner = qs('#searchPartner')?.value.trim();
     if (!query || !partner) return setStatus('Søk trenger tekst og kontakt');
     try {
-      const res = await fetch(`/search?q=${encodeURIComponent(query)}&partner=${encodeURIComponent(partner)}`);
+      const res = await fetch('/search?q=' + encodeURIComponent(query) + '&partner=' + encodeURIComponent(partner));
       const data = await res.json();
-      setStatus(data.messages.length + ' treff', 'success');
       const list = qs('#messages');
       list.innerHTML = '';
-      data.messages.forEach((m) => appendMessage({ ...m, self: m.sender === currentUser }));
+      (data.messages || []).forEach(m => appendMessage({ ...m, sender: m.sender }));
+      setStatus(data.messages.length + ' treff', 'success');
     } catch (e) {
       setStatus('Søk feilet: ' + e.message);
     }
@@ -235,96 +140,56 @@
 
   async function enable2FA() {
     try {
-      const data = await postJSON('/auth/2fa/enable', {});
-      const uri = data.uri;
-      const qr = qs('#qrcode') || document.createElement('div');
-      qr.id = 'qrcode';
-      qr.innerHTML = '';
-      const img = document.createElement('img');
-      img.src = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' + encodeURIComponent(uri);
-      img.alt = '2FA QR';
-      qr.appendChild(img);
-      const secretEl = qs('#twofa-secret');
-      if (secretEl) secretEl.value = data.secret || '';
-      const form = qs('#enable-2fa-form');
-      if (form) form.style.display = 'none';
-      const qrWrap = qs('#qrcode-wrap');
-      if (qrWrap) {
-        qrWrap.innerHTML = '';
-        qrWrap.appendChild(qr);
-      }
+      const data = await fetch('/auth/2fa/enable', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then(r => r.json());
+      if (!data.success) throw new Error(data.message);
+      const qr = qs('#qrWrap');
+      if (qr) { qr.innerHTML = '<img src="https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' + encodeURIComponent(data.uri) + '" alt="2FA QR" />'; }
+      setStatus('2FA aktivert: ' + (data.secret || ''), 'success');
     } catch (e) {
       setStatus('2FA feilet: ' + e.message);
     }
   }
 
   async function logout() {
-    try {
-      await postJSON('/auth/logout', {});
-    } finally {
-      window.location.href = '/login';
-    }
-  }
-
-  function startPolling() {
-    stopPolling();
-    polling = setInterval(() => {
-      if (activeChat) refreshActiveChat();
-      // presence heartbeat
-      if (currentUser) {
-        fetch('/presence/batch', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ users: [currentUser] }),
-        }).catch(() => {});
-      }
-    }, 2500);
-  }
-
-  function stopPolling() {
-    if (polling) {
-      clearInterval(polling);
-      polling = null;
-    }
+    try { await fetch('/auth/logout', { method: 'POST' }); } catch (e) {}
+    window.location.href = '/login';
   }
 
   async function init() {
-    try {
-      const userEl = qs('#current-user');
-      if (userEl) currentUser = (userEl.textContent || '').trim();
-      if (!currentUser) return; // session missing
-      startPolling();
-      await loadUsers();
-      await loadGroups();
-      if (qs('#search-button')) qs('#search-button').addEventListener('click', searchMessages);
-      if (qs('#theme-toggle')) qs('#theme-toggle').addEventListener('click', toggleTheme);
-      if (qs('#send-button')) qs('#send-button').addEventListener('click', sendMessage);
-      if (qs('#create-group-button')) qs('#create-group-button').addEventListener('click', createGroup);
-      if (qs('#enable-2fa-button')) qs('#enable-2fa-button').addEventListener('click', enable2FA);
-      if (qs('#logout-button')) qs('#logout-button').addEventListener('click', logout);
-      const keyInput = qs('#message-input');
-      if (keyInput) {
-        keyInput.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter') sendMessage();
-        });
-      }
-      const fileInput = qs('#file-input');
-      if (fileInput) {
-        fileInput.addEventListener('change', () => {
-          if (fileInput.files[0]) uploadFile(fileInput.files[0]);
-        });
-      }
+    const userEl = qs('#current-user');
+    currentUser = userEl ? (userEl.textContent || '').trim() : '';
+    if (!currentUser) { window.location.href = '/login'; return; }
+
+    qs('#logoutBtn')?.addEventListener('click', logout);
+    qs('#sendBtn')?.addEventListener('click', sendMessage);
+    qs('#searchBtn')?.addEventListener('click', searchMessages);
+    qs('#themeBtn')?.addEventListener('click', toggleTheme);
+    qs('#createGroupBtn')?.addEventListener('click', createGroup);
+    qs('#fa2Btn')?.addEventListener('click', enable2FA);
+
+    const msgInput = qs('#messageInput');
+    if (msgInput) msgInput.addEventListener('keydown', e => { if (e.key === 'Enter') sendMessage(); });
+
+    const fileInput = qs('#fileInput');
+    if (fileInput) fileInput.addEventListener('change', async () => {
+      const file = fileInput.files[0];
+      if (!file || !activeChat) return;
+      const form = new FormData();
+      form.append('file', file);
+      form.append('recipient', activeChat.target);
       try {
-        await fetch('/sw.js');
-        if ('serviceWorker' in navigator) {
-          navigator.serviceWorker.register('/sw.js');
-        }
+        const res = await fetch('/upload', { method: 'POST', body: form });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message);
+        setStatus('Fil opplastet', 'success');
+        if (activeChat.type === 'user') await loadChat(activeChat.target); else await loadGroup(activeChat.target);
       } catch (e) {
-        // SW optional
+        setStatus('Filopplasting feilet: ' + e.message);
       }
-    } catch (e) {
-      console.error('Chat init failed:', e);
-    }
+    });
+
+    await loadUsers();
+    await loadGroups();
   }
 
   document.addEventListener('DOMContentLoaded', init);
