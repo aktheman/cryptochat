@@ -395,53 +395,27 @@ def get_messages(other_user):
     if 'username' not in session:
         return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
     me = session['username']
-    shared_key = get_or_create_pair_key(me, other_user)
     pk = pair_key(me, other_user)
     messages = load_json(MESSAGES_FILE, [])
     filtered = []
     for m in messages:
         if m.get('pair_key') != pk:
             continue
-        try:
-            if m.get('type') == 'text':
-                text = decrypt_symmetric(m['ciphertext'], shared_key)
-            else:
-                text = m.get('filename') or '[fil]'
-            filtered.append({
-                'id': m.get('id'),
-                'sender': m['sender'],
-                'recipient': m['recipient'],
-                'text': text,
-                'type': m['type'],
-                'timestamp': m['timestamp'],
-                'self_destruct_at': m.get('self_destruct_at'),
-                'filename': m.get('filename'),
-                'read': convert_to_bool(m.get('read'), False),
-            })
-        except InvalidTag:
-            filtered.append({
-                'id': m.get('id'),
-                'sender': m['sender'],
-                'recipient': m['recipient'],
-                'text': '[Kunne ikke dekryptere meldingen]',
-                'type': m.get('type', 'text'),
-                'timestamp': m['timestamp'],
-                'self_destruct_at': m.get('self_destruct_at'),
-                'filename': m.get('filename'),
-                'read': convert_to_bool(m.get('read'), False),
-            })
-        except Exception as e:
-            filtered.append({
-                'id': m.get('id'),
-                'sender': m['sender'],
-                'recipient': m['recipient'],
-                'text': f'[Dekrypteringsfeil: {str(e)}]',
-                'type': m.get('type', 'text'),
-                'timestamp': m['timestamp'],
-                'self_destruct_at': m.get('self_destruct_at'),
-                'filename': m.get('filename'),
-                'read': convert_to_bool(m.get('read'), False),
-            })
+        if m.get('type') == 'file':
+            text = m.get('filename') or '[fil]'
+        else:
+            text = m.get('ciphertext') or '[melding]'
+        filtered.append({
+            'id': m.get('id'),
+            'sender': m['sender'],
+            'recipient': m['recipient'],
+            'text': text,
+            'type': m.get('type'),
+            'timestamp': m['timestamp'],
+            'self_destruct_at': m.get('self_destruct_at'),
+            'filename': m.get('filename'),
+            'read': convert_to_bool(m.get('read'), False),
+        })
     filtered.sort(key=lambda x: x['timestamp'])
     return jsonify({'success': True, 'messages': filtered, 'pair_key': pk})
 
