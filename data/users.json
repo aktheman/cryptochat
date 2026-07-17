@@ -1,0 +1,34 @@
+{
+  "anna": {
+    "password_hash": "scrypt:32768:8:1$EpZtv0vrVp7NZuts$d99c1237de8f480cfd3812968ee6dd528650515909c092f14fec4e763efebf2a34c50c29358e24cfddfdef8cf121ba2de3fdd8383f6e24f2aace8e2995124309",
+    "created": "2026-07-16T20:58:03.779315"
+  },
+  "ola": {
+    "password_hash": "scrypt:32768:8:1$WHZAvw2SO9O6cXtG$1e3e3d94729736af48deac05eb9b898c1e2ad604f870be552db1174f554fcb28c7c0afddd03aabd033b118bbc3b25ca868029d608418e0aa0972502158af05c2",
+    "created": "2026-07-16T20:59:16.889170"
+  },
+  "testalice": {
+    "password_hash": "scrypt:32768:8:1$hj4c7NV1ERGO9hxC$e80b4791589aa8c09a4cd1d89d49764391f53c61efaf2a06d16821239ded5f7894837e2eeef71537185ea4460703bdd5098b654782209198e9670b3548f2b5b6",
+    "created": "2026-07-16T21:15:20.373610",
+    "theme": "dark",
+    "twofa_enabled": false,
+    "twofa_secret_hash": null,
+    "identity_keypair": {
+      "private": "sMngNgu9kCs-HMrA4Npms27ssmasbJ7aHloyD0MJc28=",
+      "public": "fOA6tL2nmuiraRbi6jUgDctx4GlZ3LWfEKp9-DQOO3s="
+    },
+    "notifications_enabled": true
+  },
+  "testbob": {
+    "password_hash": "scrypt:32768:8:1$8bouEmW5khRRRD0N$0d0c75c8d3859ef9c132aeddc98ff9032c9f3e84c11df5deb17333886052ba4529ad85d23da65c1f10e86e8b3df1e2b929419baee0b595862734181c0edce4ff",
+    "created": "2026-07-16T21:21:48.535216",
+    "theme": "dark",
+    "twofa_enabled": false,
+    "twofa_secret_hash": null,
+    "identity_keypair": {
+      "private": "CCpzJbX12GYkaxjDGItRQYIliZ2f8FBxldkI_EuKbGU=",
+      "public": "9LJA2c9LSzP_HttN47Hmtd9otiIJ2C9BsKCvlHYqXHE="
+    },
+    "notifications_enabled": true
+  }
+}

@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CryptoChat - Kryptert meldinger</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="auth-box">
+            <h1>CryptoChat</h1>
+            <p class="subtitle">Kryptert meldinger</p>
+            
+            <div class="tabs">
+                <button class="tab-btn active" onclick="showTab('login')">Logg inn</button>
+                <button class="tab-btn" onclick="showTab('register')">Registrer</button>
+            </div>
+
+            <form id="loginForm">
+                <input type="text" id="loginUsername" placeholder="Brukernavn" required autocomplete="username">
+                <input type="password" id="loginPassword" placeholder="Passord" required autocomplete="current-password">
+                <button type="submit" class="btn-primary">Logg inn</button>
+            </form>
+
+            <form id="registerForm" style="display: none;">
+                <input type="text" id="registerUsername" placeholder="Brukernavn (minst 3 tegn)" required autocomplete="username">
+                <input type="password" id="registerPassword" placeholder="Passord (minst 4 tegn)" required autocomplete="new-password">
+                <button type="submit" class="btn-primary">Registrer</button>
+            </form>
+
+            <div id="authMessage" class="message-box"></div>
+        </div>
+    </div>
+
+    <script>
+        function showTab(tab) {
+            document.getElementById('loginForm').style.display = tab === 'login' ? 'block' : 'none';
+            document.getElementById('registerForm').style.display = tab === 'register' ? 'block' : 'none';
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+        }
+
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const username = document.getElementById('loginUsername').value;
+            const password = document.getElementById('loginPassword').value;
+            const msg = document.getElementById('authMessage');
+
+            msg.textContent = 'Logger inn...';
+            msg.className = 'message-box loading';
+
+            const res = await fetch('/login', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({username, password})
+            });
+            const data = await res.json();
+            
+            if (data.success) {
+                msg.textContent = 'Logget inn!';
+                msg.className = 'message-box success';
+                setTimeout(() => window.location.href = '/', 500);
+            } else {
+                msg.textContent = data.message || 'Feil ved innlogging.';
+                msg.className = 'message-box error';
+            }
+        });
+
+        document.getElementById('registerForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const username = document.getElementById('registerUsername').value;
+            const password = document.getElementById('registerPassword').value;
+            const msg = document.getElementById('authMessage');
+
+            msg.textContent = 'Registrerer...';
+            msg.className = 'message-box loading';
+
+            const res = await fetch('/register', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({username, password})
+            });
+            const data = await res.json();
+
+            if (data.success) {
+                msg.textContent = 'Registrert! Omdirigerer...';
+                msg.className = 'message-box success';
+                setTimeout(() => window.location.href = '/', 500);
+            } else {
+                msg.textContent = data.message || 'Registrering feilet.';
+                msg.className = 'message-box error';
+            }
+        });
+    </script>
+</body>
+</html>
