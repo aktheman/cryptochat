@@ -384,8 +384,25 @@ def list_users():
     if 'username' not in session:
         return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
     users = load_json(USERS_FILE, {})
-    other_users = [u for u in users if u != session['username']]
+    other_users = []
+    for u in users:
+        if u == session['username']:
+            continue
+        entry = {'username': u}
+        pub = users[u].get('identity_public_key')
+        if pub:
+            entry['publicKey'] = pub
+        other_users.append(entry)
     return jsonify({'success': True, 'users': other_users})
+
+@app.route('/keys/<username>', methods=['GET'])
+def get_user_key_endpoint(username):
+    if 'username' not in session:
+        return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
+    user = get_user(username)
+    if not user:
+        return jsonify({'success': False, 'message': 'Bruker ikke funnet.'}), 404
+    return jsonify({'success': True, 'username': username, 'publicKey': user.get('identity_public_key')})
 
 # ──────────────────────────────────────────────
 # Messages 1:1
