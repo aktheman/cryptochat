@@ -159,18 +159,18 @@
       async function loadChat(user) {
         if (!user || activeChat?.type !== 'user' || activeChat?.target !== user) return;
         try {
+          messagesBox.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><p>Laster...</p></div>';
           const data = await loadJSON('/messages/' + encodeURIComponent(user));
           messagesBox.innerHTML = '';
           const list = data.messages || [];
           if (!list.length) {
             messagesBox.innerHTML = '<div class="empty-state"><div class="empty-icon">💬</div><p>Ingen meldinger</p></div>';
           } else {
-            list.forEach(m => {
-              appendMessage(m, user);
-            });
+            list.forEach(m => appendMessage(m, user));
           }
           await loadJSON('/read_receipts/' + encodeURIComponent(user), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).catch(() => {});
         } catch (e) {
+          messagesBox.innerHTML = '<div class="empty-state"><div class="empty-icon">⚠️</div><p>Kunne ikke hente meldinger</p></div>';
           toast('Kunne ikke hente meldinger');
         }
       }
@@ -188,6 +188,7 @@
       async function loadGroup(groupId) {
         if (!groupId || activeChat?.type !== 'group' || activeChat?.target !== groupId) return;
         try {
+          messagesBox.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><p>Laster...</p></div>';
           const data = await loadJSON('/groups/' + encodeURIComponent(groupId) + '/messages');
           messagesBox.innerHTML = '';
           const list = data.messages || [];
@@ -197,6 +198,7 @@
             list.forEach(m => appendMessage(m, groupId));
           }
         } catch (e) {
+          messagesBox.innerHTML = '<div class="empty-state"><div class="empty-icon">⚠️</div><p>Kunne ikke hente gruppemeldinger</p></div>';
           toast('Kunne ikke hente gruppemeldinger');
         }
       }
