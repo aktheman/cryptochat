@@ -225,6 +225,12 @@ def login_page():
         return redirect('/chat')
     return render_template('login.html')
 
+@app.route('/chat')
+def chat_page():
+    if 'username' not in session:
+        return redirect('/login')
+    return render_template('chat.html', username=session.get('username'))
+
 @app.route('/auth/login', methods=['POST'])
 def login():
     username = request.json.get('username', '').strip()
