@@ -135,7 +135,8 @@
           const item = document.createElement('div');
           item.className = 'item';
           item.dataset.groupId = g.id;
-          item.innerHTML = '<div class="name">' + escapeHtml(g.name) + '</div><div class="meta">' + escapeHtml((g.members || []).length + ' medlemmer') + '</div>';
+          const preview = groupLastMessages[g.id] || '';
+          item.innerHTML = '<div class="name">' + escapeHtml(g.name) + '</div><div class="preview">' + escapeHtml(preview || ((g.members || []).length + ' medlemmer')) + '</div>';
           item.addEventListener('click', () => { activateItem(groupsList, item); openGroup(g.id); });
           groupsList.appendChild(item);
         });
@@ -193,6 +194,8 @@
         if (input) input.focus();
       }
 
+      let groupLastMessages = {};
+
       async function loadGroup(groupId) {
         if (!groupId || activeChat?.type !== 'group' || activeChat?.target !== groupId) return;
         try {
@@ -204,6 +207,13 @@
             messagesBox.innerHTML = '<div class="empty-state"><div class="empty-icon">👥</div><p>Ingen gruppemeldinger</p></div>';
           } else {
             list.forEach(m => appendMessage(m, groupId));
+            const last = list[list.length - 1];
+            if (last) {
+              let text = '';
+              if (last.type === 'file') text = '📎 ' + (last.filename || 'fil');
+              else text = (last.sender ? last.sender + ': ' : '') + (last.text || '');
+              groupLastMessages[groupId] = text;
+            }
           }
         } catch (e) {
           messagesBox.innerHTML = '<div class="empty-state"><div class="empty-icon">⚠️</div><p>Kunne ikke hente gruppemeldinger</p></div>';

@@ -51,7 +51,8 @@ body.theme-light .toast { background:#ffffff; color:#111827; }
 .empty-icon { font-size:32px; margin-bottom:8px; }
 .loading { opacity:0.7; }
 
-.msg { max-width:75%; padding:10px 14px; border-radius:14px; word-wrap:break-word; display:flex; flex-direction:column; }
+.msg { max-width:75%; padding:10px 14px; border-radius:14px; word-wrap:break-word; display:flex; flex-direction:column; animation:fadeIn .35s ease both; }
+@keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
 .msg.sent { align-self:flex-end; background:#1c1030; border:1px solid #7a3bff; color:#f3f1ff; }
 .msg.received { align-self:flex-start; background:#16203a; border:1px solid #2d3a6a; color:#e9eaff; }
 .meta { display:flex; gap:8px; font-size:.72rem; color:#9ca3c7; margin-top:6px; }
