@@ -112,6 +112,8 @@
       let activeChat = null;
       let interval = null;
 
+      let lastMessages = {};
+
       function renderUsers() {
         usersList.innerHTML = '';
         const list = Array.isArray(users) ? users : [];
@@ -120,7 +122,8 @@
           const item = document.createElement('div');
           item.className = 'item';
           item.dataset.user = name;
-          item.innerHTML = '<div class="avatar-wrap"><div class="avatar">' + escapeHtml(name[0]) + '</div><div class="presence"></div></div><div class="name">' + escapeHtml(name) + '</div>';
+          const preview = lastMessages[name] || '';
+          item.innerHTML = '<div class="avatar-wrap"><div class="avatar">' + escapeHtml(name[0]) + '</div>' + (presence[name] ? '<div class="presence"></div>' : '') + '</div><div><div class="name">' + escapeHtml(name) + '</div><div class="preview">' + escapeHtml(preview) + '</div></div>';
           item.addEventListener('click', () => { activateItem(usersList, item); openChat(name); });
           usersList.appendChild(item);
         });
@@ -171,6 +174,7 @@
             list.forEach(m => appendMessage(m, user));
           }
           await loadJSON('/read_receipts/' + encodeURIComponent(user), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).catch(() => {});
+          if (list.length) lastMessages[user] = list[list.length - 1].text || '';
         } catch (e) {
           messagesBox.innerHTML = '<div class="empty-state"><div class="empty-icon">⚠️</div><p>Kunne ikke hente meldinger</p></div>';
           toast('Kunne ikke hente meldinger');

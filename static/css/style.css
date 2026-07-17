@@ -38,6 +38,7 @@ body.theme-light .toast { background:#ffffff; color:#111827; }
 .presence { position:absolute; bottom:-2px; right:-2px; width:10px; height:10px; border-radius:50%; background:#22c55e; border:2px solid #141a2b; }
 .item.offline .presence { background:#64748b; }
 .name { font-weight:600; color:#e9eaff; word-break:break-word; }
+.preview { font-size:.78rem; color:#8b8dab; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:180px; }
 
 .chat-main { flex:1; display:flex; flex-direction:column; min-height:0; background:#0f1826; }
 .chat-header { background:#0f1424; border-bottom:1px solid #151d30; padding:12px 16px; display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }
