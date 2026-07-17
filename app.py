@@ -419,7 +419,9 @@ def get_user_key_endpoint(username):
     user = get_user(username)
     if not user:
         return jsonify({'success': False, 'message': 'Bruker ikke funnet.'}), 404
-    return jsonify({'success': True, 'username': username, 'publicKey': user.get('identity_public_key')})
+    resp = jsonify({'success': True, 'username': username, 'publicKey': user.get('identity_public_key')})
+    resp.headers['Access-Control-Allow-Origin'] = '*'
+    return resp
 
 # ──────────────────────────────────────────────
 # Messages 1:1

@@ -11,7 +11,6 @@
     if (!res.ok) throw new Error(data.message || data.error || 'HTTP ' + res.status);
     return data;
   }
-
   function toast(message, type = 'error') {
     let container = document.getElementById('toasts');
     if (!container) {
@@ -35,8 +34,51 @@
     try { return new Date(iso).toLocaleString('no-NO'); } catch { return iso; }
   }
 
+  async function ensureIdentity() {
+    try {
+      await window.__CRYPTO__.getOrCreateIdentity();
+    } catch (e) {
+      console.warn('E2EE identity init failed', e);
+    }
+  }
+
+  async function getPeerPublicKeyPem(user) {
+    try {
+      const data = await loadJSON('/keys/' + encodeURIComponent(user));
+      return data.publicKey || null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  async function encryptForPeer(plaintext, peerPublicKeyPem) {
+    try {
+      const key = await window.__CRYPTO__.getSharedKey(peerPublicKeyPem);
+      const encrypted = await window.__CRYPTO__.encryptMessage(plaintext, key);
+      return encrypted.ciphertext;
+    } catch (e) {
+      console.warn('encryption failed', e);
+      return plaintext;
+    }
+  }
+
+  async function decryptFromPeer(ciphertext, peerPublicKeyPem) {
+    try {
+      if (!ciphertext || !peerPublicKeyPem) return ciphertext;
+      // frontend format: base64(iv).base64(ciphertext)
+      const parts = String(ciphertext).split('.');
+      if (parts.length !== 2) return ciphertext;
+      const key = await window.__CRYPTO__.getSharedKey(peerPublicKeyPem);
+      const decrypted = await window.__CRYPTO__.decryptMessage({ iv: parts[0], ciphertext: parts[1] }, key);
+      return decrypted;
+    } catch (e) {
+      return '[Kunne ikke dekryptere]';
+    }
+  }
+
   async function init() {
     try {
+      await ensureIdentity();
       const [usersRes, groupsRes] = await Promise.all([
         fetch('/users'),
         fetch('/groups')
@@ -177,6 +219,7 @@
         chatMeta.textContent = '';
         messagesBox.innerHTML = '';
         composer.style.display = 'flex';
+        activeChat.peerPublicKey = await getPeerPublicKeyPem(user);
         await loadChat(user);
         const input = document.getElementById('messageInput');
         if (input) input.focus();
@@ -243,6 +286,13 @@
 
       function appendMessage(message, chatId) {
         const isMe = message.sender === (window.__APP__?.username || '');
+        const renderedText = (() => {
+          if (!isMe && message.type === 'text' && activeChat?.type === 'user' && activeChat?.peerPublicKey) {
+            const text = decryptFromPeer(message.text, activeChat.peerPublicKey);
+            return text;
+          }
+          return message.text || '';
+        })();
         const item = document.createElement('div');
         item.className = 'msg ' + (isMe ? 'sent' : 'received');
         const fileBadge = message.type === 'file'
@@ -251,7 +301,7 @@
         item.innerHTML = (
           '<div class="meta"><span class="sender">' + escapeHtml(message.sender || '') + '</span><span class="time">' + escapeHtml(formatTime(message.timestamp)) + '</span></div>'
           + fileBadge
-          + '<div>' + escapeHtml(message.text || '') + '</div>'
+          + '<div>' + escapeHtml(renderedText) + '</div>'
           + '<div class="meta"><span class="read">' + (message.read === true ? 'Lest' : 'Ikke lest') + '</span></div>'
         );
         messagesBox.appendChild(item);
@@ -277,7 +327,11 @@
           } else {
             const url = activeChat.type === 'group' ? '/groups/' + encodeURIComponent(activeChat.target) + '/send' : '/send';
             const body = { ciphertext: text };
-            if (activeChat.type === 'user') body.recipient = activeChat.target;
+            if (activeChat.type === 'user') {
+              const ciphertext = await encryptForPeer(text, activeChat.peerPublicKey);
+              body.ciphertext = ciphertext;
+              body.recipient = activeChat.target;
+            }
             await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
           }
           input.value = '';
