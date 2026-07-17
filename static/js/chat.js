@@ -121,7 +121,7 @@
           item.className = 'item';
           item.dataset.user = name;
           item.innerHTML = '<div class="avatar">' + escapeHtml(name[0]) + '</div><div class="name">' + escapeHtml(name) + '</div>';
-          item.addEventListener('click', () => openChat(name));
+          item.addEventListener('click', () => { activateItem(usersList, item); openChat(name); });
           usersList.appendChild(item);
         });
       }
@@ -133,9 +133,15 @@
           item.className = 'item';
           item.dataset.groupId = g.id;
           item.innerHTML = `<div class="name">${escapeHtml(g.name)}</div>`;
-          item.addEventListener('click', () => openGroup(g.id));
+          item.addEventListener('click', () => { activateItem(groupsList, item); openGroup(g.id); });
           groupsList.appendChild(item);
         });
+      }
+
+      function activateItem(listContainer, item) {
+        const siblings = listContainer.querySelectorAll('.item');
+        siblings.forEach(el => el.classList.remove('active'));
+        item.classList.add('active');
       }
 
       renderUsers();

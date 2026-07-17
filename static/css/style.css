@@ -72,6 +72,7 @@ body.theme-light .toast { background:#ffffff; color:#111827; }
 .toast.success { background:#14301a; color:#a3ffb3; }
 
 .sidebar-footer { margin-top:auto; padding-top:10px; display:flex; flex-direction:column; gap:6px; }
+.item.active { outline:2px solid #5b5cf5; background:#1a2240; }
 
 @media (max-width: 860px) {
   .app-row { flex-direction:column; }
