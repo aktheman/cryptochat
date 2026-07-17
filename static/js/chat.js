@@ -148,6 +148,9 @@
       const groupsList = document.getElementById('groupsList');
       const chatTitle = document.getElementById('chatTitle');
       const chatMeta = document.getElementById('chatMeta');
+      const chatE2EEStatus = document.createElement('span');
+      chatE2EEStatus.className = 'e2ee-status';
+      chatMeta.appendChild(chatE2EEStatus);
 
       const messagesBox = document.getElementById('messages');
       const composer = document.getElementById('composer');
