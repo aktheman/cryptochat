@@ -347,15 +347,12 @@
 
   async function init() {
     if (!currentUser) { window.location.href = '/login'; return; }
-
+    buildApp();
     window.__APP__.qrWrap = el('div', { id: 'qrWrap', style: 'display:none' });
     document.body.appendChild(window.__APP__.qrWrap);
-
-    qs('#createGroupBtn').addEventListener('click', createGroup);
-
+    qs('#createGroupBtn')?.addEventListener('click', createGroup);
     await loadUsers();
     await loadGroups();
-
     startPolling();
   }
 
