@@ -1,4 +1,4 @@
-import os, json, base64, secrets, hashlib, time
+import os, json, base64, secrets, hashlib, time, re, collections
 from datetime import datetime, timedelta
 from pathlib import Path
 from functools import wraps
@@ -15,6 +15,7 @@ from cryptography.hazmat.primitives.asymmetric import x25519
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.exceptions import InvalidTag
 import pyotp
+from db import load_json, save_json, init_db, migrate_json_files
 
 app = Flask(__name__)
 secret_key_path = Path(os.environ.get('SECRET_KEY_FILE', '')) if os.environ.get('SECRET_KEY_FILE') else None
@@ -39,6 +40,38 @@ app.config.update(
     ALLOWED_EXTENSIONS={'png', 'jpg', 'jpeg', 'gif', 'webp', 'pdf', 'txt', 'zip'}
 )
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+init_db()
+migrate_json_files()
+
+@app.after_request
+def set_security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    response.headers['Permissions-Policy'] = 'camera=(), microphone=(self), geolocation=()'
+    if request.path.startswith('/static/'):
+        response.headers['Cache-Control'] = 'public, max-age=604800'
+    else:
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
+    return response
+
+RATE_LIMIT_STORE = collections.defaultdict(list)
+
+def rate_limit(max_requests=30, window_seconds=60):
+    def decorator(f):
+        @wraps(f)
+        def wrapper(*args, **kwargs):
+            username = session.get('username') or request.remote_addr
+            key = f"{f.__name__}:{username}"
+            now = time.time()
+            RATE_LIMIT_STORE[key] = [t for t in RATE_LIMIT_STORE[key] if now - t < window_seconds]
+            if len(RATE_LIMIT_STORE[key]) >= max_requests:
+                return jsonify({'success': False, 'message': 'For mange forespørsler. Vent litt.'}), 429
+            RATE_LIMIT_STORE[key].append(now)
+            return f(*args, **kwargs)
+        return wrapper
+    return decorator
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / 'data'
@@ -60,18 +93,6 @@ CALLS_FILE = DATA_DIR / 'calls.json'
 # ──────────────────────────────────────────────
 # Helpers
 # ──────────────────────────────────────────────
-def load_json(path, default):
-    if not path.exists():
-        return default
-    try:
-        with open(path, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except Exception:
-        return default
-
-def save_json(path, obj):
-    path.write_text(json.dumps(obj, ensure_ascii=False, indent=2), encoding='utf-8')
-
 def now_iso():
     return datetime.utcnow().isoformat() + 'Z'
 
@@ -146,6 +167,21 @@ def require_login(f):
             return redirect(url_for('login_page'))
         return f(*args, **kwargs)
     return wrapper
+
+def sanitize_input(text, max_length=5000):
+    if not isinstance(text, str):
+        return ''
+    return text.strip()[:max_length]
+
+def validate_username(username):
+    if not username or not isinstance(username, str):
+        return False
+    return bool(re.match(r'^[a-z0-9_]{3,30}$', username.strip().lower()))
+
+def validate_password(password):
+    if not password or not isinstance(password, str):
+        return False
+    return len(password) >= 6 and len(password) <= 128
 
 # ──────────────────────────────────────────────
 # X25519 + HKDF-SHA-256 for forward secrecy
@@ -248,16 +284,17 @@ def chat_page():
 # Auth
 # ──────────────────────────────────────────────
 @app.route('/auth/register', methods=['POST'])
+@rate_limit(max_requests=5, window_seconds=300)
 def register():
     data = request.get_json(force=True, silent=True) or {}
     username = (data.get('username') or '').strip().lower()
     password = data.get('password') or ''
     if not username or not password:
         return jsonify({'success': False, 'message': 'Brukernavn og passord er påkrevd.'}), 400
-    if len(username) < 3:
-        return jsonify({'success': False, 'message': 'Brukernavn må være minst 3 tegn.'}), 400
-    if len(password) < 6:
-        return jsonify({'success': False, 'message': 'Passordet må være minst 6 tegn.'}), 400
+    if not validate_username(username):
+        return jsonify({'success': False, 'message': 'Brukernavn kan bare inneholde bokstaver, tall og understreker (3-30 tegn).'}), 400
+    if not validate_password(password):
+        return jsonify({'success': False, 'message': 'Passordet må være mellom 6 og 128 tegn.'}), 400
     users = load_json(USERS_FILE, {})
     if username in users:
         return jsonify({'success': False, 'message': 'Brukernavnet er opptatt.'}), 400
@@ -284,6 +321,7 @@ def register():
     return jsonify({'success': True})
 
 @app.route('/auth/login', methods=['POST'])
+@rate_limit(max_requests=10, window_seconds=120)
 def login():
     data = request.get_json(force=True, silent=True) or {}
     username = (data.get('username') or '').strip().lower()
@@ -291,6 +329,8 @@ def login():
     twofa_code = (data.get('twofa_code') or '').strip()
     if not username or not password:
         return jsonify({'success': False, 'message': 'Brukernavn og passord er påkrevd.'}), 400
+    if not validate_password(password):
+        return jsonify({'success': False, 'message': 'Passordet må være mellom 6 og 128 tegn.'}), 400
     users = load_json(USERS_FILE, {})
     user = users.get(username)
     if not user or not check_password_hash(user.get('password_hash', ''), password):
@@ -480,8 +520,8 @@ def send_message():
     if 'username' not in session:
         return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
     data = request.get_json(force=True, silent=True) or {}
-    recipient = (data.get('recipient') or '').strip()
-    ciphertext = (data.get('ciphertext') or '').strip()
+    recipient = sanitize_input(data.get('recipient', ''), 30).lower()
+    ciphertext = sanitize_input(data.get('ciphertext', ''), 10000)
     mtype = data.get('type', 'text')
     filename = data.get('filename')
     self_destruct_minutes = data.get('self_destruct_minutes')
@@ -699,7 +739,7 @@ def send_group_message(group_id):
     if 'username' not in session:
         return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
     data = request.get_json(force=True, silent=True) or {}
-    ciphertext = (data.get('ciphertext') or '').strip()
+    ciphertext = sanitize_input(data.get('ciphertext', ''), 10000)
     mtype = data.get('type', 'text')
     filename = data.get('filename')
     if not ciphertext:
@@ -1152,4 +1192,4 @@ def uploaded_file(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename, as_attachment=False)
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=os.environ.get('FLASK_DEBUG', 'false').lower() in ('true', '1'), host='0.0.0.0', port=5000)

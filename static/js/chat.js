@@ -560,7 +560,7 @@
       async function loadChat(user) {
         if (!user || activeChat?.type !== 'user' || activeChat?.target !== user) return;
         try {
-          messagesBox.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><p>Laster...</p></div>';
+          messagesBox.innerHTML = '<div class="skeleton-loader"><div class="skeleton-msg skeleton-sent"></div><div class="skeleton-msg skeleton-received"></div><div class="skeleton-msg skeleton-sent short"></div></div>';
           const data = await loadJSON('/messages/' + encodeURIComponent(user));
           messagesBox.innerHTML = '';
           const list = data.messages || [];
@@ -610,7 +610,7 @@
       async function loadGroup(groupId) {
         if (!groupId || activeChat?.type !== 'group' || activeChat?.target !== groupId) return;
         try {
-          messagesBox.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><p>Laster...</p></div>';
+          messagesBox.innerHTML = '<div class="skeleton-loader"><div class="skeleton-msg skeleton-sent"></div><div class="skeleton-msg skeleton-received"></div><div class="skeleton-msg skeleton-sent short"></div></div>';
           const data = await loadJSON('/groups/' + encodeURIComponent(groupId) + '/messages');
           messagesBox.innerHTML = '';
           const list = data.messages || [];
@@ -831,10 +831,11 @@
           return message.text || '';
         })();
 
+        if (message.deleted) renderedText = '🗑️ [Melding slettet]';
+
         const item = document.createElement('div');
-        item.className = 'msg ' + (isMe ? 'sent' : 'received');
+        item.className = 'msg ' + (isMe ? 'sent' : 'received') + (message.deleted ? ' deleted-msg' : '') + (message.edited ? ' edited' : '');
         if (message.id) item.dataset.messageId = message.id;
-        if (message.deleted) item.classList.add('deleted');
 
         let fileHtml = '';
         if (message.type === 'file' && !message.deleted) {

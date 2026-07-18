@@ -1,5 +1,16 @@
-:8080 {
-  tls internal
-  reverse_proxy 127.0.0.1:5000
-  encode gzip
+{$DOMAIN:localhost} {
+    reverse_proxy cryptochat:5000
+
+    header {
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        Referrer-Policy strict-origin-when-cross-origin
+        -Server
+    }
+
+    encode gzip
+
+    log {
+        output stdout
+    }
 }

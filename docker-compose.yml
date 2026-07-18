@@ -3,11 +3,37 @@ services:
     build: .
     volumes:
       - cryptochat-data:/app/data
-      - ./secrets/secret_key:/run/secret_key:ro
     environment:
-      - SECRET_KEY_FILE=/run/secret_key
+      - SECRET_KEY_FILE=/run/secrets/secret_key
       - FLASK_ENV=production
+      - SESSION_COOKIE_SECURE=true
+    secrets:
+      - secret_key
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - cryptochat
     restart: unless-stopped
 
 volumes:
   cryptochat-data:
+  caddy-data:
+  caddy-config:
+
+secrets:
+  secret_key:
+    file: ./secrets/secret_key

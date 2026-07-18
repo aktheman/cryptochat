@@ -5,6 +5,30 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>CryptoChat</title>
   <link rel="stylesheet" href="/static/css/style.css" />
+  <style>
+.page { min-height:100vh; display:flex; align-items:center; justify-content:center; background:#0b0c12; }
+.container-center { width:100%; max-width:400px; padding:24px; }
+.auth-card { background:#111322; border:1px solid #151d30; border-radius:16px; padding:32px 28px; }
+.brand { text-align:center; margin-bottom:24px; }
+.brand h1 { margin:0; font-size:1.8rem; color:#cf6fef; }
+.subtitle { color:#7c7e9a; font-size:.9rem; margin-top:4px; }
+.tabs { display:flex; gap:0; margin-bottom:20px; background:#0a0c18; border-radius:10px; overflow:hidden; }
+.tab-btn { flex:1; padding:10px; border:none; background:transparent; color:#7c7e9a; font-weight:600; cursor:pointer; transition:all .2s; }
+.tab-btn.active { background:#1c1030; color:#f3f1ff; }
+.field { margin-bottom:14px; }
+.field label { display:block; font-size:.8rem; color:#7c7e9a; margin-bottom:4px; }
+.field input { width:100%; padding:10px 12px; background:#0a0c18; color:#f0f0ff; border:1px solid #232540; border-radius:10px; font-size:.95rem; }
+.field input:focus { outline:none; border-color:#5b5cf5; }
+.actions { margin-top:20px; }
+.btn { display:inline-flex; align-items:center; justify-content:center; width:100%; padding:12px; border-radius:10px; border:none; cursor:pointer; font-weight:600; font-size:.95rem; transition:all .15s; }
+.btn-primary { background:linear-gradient(135deg,#7a3bff,#cf6fef); color:#fff; }
+.btn-primary:hover { opacity:.9; transform:translateY(-1px); }
+.btn-primary:disabled { opacity:.5; cursor:not-allowed; transform:none; }
+.feedback { display:none; margin-top:12px; padding:10px; border-radius:8px; font-size:.85rem; text-align:center; }
+.feedback.error { background:#3d1212; color:#ffb3b3; }
+.feedback.success { background:#14301a; color:#a3ffb3; }
+.feedback.loading { background:#1a1c30; color:#cfcfef; }
+  </style>
 </head>
 <body>
   <main class="page">
