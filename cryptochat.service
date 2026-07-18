@@ -9,7 +9,7 @@ Group=aktheman
 WorkingDirectory=/home/aktheman/cryptochat
 Environment="SECRET_KEY_FILE=/home/aktheman/cryptochat/secrets/secret_key"
 Environment="FLASK_ENV=production"
-ExecStart=/home/aktheman/cryptochat/.venv/bin/gunicorn --bind 127.0.0.1:5000 --workers 2 app:app
+ExecStart=/home/aktheman/cryptochat/.venv/bin/gunicorn --bind 0.0.0.0:5000 --workers 2 app:app
 Restart=on-failure
 RestartSec=5
 

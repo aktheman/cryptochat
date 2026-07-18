@@ -101,3 +101,140 @@ body.theme-light .toast { background:#ffffff; color:#111827; }
   .btn, .input-text { min-height:44px; }
   .preview { max-width:140px; }
 }
+
+/* ── Typing indicator ── */
+.typing-indicator { display:flex; align-items:center; gap:6px; padding:4px 0; font-size:.8rem; color:#7c7e9a; }
+.typing-dots { display:flex; gap:3px; }
+.typing-dots span { width:6px; height:6px; border-radius:50%; background:#7a3bff; animation:typingBounce 1.2s infinite ease-in-out; }
+.typing-dots span:nth-child(2) { animation-delay:.2s; }
+.typing-dots span:nth-child(3) { animation-delay:.4s; }
+@keyframes typingBounce { 0%,60%,100% { transform:translateY(0); opacity:.4; } 30% { transform:translateY(-4px); opacity:1; } }
+
+/* ── Reactions ── */
+.msg-actions { display:flex; gap:4px; margin-top:4px; opacity:0; transition:opacity .15s; }
+.msg:hover .msg-actions { opacity:1; }
+.react-btn { background:transparent; border:none; cursor:pointer; font-size:.85rem; padding:2px 4px; border-radius:6px; color:#9ca3c7; }
+.react-btn:hover { background:#1a2240; }
+.reactions-row { display:flex; flex-wrap:wrap; gap:4px; margin-top:4px; }
+.reaction-badge { display:inline-flex; align-items:center; gap:3px; background:#1a1c30; border:1px solid #2a2d48; padding:2px 6px; border-radius:8px; font-size:.75rem; cursor:pointer; transition:background .15s; }
+.reaction-badge:hover { background:#2a2d58; }
+.reaction-badge.active { border-color:#7a3bff; background:#1c1030; }
+.reaction-badge .count { color:#9ca3c7; font-size:.7rem; }
+.reaction-picker { position:absolute; bottom:100%; right:0; background:#111322; border:1px solid #2a2d48; border-radius:10px; padding:6px; display:flex; gap:2px; z-index:100; box-shadow:0 4px 20px #0008; }
+.reaction-picker button { background:transparent; border:none; font-size:1.2rem; padding:4px 6px; border-radius:6px; cursor:pointer; transition:background .1s; }
+.reaction-picker button:hover { background:#1a2240; }
+
+/* ── Edit/Delete buttons ── */
+.msg.sent .msg-actions { justify-content:flex-end; }
+.msg-actions .action-btn { background:transparent; border:none; cursor:pointer; font-size:.75rem; padding:2px 5px; border-radius:4px; color:#7c7e9a; }
+.msg-actions .action-btn:hover { background:#2a2d48; color:#e9eaff; }
+.edited-tag { font-size:.65rem; color:#7c7e9a; font-style:italic; }
+.deleted-msg { opacity:.5; font-style:italic; }
+
+/* ── Drag & drop ── */
+.drop-overlay { position:fixed; inset:0; background:rgba(122,59,255,.15); border:3px dashed #7a3bff; z-index:9999; display:flex; align-items:center; justify-content:center; pointer-events:none; opacity:0; transition:opacity .2s; }
+.drop-overlay.active { opacity:1; }
+.drop-overlay-text { background:#111322; color:#cf6fef; padding:16px 24px; border-radius:12px; font-size:1.1rem; font-weight:600; }
+
+/* ── Image preview ── */
+.msg img.preview { max-width:280px; max-height:200px; border-radius:8px; margin-top:6px; cursor:pointer; }
+.composer-preview { position:relative; display:inline-block; margin-bottom:4px; }
+.composer-preview img { max-height:80px; max-width:120px; border-radius:8px; border:1px solid #2a2d48; }
+.composer-preview .remove-preview { position:absolute; top:-6px; right:-6px; background:#3d1212; color:#ffb3b3; border:none; border-radius:50%; width:20px; height:20px; cursor:pointer; font-size:.7rem; display:flex; align-items:center; justify-content:center; }
+
+/* ── Profile modal ── */
+.modal-overlay { position:fixed; inset:0; background:#0008; z-index:10000; display:flex; align-items:center; justify-content:center; }
+.modal { background:#111322; border:1px solid #151d30; border-radius:16px; padding:24px; max-width:400px; width:90%; max-height:80vh; overflow:auto; }
+.modal h2 { margin:0 0 16px; color:#cf6fef; font-size:1.1rem; }
+.modal .field { margin-bottom:12px; }
+.modal .field label { display:block; font-size:.8rem; color:#7c7e9a; margin-bottom:4px; }
+.modal .field input, .modal .field textarea { width:100%; padding:8px 10px; background:#0a0c18; color:#f0f0ff; border:1px solid #232540; border-radius:8px; }
+.modal .field textarea { resize:vertical; min-height:60px; }
+.modal .avatar-upload { display:flex; align-items:center; gap:12px; margin-bottom:12px; }
+.modal .avatar-upload .avatar-large { width:64px; height:64px; border-radius:50%; background:linear-gradient(135deg,#7a3bff,#cf6fef); display:flex; align-items:center; justify-content:center; font-size:1.5rem; font-weight:700; color:#fff; overflow:hidden; flex-shrink:0; }
+.modal .avatar-upload .avatar-large img { width:100%; height:100%; object-fit:cover; }
+.modal .modal-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:16px; }
+
+/* ── Theme presets ── */
+.theme-picker { display:flex; gap:6px; align-items:center; }
+.theme-swatch { width:22px; height:22px; border-radius:50%; border:2px solid transparent; cursor:pointer; transition:border-color .15s; }
+.theme-swatch:hover, .theme-swatch.active { border-color:#fff; }
+
+/* Theme: Midnight Blue */
+body.theme-midnight { background:#0a1628; color:#d4e0f0; }
+body.theme-midnight .sidebar, body.theme-midnight .header, body.theme-midnight .composer, body.theme-midnight .chat-header { background:#0c1a30; border-color:#1a2d50; }
+body.theme-midnight .item { background:#0e1f3d; border-color:#1a3060; }
+body.theme-midnight .item:hover, body.theme-midnight .item.active { background:#152a50; border-color:#3a7bff; }
+body.theme-midnight .msg.sent { background:#152a50; border-color:#3a7bff; }
+body.theme-midnight .msg.received { background:#0e1f3d; border-color:#1a3060; }
+
+/* Theme: Forest */
+body.theme-forest { background:#0d1a12; color:#d4e8d4; }
+body.theme-forest .sidebar, body.theme-forest .header, body.theme-forest .composer, body.theme-forest .chat-header { background:#0f1f14; border-color:#1a3020; }
+body.theme-forest .item { background:#112218; border-color:#1a3020; }
+body.theme-forest .item:hover, body.theme-forest .item.active { background:#1a3020; border-color:#22c55e; }
+body.theme-forest .msg.sent { background:#1a3020; border-color:#22c55e; }
+body.theme-forest .msg.received { background:#112218; border-color:#1a3020; }
+body.theme-forest .brand h1 { color:#22c55e; }
+
+/* Theme: Sunset */
+body.theme-sunset { background:#1a0f0a; color:#f0d4c4; }
+body.theme-sunset .sidebar, body.theme-sunset .header, body.theme-sunset .composer, body.theme-sunset .chat-header { background:#1f1210; border-color:#3a2018; }
+body.theme-sunset .item { background:#241510; border-color:#3a2018; }
+body.theme-sunset .item:hover, body.theme-sunset .item.active { background:#3a2018; border-color:#f97316; }
+body.theme-sunset .msg.sent { background:#3a2018; border-color:#f97316; }
+body.theme-sunset .msg.received { background:#241510; border-color:#3a2018; }
+body.theme-sunset .brand h1 { color:#f97316; }
+
+/* Theme: Nord */
+body.theme-nord { background:#2e3440; color:#eceff4; }
+body.theme-nord .sidebar, body.theme-nord .header, body.theme-nord .composer, body.theme-nord .chat-header { background:#3b4252; border-color:#434c5e; }
+body.theme-nord .item { background:#434c5e; border-color:#4c566a; }
+body.theme-nord .item:hover, body.theme-nord .item.active { background:#4c566a; border-color:#88c0d0; }
+body.theme-nord .msg.sent { background:#434c5e; border-color:#88c0d0; }
+body.theme-nord .msg.received { background:#3b4252; border-color:#4c566a; }
+body.theme-nord .brand h1 { color:#88c0d0; }
+
+/* ── Light theme fixes for new elements ── */
+body.theme-light .typing-indicator { color:#6b7280; }
+body.theme-light .typing-dots span { background:#7c3aed; }
+body.theme-light .reaction-badge { background:#f3f4f6; border-color:#e5e7eb; }
+body.theme-light .reaction-picker { background:#ffffff; border-color:#e5e7eb; }
+body.theme-light .modal { background:#ffffff; border-color:#e5e7eb; }
+body.theme-light .modal .field input, body.theme-light .modal .field textarea { background:#f9fafb; color:#111827; border-color:#d1d5db; }
+body.theme-light .drop-overlay { background:rgba(124,58,237,.1); }
+body.theme-light .drop-overlay-text { background:#ffffff; color:#7c3aed; }
+
+/* ── WebRTC Call overlay ── */
+.call-overlay { position:fixed; inset:0; background:#0b0c12ee; z-index:20000; display:flex; align-items:center; justify-content:center; animation:fadeIn .3s ease; }
+.call-container { background:#111322; border:1px solid #151d30; border-radius:20px; padding:20px; width:90%; max-width:800px; display:flex; flex-direction:column; gap:12px; }
+.call-header { display:flex; justify-content:space-between; align-items:center; padding:0 8px; }
+.call-status { color:#22c55e; font-size:.85rem; font-weight:600; }
+.call-name { color:#f3f1ff; font-size:1.1rem; font-weight:700; }
+.call-videos { position:relative; width:100%; aspect-ratio:16/9; background:#000; border-radius:12px; overflow:hidden; min-height:200px; }
+.call-video { position:absolute; top:0; left:0; width:100%; height:100%; object-fit:cover; }
+.call-video.local { width:25%; height:auto; bottom:12px; left:auto; right:12px; top:auto; border-radius:10px; border:2px solid #7a3bff; z-index:1; }
+.call-video.remote { width:100%; height:100%; }
+.call-actions { display:flex; justify-content:center; gap:12px; padding:8px 0; }
+.call-btn { width:52px; height:52px; border-radius:50%; border:none; font-size:1.4rem; cursor:pointer; background:#1a2240; color:#f3f1ff; transition:background .15s, transform .1s; display:flex; align-items:center; justify-content:center; }
+.call-btn:hover { background:#2a2d58; transform:scale(1.05); }
+.call-hangup { background:#dc2626 !important; }
+.call-hangup:hover { background:#b91c1c !important; }
+
+/* Voice-only call (no video) */
+.call-videos.voice-only { background:linear-gradient(135deg,#1c1030,#0f1826); display:flex; align-items:center; justify-content:center; }
+.call-videos.voice-only .call-video { display:none; }
+.call-avatar-large { width:96px; height:96px; border-radius:50%; background:linear-gradient(135deg,#7a3bff,#cf6fef); display:flex; align-items:center; justify-content:center; font-size:2.5rem; font-weight:700; color:#fff; animation:pulse 2s infinite; }
+@keyframes pulse { 0%,100% { box-shadow:0 0 0 0 rgba(122,59,255,.4); } 50% { box-shadow:0 0 0 20px rgba(122,59,255,0); } }
+
+/* Call button styling */
+.btn-call { background:#1c1030; border-color:#7a3bff; color:#f3f1ff; }
+.btn-call:hover { background:#2a1845; }
+
+/* ── Light theme call styles ── */
+body.theme-light .call-overlay { background:#f4f6f9ee; }
+body.theme-light .call-container { background:#ffffff; border-color:#e5e7eb; }
+body.theme-light .call-name { color:#111827; }
+body.theme-light .call-status { color:#16a34a; }
+body.theme-light .call-btn { background:#f3f4f6; color:#374151; }
+body.theme-light .call-btn:hover { background:#e5e7eb; }

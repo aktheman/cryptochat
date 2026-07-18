@@ -47,7 +47,7 @@ window.__CRYPTO__ = (() => {
   }
 
   async function importPublicKey(pem) {
-    const binary = decodePem(pem.replace(PIVATE_HEADER, PUBLIC_HEADER).replace(PEM_FOOTER, PUBLIC_FOOTER));
+    const binary = decodePem(pem.replace(PEM_HEADER, PUBLIC_HEADER).replace(PEM_FOOTER, PUBLIC_FOOTER));
     return window.crypto.subtle.importKey('spki', binary, { name: 'ECDH', namedCurve: 'P-256' }, true, []);
   }
 

@@ -1,5 +1,5 @@
-chat.din-domene.no {
+:8080 {
+  tls internal
   reverse_proxy 127.0.0.1:5000
   encode gzip
-  # Requires port 80 and 443 open, and DNS pointing to this host
 }

@@ -28,7 +28,7 @@ else:
         raise SystemExit('SECRET_KEY eller SECRET_KEY_FILE må settes i produksjon')
 app.config.update(
     SESSION_TIMEOUT_MINUTES=30,
-    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_SECURE=bool(os.environ.get('SESSION_COOKIE_SECURE', 'false').lower() in ('true', '1', 'yes')),
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE='Lax',
     PERMANENT_SESSION_LIFETIME=timedelta(minutes=30),
@@ -53,6 +53,9 @@ NOTIFICATIONS_FILE = DATA_DIR / 'notifications.json'
 USER_PRESENCE_FILE = DATA_DIR / 'presence.json'
 READ_RECEIPTS_FILE = DATA_DIR / 'read_receipts.json'
 SESSIONS_FILE = DATA_DIR / 'sessions.json'
+REACTIONS_FILE = DATA_DIR / 'reactions.json'
+TYPING_FILE = DATA_DIR / 'typing.json'
+CALLS_FILE = DATA_DIR / 'calls.json'
 
 # ──────────────────────────────────────────────
 # Helpers
@@ -387,7 +390,8 @@ def set_theme():
     username = session.get('username')
     if not username:
         return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
-    theme = request.json.get('theme', 'dark')
+    data = request.get_json(force=True, silent=True) or {}
+    theme = data.get('theme', 'dark')
     users = load_json(USERS_FILE, {})
     users[username]['theme'] = theme
     save_json(USERS_FILE, users)
@@ -462,8 +466,13 @@ def get_messages(other_user):
             'self_destruct_at': m.get('self_destruct_at'),
             'filename': m.get('filename'),
             'read': convert_to_bool(m.get('read'), False),
+            'edited': convert_to_bool(m.get('edited'), False),
+            'deleted': convert_to_bool(m.get('deleted'), False),
         })
     filtered.sort(key=lambda x: x['timestamp'])
+    all_reactions = load_json(REACTIONS_FILE, {})
+    for f in filtered:
+        f['reactions'] = all_reactions.get(f['id'], {})
     return jsonify({'success': True, 'messages': filtered, 'pair_key': pk})
 
 @app.route('/send', methods=['POST'])
@@ -651,6 +660,8 @@ def get_group_messages(group_id):
                 'type': m.get('type'),
                 'timestamp': m['timestamp'],
                 'filename': m.get('filename'),
+                'edited': convert_to_bool(m.get('edited'), False),
+                'deleted': convert_to_bool(m.get('deleted'), False),
             })
         except Exception as e:
             filtered.append({
@@ -660,8 +671,13 @@ def get_group_messages(group_id):
                 'type': m.get('type', 'text'),
                 'timestamp': m['timestamp'],
                 'filename': m.get('filename'),
+                'edited': convert_to_bool(m.get('edited'), False),
+                'deleted': convert_to_bool(m.get('deleted'), False),
             })
     filtered.sort(key=lambda x: x['timestamp'])
+    all_reactions = load_json(REACTIONS_FILE, {})
+    for f in filtered:
+        f['reactions'] = all_reactions.get(f['id'], {})
     return jsonify({'success': True, 'messages': filtered})
 
 @app.route('/groups/<group_id>', methods=['DELETE'])
@@ -705,6 +721,364 @@ def send_group_message(group_id):
     })
     save_json(MESSAGES_FILE, messages)
     return jsonify({'success': True, 'message': 'Melding sendt.'})
+
+# ──────────────────────────────────────────────
+# Typing indicators
+# ──────────────────────────────────────────────
+@app.route('/typing', methods=['POST'])
+def set_typing():
+    username = session.get('username')
+    if not username:
+        return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    target = (data.get('target') or '').strip()
+    is_typing = convert_to_bool(data.get('typing', False), False)
+    if not target:
+        return jsonify({'success': False, 'message': 'Manglende mottaker.'}), 400
+    typing = load_json(TYPING_FILE, {})
+    if is_typing:
+        typing.setdefault(username, {})[target] = now_iso()
+    else:
+        typing.get(username, {}).pop(target, None)
+    save_json(TYPING_FILE, typing)
+    return jsonify({'success': True})
+
+@app.route('/typing/<target>', methods=['GET'])
+def get_typing(target):
+    username = session.get('username')
+    if not username:
+        return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
+    typing = load_json(TYPING_FILE, {})
+    typers = []
+    for user, targets in typing.items():
+        if user == username:
+            continue
+        ts = targets.get(target)
+        if ts:
+            parsed = parse_iso(ts)
+            if parsed and (datetime.utcnow() - parsed.replace(tzinfo=None)) < timedelta(seconds=8):
+                typers.append(user)
+    return jsonify({'success': True, 'typers': typers})
+
+# ──────────────────────────────────────────────
+# Reactions
+# ──────────────────────────────────────────────
+@app.route('/reactions', methods=['POST'])
+def add_reaction():
+    username = session.get('username')
+    if not username:
+        return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    message_id = (data.get('message_id') or '').strip()
+    emoji = (data.get('emoji') or '').strip()
+    if not message_id or not emoji:
+        return jsonify({'success': False, 'message': 'Manglende felt.'}), 400
+    reactions = load_json(REACTIONS_FILE, {})
+    msg_reactions = reactions.get(message_id, {})
+    user_reactions = msg_reactions.get(username, [])
+    if emoji in user_reactions:
+        user_reactions.remove(emoji)
+    else:
+        user_reactions.append(emoji)
+    if user_reactions:
+        msg_reactions[username] = user_reactions
+    else:
+        msg_reactions.pop(username, None)
+    if msg_reactions:
+        reactions[message_id] = msg_reactions
+    else:
+        reactions.pop(message_id, None)
+    save_json(REACTIONS_FILE, reactions)
+    return jsonify({'success': True, 'reactions': msg_reactions})
+
+@app.route('/reactions/<message_id>', methods=['GET'])
+def get_reactions(message_id):
+    username = session.get('username')
+    if not username:
+        return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
+    reactions = load_json(REACTIONS_FILE, {})
+    return jsonify({'success': True, 'reactions': reactions.get(message_id, {})})
+
+# ──────────────────────────────────────────────
+# Edit / Delete messages
+# ──────────────────────────────────────────────
+@app.route('/messages/<message_id>/edit', methods=['PUT'])
+def edit_message(message_id):
+    username = session.get('username')
+    if not username:
+        return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    new_ciphertext = (data.get('ciphertext') or '').strip()
+    if not new_ciphertext:
+        return jsonify({'success': False, 'message': 'Manglende innhold.'}), 400
+    messages = load_json(MESSAGES_FILE, [])
+    for m in messages:
+        if m.get('id') == message_id and m.get('sender') == username:
+            m['ciphertext'] = new_ciphertext
+            m['edited'] = True
+            m['edited_at'] = now_iso()
+            save_json(MESSAGES_FILE, messages)
+            return jsonify({'success': True})
+    return jsonify({'success': False, 'message': 'Melding ikke funnet.'}), 404
+
+@app.route('/messages/<message_id>', methods=['DELETE'])
+def delete_message(message_id):
+    username = session.get('username')
+    if not username:
+        return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
+    messages = load_json(MESSAGES_FILE, [])
+    for m in messages:
+        if m.get('id') == message_id and m.get('sender') == username:
+            m['deleted'] = True
+            m['ciphertext'] = ''
+            m['type'] = 'deleted'
+            save_json(MESSAGES_FILE, messages)
+            return jsonify({'success': True})
+    return jsonify({'success': False, 'message': 'Melding ikke funnet.'}), 404
+
+# ──────────────────────────────────────────────
+# User profiles
+# ──────────────────────────────────────────────
+@app.route('/profile', methods=['GET'])
+def get_profile():
+    username = session.get('username')
+    if not username:
+        return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
+    users = load_json(USERS_FILE, {})
+    user = users.get(username, {})
+    return jsonify({
+        'success': True,
+        'username': username,
+        'display_name': user.get('display_name', username),
+        'avatar': user.get('avatar', ''),
+        'bio': user.get('bio', ''),
+    })
+
+@app.route('/profile', methods=['POST'])
+def update_profile():
+    username = session.get('username')
+    if not username:
+        return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    users = load_json(USERS_FILE, {})
+    if 'display_name' in data:
+        users[username]['display_name'] = (data['display_name'] or '').strip()[:30]
+    if 'bio' in data:
+        users[username]['bio'] = (data['bio'] or '').strip()[:150]
+    if 'avatar' in data:
+        users[username]['avatar'] = data['avatar']
+    save_json(USERS_FILE, users)
+    return jsonify({'success': True})
+
+@app.route('/users/all', methods=['GET'])
+def list_users_with_profiles():
+    if 'username' not in session:
+        return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
+    users = load_json(USERS_FILE, {})
+    result = []
+    for u in users:
+        if u == session['username']:
+            continue
+        entry = {
+            'username': u,
+            'display_name': users[u].get('display_name', u),
+            'avatar': users[u].get('avatar', ''),
+            'bio': users[u].get('bio', ''),
+        }
+        pub = users[u].get('identity_public_key')
+        if pub:
+            entry['publicKey'] = pub
+        result.append(entry)
+    return jsonify({'success': True, 'users': result})
+
+# ──────────────────────────────────────────────
+# WebRTC Calls (signaling via polling)
+# ──────────────────────────────────────────────
+@app.route('/calls/init', methods=['POST'])
+def init_call():
+    username = session.get('username')
+    if not username:
+        return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    target = (data.get('target') or '').strip()
+    call_type = data.get('type', 'video')
+    if not target:
+        return jsonify({'success': False, 'message': 'Manglende mottaker.'}), 400
+    calls = load_json(CALLS_FILE, {})
+    for cid, c in calls.items():
+        if c.get('status') in ('ringing', 'active') and (
+            (c.get('caller') == username and c.get('callee') == target) or
+            (c.get('caller') == target and c.get('callee') == username)
+        ):
+            return jsonify({'success': False, 'message': 'Allerede i samtale.'}), 409
+    call_id = hashlib.sha256(f"{username}{target}{datetime.utcnow().isoformat()}".encode()).hexdigest()[:16]
+    calls[call_id] = {
+        'id': call_id,
+        'caller': username,
+        'callee': target,
+        'type': call_type,
+        'status': 'ringing',
+        'created': now_iso(),
+        'offer_sdp': None,
+        'answer_sdp': None,
+        'ice_candidates': [],
+    }
+    save_json(CALLS_FILE, calls)
+    return jsonify({'success': True, 'call_id': call_id})
+
+@app.route('/calls/incoming', methods=['GET'])
+def get_incoming_call():
+    username = session.get('username')
+    if not username:
+        return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
+    calls = load_json(CALLS_FILE, {})
+    for cid, c in calls.items():
+        if c.get('callee') == username and c.get('status') == 'ringing':
+            return jsonify({
+                'success': True,
+                'call': {
+                    'id': cid,
+                    'caller': c['caller'],
+                    'type': c.get('type', 'video'),
+                    'created': c.get('created'),
+                }
+            })
+    return jsonify({'success': True, 'call': None})
+
+@app.route('/calls/offer', methods=['POST'])
+def send_offer():
+    username = session.get('username')
+    if not username:
+        return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    call_id = (data.get('call_id') or '').strip()
+    sdp = data.get('sdp')
+    if not call_id or not sdp:
+        return jsonify({'success': False, 'message': 'Manglende felt.'}), 400
+    calls = load_json(CALLS_FILE, {})
+    call = calls.get(call_id)
+    if not call or call.get('caller') != username:
+        return jsonify({'success': False, 'message': 'Ugyldig samtale.'}), 404
+    call['offer_sdp'] = sdp
+    save_json(CALLS_FILE, calls)
+    return jsonify({'success': True})
+
+@app.route('/calls/offer/<call_id>', methods=['GET'])
+def get_offer(call_id):
+    username = session.get('username')
+    if not username:
+        return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
+    calls = load_json(CALLS_FILE, {})
+    call = calls.get(call_id)
+    if not call or call.get('callee') != username:
+        return jsonify({'success': True, 'sdp': None})
+    return jsonify({'success': True, 'sdp': call.get('offer_sdp'), 'caller': call.get('caller'), 'type': call.get('type', 'video')})
+
+@app.route('/calls/accept', methods=['POST'])
+def accept_call():
+    username = session.get('username')
+    if not username:
+        return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    call_id = (data.get('call_id') or '').strip()
+    sdp = data.get('sdp')
+    if not call_id or not sdp:
+        return jsonify({'success': False, 'message': 'Manglende felt.'}), 400
+    calls = load_json(CALLS_FILE, {})
+    call = calls.get(call_id)
+    if not call or call.get('callee') != username:
+        return jsonify({'success': False, 'message': 'Ugyldig samtale.'}), 404
+    call['answer_sdp'] = sdp
+    call['status'] = 'active'
+    save_json(CALLS_FILE, calls)
+    return jsonify({'success': True})
+
+@app.route('/calls/answer/<call_id>', methods=['GET'])
+def get_answer(call_id):
+    username = session.get('username')
+    if not username:
+        return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
+    calls = load_json(CALLS_FILE, {})
+    call = calls.get(call_id)
+    if not call or call.get('caller') != username:
+        return jsonify({'success': True, 'sdp': None, 'status': None})
+    return jsonify({'success': True, 'sdp': call.get('answer_sdp'), 'status': call.get('status')})
+
+@app.route('/calls/ice', methods=['POST'])
+def send_ice():
+    username = session.get('username')
+    if not username:
+        return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    call_id = (data.get('call_id') or '').strip()
+    candidate = data.get('candidate')
+    if not call_id or not candidate:
+        return jsonify({'success': False, 'message': 'Manglende felt.'}), 400
+    calls = load_json(CALLS_FILE, {})
+    call = calls.get(call_id)
+    if not call:
+        return jsonify({'success': False, 'message': 'Ugyldig samtale.'}), 404
+    call.setdefault('ice_candidates', []).append({'sender': username, 'candidate': candidate})
+    save_json(CALLS_FILE, calls)
+    return jsonify({'success': True})
+
+@app.route('/calls/ice/<call_id>', methods=['GET'])
+def get_ice(call_id):
+    username = session.get('username')
+    if not username:
+        return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
+    calls = load_json(CALLS_FILE, {})
+    call = calls.get(call_id)
+    if not call:
+        return jsonify({'success': True, 'candidates': []})
+    candidates = [c['candidate'] for c in call.get('ice_candidates', []) if c.get('sender') != username]
+    return jsonify({'success': True, 'candidates': candidates})
+
+@app.route('/calls/hangup', methods=['POST'])
+def hangup_call():
+    username = session.get('username')
+    if not username:
+        return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    call_id = (data.get('call_id') or '').strip()
+    if not call_id:
+        return jsonify({'success': False, 'message': 'Manglende samtale-ID.'}), 400
+    calls = load_json(CALLS_FILE, {})
+    call = calls.get(call_id)
+    if call:
+        call['status'] = 'ended'
+        call['ended_at'] = now_iso()
+        save_json(CALLS_FILE, calls)
+    return jsonify({'success': True})
+
+@app.route('/calls/status/<call_id>', methods=['GET'])
+def call_status(call_id):
+    username = session.get('username')
+    if not username:
+        return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
+    calls = load_json(CALLS_FILE, {})
+    call = calls.get(call_id)
+    if not call:
+        return jsonify({'success': True, 'status': 'ended'})
+    return jsonify({'success': True, 'status': call.get('status', 'ended')})
+
+@app.route('/calls/end-stale', methods=['POST'])
+def end_stale_calls():
+    username = session.get('username')
+    if not username:
+        return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
+    calls = load_json(CALLS_FILE, {})
+    now = datetime.utcnow()
+    for cid, c in list(calls.items()):
+        if c.get('status') == 'ringing':
+            created = parse_iso(c.get('created'))
+            if created:
+                if created.tzinfo:
+                    created = created.replace(tzinfo=None)
+                if (now - created) > timedelta(seconds=30):
+                    c['status'] = 'ended'
+    save_json(CALLS_FILE, calls)
+    return jsonify({'success': True})
 
 # ──────────────────────────────────────────────
 # Key export/import
