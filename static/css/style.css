@@ -263,3 +263,4 @@ body.theme-light .skeleton-msg { background:linear-gradient(90deg,#e5e7eb 25%,#f
   .item { touch-action:manipulation; }
   .btn { touch-action:manipulation; }
 }
+.call-btn.active-share { background:#22c55e; }

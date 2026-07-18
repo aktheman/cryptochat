@@ -37,7 +37,7 @@ app.config.update(
 app.config.update(
     MAX_CONTENT_LENGTH=50 * 1024 * 1024,
     UPLOAD_FOLDER=os.path.join(os.path.dirname(__file__), 'data/uploads'),
-    ALLOWED_EXTENSIONS={'png', 'jpg', 'jpeg', 'gif', 'webp', 'pdf', 'txt', 'zip'}
+    ALLOWED_EXTENSIONS={'png', 'jpg', 'jpeg', 'gif', 'webp', 'pdf', 'txt', 'zip', 'mp3', 'wav', 'ogg', 'webm', 'opus', 'm4a'}
 )
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 init_db()
@@ -183,6 +183,22 @@ def validate_password(password):
         return False
     return len(password) >= 6 and len(password) <= 128
 
+def is_admin(username):
+    user = get_user(username)
+    return user and user.get('is_admin', False)
+
+def require_admin(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        username = session.get('username')
+        if not username or not is_user_session_active(username):
+            session.clear()
+            return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
+        if not is_admin(username):
+            return jsonify({'success': False, 'message': 'Ingen admin-tilgang.'}), 403
+        return f(*args, **kwargs)
+    return wrapper
+
 # ──────────────────────────────────────────────
 # X25519 + HKDF-SHA-256 for forward secrecy
 # ──────────────────────────────────────────────
@@ -302,6 +318,7 @@ def register():
         'password_hash': generate_password_hash(password),
         'created_at': now_iso(),
         'theme': 'dark',
+        'is_admin': False,
         'twofa_enabled': False,
         'twofa_secret_hash': None,
         'identity_keypair': generate_identity_keypair(),
@@ -335,6 +352,8 @@ def login():
     user = users.get(username)
     if not user or not check_password_hash(user.get('password_hash', ''), password):
         return jsonify({'success': False, 'message': 'Ugyldig brukernavn eller passord.'}), 401
+    if user.get('banned'):
+        return jsonify({'success': False, 'message': 'Kontoen din er utestengt.'}), 403
     if user.get('twofa_enabled') and user.get('twofa_secret_hash'):
         totp = pyotp.TOTP(user['twofa_secret_hash'])
         if not totp.verify(twofa_code):
@@ -508,8 +527,18 @@ def get_messages(other_user):
             'read': convert_to_bool(m.get('read'), False),
             'edited': convert_to_bool(m.get('edited'), False),
             'deleted': convert_to_bool(m.get('deleted'), False),
+            'reply_to': m.get('reply_to'),
+            'reply_preview': '',
         })
     filtered.sort(key=lambda x: x['timestamp'])
+    msg_map = {f['id']: f for f in filtered}
+    for f in filtered:
+        if f.get('reply_to') and f['reply_to'] in msg_map:
+            orig = msg_map[f['reply_to']]
+            preview = orig.get('text', '')
+            if len(preview) > 80:
+                preview = preview[:80] + '...'
+            f['reply_preview'] = f"({orig.get('sender', '')}) {preview}"
     all_reactions = load_json(REACTIONS_FILE, {})
     for f in filtered:
         f['reactions'] = all_reactions.get(f['id'], {})
@@ -525,6 +554,7 @@ def send_message():
     mtype = data.get('type', 'text')
     filename = data.get('filename')
     self_destruct_minutes = data.get('self_destruct_minutes')
+    reply_to = (data.get('reply_to') or '').strip() or None
     if not recipient or not ciphertext:
         return jsonify({'success': False, 'message': 'Manglende felt.'}), 400
     shared_key = get_or_create_pair_key(session['username'], recipient)
@@ -546,6 +576,7 @@ def send_message():
         'read': False,
         'self_destruct_at': self_destruct_at,
         'filename': filename,
+        'reply_to': reply_to,
     })
     save_json(MESSAGES_FILE, messages)
     return jsonify({'success': True, 'message': 'Melding sendt.'})
@@ -702,6 +733,8 @@ def get_group_messages(group_id):
                 'filename': m.get('filename'),
                 'edited': convert_to_bool(m.get('edited'), False),
                 'deleted': convert_to_bool(m.get('deleted'), False),
+                'reply_to': m.get('reply_to'),
+                'reply_preview': '',
             })
         except Exception as e:
             filtered.append({
@@ -713,8 +746,18 @@ def get_group_messages(group_id):
                 'filename': m.get('filename'),
                 'edited': convert_to_bool(m.get('edited'), False),
                 'deleted': convert_to_bool(m.get('deleted'), False),
+                'reply_to': m.get('reply_to'),
+                'reply_preview': '',
             })
     filtered.sort(key=lambda x: x['timestamp'])
+    msg_map = {f['id']: f for f in filtered}
+    for f in filtered:
+        if f.get('reply_to') and f['reply_to'] in msg_map:
+            orig = msg_map[f['reply_to']]
+            preview = orig.get('text', '')
+            if len(preview) > 80:
+                preview = preview[:80] + '...'
+            f['reply_preview'] = f"({orig.get('sender', '')}) {preview}"
     all_reactions = load_json(REACTIONS_FILE, {})
     for f in filtered:
         f['reactions'] = all_reactions.get(f['id'], {})
@@ -742,6 +785,7 @@ def send_group_message(group_id):
     ciphertext = sanitize_input(data.get('ciphertext', ''), 10000)
     mtype = data.get('type', 'text')
     filename = data.get('filename')
+    reply_to = (data.get('reply_to') or '').strip() or None
     if not ciphertext:
         return jsonify({'success': False, 'message': 'Manglende innhold.'}), 400
     groups = load_json(GROUPS_FILE, [])
@@ -758,6 +802,7 @@ def send_group_message(group_id):
         'type': mtype,
         'timestamp': datetime.utcnow().isoformat(),
         'filename': filename,
+        'reply_to': reply_to,
     })
     save_json(MESSAGES_FILE, messages)
     return jsonify({'success': True, 'message': 'Melding sendt.'})
@@ -1119,6 +1164,116 @@ def end_stale_calls():
                     c['status'] = 'ended'
     save_json(CALLS_FILE, calls)
     return jsonify({'success': True})
+
+# ──────────────────────────────────────────────
+# Admin panel
+# ──────────────────────────────────────────────
+@app.route('/admin/stats', methods=['GET'])
+@require_admin
+def admin_stats():
+    users = load_json(USERS_FILE, {})
+    messages = load_json(MESSAGES_FILE, [])
+    groups = load_json(GROUPS_FILE, [])
+    sessions = load_json(SESSIONS_FILE, {})
+    active_sessions = sum(1 for s in sessions.values() if s.get('active', False))
+    return jsonify({
+        'success': True,
+        'stats': {
+            'total_users': len(users),
+            'total_messages': len(messages),
+            'total_groups': len(groups),
+            'active_sessions': active_sessions,
+            'admin_users': sum(1 for u in users.values() if u.get('is_admin', False)),
+        }
+    })
+
+@app.route('/admin/users', methods=['GET'])
+@require_admin
+def admin_list_users():
+    users = load_json(USERS_FILE, {})
+    result = []
+    for u, data in users.items():
+        result.append({
+            'username': u,
+            'display_name': data.get('display_name', u),
+            'is_admin': data.get('is_admin', False),
+            'created_at': data.get('created_at', ''),
+            'twofa_enabled': data.get('twofa_enabled', False),
+        })
+    return jsonify({'success': True, 'users': result})
+
+@app.route('/admin/users/<username>/toggle-admin', methods=['POST'])
+@require_admin
+def admin_toggle_admin(username):
+    admin_user = session.get('username')
+    if username == admin_user:
+        return jsonify({'success': False, 'message': 'Kan ikke endre din egen admin-status.'}), 400
+    users = load_json(USERS_FILE, {})
+    if username not in users:
+        return jsonify({'success': False, 'message': 'Bruker ikke funnet.'}), 404
+    users[username]['is_admin'] = not users[username].get('is_admin', False)
+    save_json(USERS_FILE, users)
+    return jsonify({'success': True, 'is_admin': users[username]['is_admin']})
+
+@app.route('/admin/users/<username>/ban', methods=['POST'])
+@require_admin
+def admin_ban_user(username):
+    admin_user = session.get('username')
+    if username == admin_user:
+        return jsonify({'success': False, 'message': 'Kan ikke banne deg selv.'}), 400
+    users = load_json(USERS_FILE, {})
+    if username not in users:
+        return jsonify({'success': False, 'message': 'Bruker ikke funnet.'}), 404
+    users[username]['banned'] = True
+    save_json(USERS_FILE, users)
+    invalidate_all_sessions(username)
+    return jsonify({'success': True})
+
+@app.route('/admin/users/<username>/unban', methods=['POST'])
+@require_admin
+def admin_unban_user(username):
+    users = load_json(USERS_FILE, {})
+    if username not in users:
+        return jsonify({'success': False, 'message': 'Bruker ikke funnet.'}), 404
+    users[username]['banned'] = False
+    save_json(USERS_FILE, users)
+    return jsonify({'success': True})
+
+@app.route('/admin/users/<username>/delete', methods=['POST'])
+@require_admin
+def admin_delete_user(username):
+    admin_user = session.get('username')
+    if username == admin_user:
+        return jsonify({'success': False, 'message': 'Kan ikke slette deg selv.'}), 400
+    users = load_json(USERS_FILE, {})
+    if username not in users:
+        return jsonify({'success': False, 'message': 'Bruker ikke funnet.'}), 404
+    del users[username]
+    save_json(USERS_FILE, users)
+    invalidate_all_sessions(username)
+    return jsonify({'success': True})
+
+@app.route('/admin/messages', methods=['GET'])
+@require_admin
+def admin_list_messages():
+    limit = min(int(request.args.get('limit', 50)), 200)
+    messages = load_json(MESSAGES_FILE, [])
+    recent = messages[-limit:]
+    result = []
+    for m in recent:
+        result.append({
+            'id': m.get('id', '')[:16],
+            'sender': m.get('sender', ''),
+            'recipient': m.get('recipient', ''),
+            'type': m.get('type', 'text'),
+            'timestamp': m.get('timestamp', ''),
+            'group_id': m.get('group_id', ''),
+        })
+    return jsonify({'success': True, 'messages': result})
+
+@app.route('/admin/pages', methods=['GET'])
+def admin_page():
+    return render_template('admin.html')
 
 # ──────────────────────────────────────────────
 # Key export/import

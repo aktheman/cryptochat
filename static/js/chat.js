@@ -185,6 +185,16 @@
     }
     .composer { position:relative; }
     .chat-actions { position:relative; }
+    .recording { background:#dc2626 !important; animation:recPulse 1s infinite; }
+    @keyframes recPulse { 0%,100% { opacity:1; } 50% { opacity:.6; } }
+    .voice-msg { display:flex; align-items:center; gap:8px; }
+    .voice-msg audio { max-width:220px; height:36px; }
+    .reply-bar { display:flex; align-items:center; justify-content:space-between; background:#1a2240; border-left:3px solid #7a3bff; padding:8px 12px; border-radius:8px 8px 0 0; font-size:.82rem; color:#9ca3c7; }
+    .reply-bar-cancel { background:transparent; border:none; color:#9ca3c7; cursor:pointer; font-size:1rem; padding:2px 6px; }
+    .reply-bar-cancel:hover { color:#ffb3b3; }
+    .reply-ref { font-size:.72rem; color:#7c7e9a; border-left:2px solid #7a3bff; padding:2px 8px; margin-bottom:4px; max-height:40px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+    .reply-msg-btn { background:transparent; border:none; color:var(--c-text-meta); cursor:pointer; font-size:12px; padding:2px 4px; opacity:0.5; transition:opacity .15s; }
+    .reply-msg-btn:hover { opacity:1; }
   `;
   document.head.appendChild(_featureCSS);
 
@@ -381,6 +391,7 @@
             <button id="logoutBtn" class="btn btn-small btn-ghost">Logg ut</button>
           </div>
           <div class="header-actions">
+            <button id="adminBtn" class="btn btn-small btn-ghost" style="display:none">⚙️ Admin</button>
             <button id="profileBtn" class="btn btn-small btn-ghost">Min profil</button>
             <button id="audioCallBtn" class="btn btn-small btn-primary" title="Lydsamtale">📞</button>
             <button id="videoCallBtn" class="btn btn-small btn-primary" title="Videosamtale">📹</button>
@@ -432,8 +443,13 @@
             <div id="composer" class="composer" style="display:none">
               <div id="imagePreview" class="image-preview" style="display:none"></div>
               <input id="fileInput" type="file" class="input-text" />
+              <div id="replyBar" class="reply-bar" style="display:none">
+                <span class="reply-bar-text">Svarer paa: <strong id="replyBarName"></strong> <span id="replyBarPreview"></span></span>
+                <button id="cancelReply" class="reply-bar-cancel">&#10005;</button>
+              </div>
               <div class="composer-row">
                 <input id="messageInput" class="input-text" placeholder="Skriv en melding..." autocomplete="off" />
+                <button id="voiceRecordBtn" class="btn btn-small btn-ghost" title="Talebeskjed">🎙️</button>
                 <button id="sendBtn" class="btn btn-primary" disabled>Send</button>
               </div>
             </div>
@@ -451,6 +467,7 @@
       const imagePreview = document.getElementById('imagePreview');
 
       let activeChat = null;
+      let replyingTo = null;
       let interval = null;
       let userScrolledUp = false;
       let lastMessages = {};
@@ -542,6 +559,9 @@
 
       async function openChat(user) {
         activeChat = { type: 'user', target: user };
+        replyingTo = null;
+        const replyBar = document.getElementById('replyBar');
+        if (replyBar) replyBar.style.display = 'none';
         clearTimeout(typingTimeout);
         isTyping = false;
         chatTitle.textContent = getDisplayName(user);
@@ -588,6 +608,9 @@
       async function openGroup(groupId) {
         const group = groups.find(g => g.id === groupId);
         activeChat = { type: 'group', target: groupId };
+        replyingTo = null;
+        const replyBar = document.getElementById('replyBar');
+        if (replyBar) replyBar.style.display = 'none';
         clearTimeout(typingTimeout);
         isTyping = false;
         chatTitle.textContent = group ? group.name : 'Gruppe';
@@ -664,6 +687,7 @@
             <div class="call-actions">
               <button id="callMicToggle" class="call-btn" title="Mikrofon">🎤</button>
               <button id="callCamToggle" class="call-btn" title="Kamera">📷</button>
+              <button id="callScreenShare" class="call-btn" title="Del skjerm">🖥️</button>
               <button id="callHangup" class="call-btn call-hangup" title="Legg på">📞</button>
             </div>
           </div>
@@ -681,10 +705,51 @@
             if (video) { video.enabled = !video.enabled; document.getElementById('callCamToggle').textContent = video.enabled ? '📷' : '📷❌'; }
           }
         });
+        document.getElementById('callScreenShare').addEventListener('click', async () => {
+          try {
+            if (peerConnection.getSenders().some(s => s.track && s.track.kind === 'video' && s.track.label.startsWith('Screen'))) {
+              stopScreenShare();
+              return;
+            }
+            const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+            const screenTrack = screenStream.getVideoTracks()[0];
+            screenTrack.onended = () => stopScreenShare();
+            const sender = peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
+            if (sender) {
+              sender.replaceTrack(screenTrack);
+            }
+            const lv = document.getElementById('localVideo');
+            if (lv) lv.srcObject = screenStream;
+            document.getElementById('callScreenShare').textContent = '🖥️✅';
+            currentCall.screenSharing = true;
+            currentCall.screenStream = screenStream;
+          } catch (e) {
+            if (e.name !== 'AbortError') toast('Kunne ikke dele skjerm');
+          }
+        });
         if (localStream) {
           const lv = document.getElementById('localVideo');
           if (lv) lv.srcObject = localStream;
         }
+      }
+
+      function stopScreenShare() {
+        if (currentCall && currentCall.screenStream) {
+          currentCall.screenStream.getTracks().forEach(t => t.stop());
+          currentCall.screenStream = null;
+        }
+        if (localStream && peerConnection) {
+          const camTrack = localStream.getVideoTracks()[0];
+          if (camTrack) {
+            const sender = peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
+            if (sender) sender.replaceTrack(camTrack);
+          }
+        }
+        const lv = document.getElementById('localVideo');
+        if (lv && localStream) lv.srcObject = localStream;
+        const btn = document.getElementById('callScreenShare');
+        if (btn) btn.textContent = '🖥️';
+        if (currentCall) currentCall.screenSharing = false;
       }
 
       function updateCallStatus(status) {
@@ -693,6 +758,9 @@
       }
 
       function removeCallOverlay() {
+        if (currentCall && currentCall.screenStream) {
+          currentCall.screenStream.getTracks().forEach(t => t.stop());
+        }
         const overlay = document.getElementById('callOverlay');
         if (overlay) overlay.remove();
         if (peerConnection) { peerConnection.close(); peerConnection = null; }
@@ -836,6 +904,17 @@
         const item = document.createElement('div');
         item.className = 'msg ' + (isMe ? 'sent' : 'received') + (message.deleted ? ' deleted-msg' : '') + (message.edited ? ' edited' : '');
         if (message.id) item.dataset.messageId = message.id;
+        item.dataset.msgId = message.id || '';
+
+        item.addEventListener('contextmenu', (e) => {
+          e.preventDefault();
+          if (message.deleted) return;
+          replyingTo = { id: message.id, sender: message.sender, text: message.text || '' };
+          document.getElementById('replyBar').style.display = 'flex';
+          document.getElementById('replyBarName').textContent = message.sender;
+          document.getElementById('replyBarPreview').textContent = (message.text || '').substring(0, 60);
+          document.getElementById('messageInput').focus();
+        });
 
         let fileHtml = '';
         if (message.type === 'file' && !message.deleted) {
@@ -843,7 +922,13 @@
           if (isImage) {
             fileHtml = '<div class="inline-image"><img src="/uploads/' + escapeHtml(message.filename) + '" alt=" bilde" onerror="this.parentElement.innerHTML=\'<div class=badge>📎 '+escapeHtml(message.filename||'fil')+'</div>\'" /></div>';
           } else {
-            fileHtml = '<div class="badge">📎 ' + escapeHtml(message.filename || 'fil') + '</div>';
+            const audioExts = ['.webm', '.mp3', '.ogg', '.wav', '.opus', '.m4a'];
+            const isVoice = message.filename && audioExts.some(ext => message.filename.toLowerCase().endsWith(ext));
+            if (isVoice) {
+              fileHtml = '<div class="voice-msg"><audio controls preload="none" src="/uploads/' + encodeURIComponent(message.filename) + '"></audio></div>';
+            } else {
+              fileHtml = '<div class="badge">📎 ' + escapeHtml(message.filename || 'fil') + '</div>';
+            }
           }
         }
 
@@ -867,10 +952,14 @@
 
         const senderDisplay = getDisplayName(message.sender || '');
 
+        const replyHtml = message.reply_preview ? '<div class="reply-ref">&#8617; ' + escapeHtml(message.reply_preview) + '</div>' : '';
+        const replyBtnHtml = (!isMe && !message.deleted && message.id) ? '<button class="reply-msg-btn" title="Svar">&#8617;</button>' : '';
+
         item.innerHTML = (
-          '<div class="meta"><span class="sender">' + escapeHtml(senderDisplay) + '</span><span class="time">' + escapeHtml(formatTime(message.timestamp)) + '</span></div>'
+          '<div class="meta"><span class="sender">' + escapeHtml(senderDisplay) + '</span>' + replyBtnHtml + '<span class="time">' + escapeHtml(formatTime(message.timestamp)) + '</span></div>'
+          + replyHtml
           + fileHtml
-          + '<div>' + (message.deleted ? '' : escapeHtml(renderedText)) + '</div>'
+          + '<div class="msg-text">' + (message.deleted ? '' : escapeHtml(renderedText)) + '</div>'
           + tagHtml
           + '<div class="meta">' + e2eeIndicator + '<span class="read">' + (message.read === true ? 'Lest' : 'Ikke lest') + '</span></div>'
           + reactionsHtml
@@ -939,10 +1028,14 @@
               body.ciphertext = ciphertext;
               body.recipient = activeChat.target;
             }
+            if (replyingTo) body.reply_to = replyingTo.id;
             await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
           }
           input.value = '';
           clearImagePreview();
+          replyingTo = null;
+          const replyBar = document.getElementById('replyBar');
+          if (replyBar) replyBar.style.display = 'none';
           if (fileInput) fileInput.value = '';
           if (activeChat.type === 'user') await loadChat(activeChat.target); else await loadGroup(activeChat.target);
         } catch (e) {
@@ -1043,6 +1136,88 @@
         const file = e.target.files[0];
         if (file && file.type.startsWith('image/')) showImagePreview(file);
       });
+
+      document.getElementById('cancelReply').addEventListener('click', () => {
+        replyingTo = null;
+        document.getElementById('replyBar').style.display = 'none';
+      });
+
+      messagesBox.addEventListener('click', (e) => {
+        const btn = e.target.closest('.reply-msg-btn');
+        if (!btn) return;
+        const msgEl = btn.closest('.msg');
+        if (!msgEl) return;
+        const mid = msgEl.dataset.msgId;
+        const sender = msgEl.querySelector('.sender')?.textContent || '';
+        const textEl = msgEl.querySelector('.msg-text');
+        const text = textEl ? textEl.textContent : '';
+        replyingTo = { id: mid, sender, text };
+        document.getElementById('replyBar').style.display = 'flex';
+        document.getElementById('replyBarName').textContent = sender;
+        document.getElementById('replyBarPreview').textContent = text.substring(0, 60);
+        document.getElementById('messageInput').focus();
+      });
+
+      // ── Voice messages ──
+      let mediaRecorder = null;
+      let audioChunks = [];
+      let isRecording = false;
+
+      const voiceBtn = document.getElementById('voiceRecordBtn');
+      if (voiceBtn) {
+        voiceBtn.addEventListener('click', async () => {
+          if (isRecording) {
+            stopRecording();
+            return;
+          }
+          try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            audioChunks = [];
+            mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
+            mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data); };
+            mediaRecorder.onstop = async () => {
+              stream.getTracks().forEach(t => t.stop());
+              const blob = new Blob(audioChunks, { type: 'audio/webm' });
+              await sendVoiceMessage(blob);
+            };
+            mediaRecorder.start();
+            isRecording = true;
+            voiceBtn.textContent = '⏹️';
+            voiceBtn.classList.add('recording');
+          } catch (e) {
+            toast('Kunne ikke starte opptak: ' + e.message);
+          }
+        });
+      }
+
+      function stopRecording() {
+        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+          mediaRecorder.stop();
+        }
+        isRecording = false;
+        const btn = document.getElementById('voiceRecordBtn');
+        if (btn) { btn.textContent = '🎙️'; btn.classList.remove('recording'); }
+      }
+
+      async function sendVoiceMessage(blob) {
+        if (!activeChat || blob.size < 100) return;
+        const form = new FormData();
+        const filename = 'voice-' + Date.now() + '.webm';
+        form.append('file', blob, filename);
+        if (activeChat.type === 'user') form.append('recipient', activeChat.target); else form.append('groupId', activeChat.target);
+        try {
+          const url = activeChat.type === 'group' ? '/groups/' + encodeURIComponent(activeChat.target) + '/send' : '/upload';
+          if (activeChat.type === 'group') {
+            await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ciphertext: filename, type: 'voice', filename }) });
+          } else {
+            await fetch('/upload', { method: 'POST', body: form });
+          }
+          toast('Talebeskjed sendt', 'success');
+          if (activeChat.type === 'user') await loadChat(activeChat.target); else await loadGroup(activeChat.target);
+        } catch (e) {
+          toast('Kunne ikke sende talebeskjed');
+        }
+      }
 
       function setupDragDrop() {
         const chatMain = document.querySelector('.chat-main');
@@ -1377,6 +1552,12 @@
         if (!activeChat || activeChat.type !== 'user') { toast('Velg en kontakt først'); return; }
         await startCall(activeChat.target, 'video');
       });
+
+      try {
+        const statsData = await loadJSON('/admin/stats');
+        if (statsData.success) document.getElementById('adminBtn').style.display = '';
+      } catch {}
+      document.getElementById('adminBtn').addEventListener('click', () => { window.open('/admin/pages', '_blank'); });
 
       interval = setInterval(() => {
         if (activeChat?.type === 'user') loadChat(activeChat.target);

@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CryptoChat Admin</title>
+  <style>
+    * { box-sizing:border-box; margin:0; padding:0; }
+    body { font-family:system-ui,-apple-system,sans-serif; background:#0b0c12; color:#e7e8f3; min-height:100vh; }
+    .header { background:#0f1424; border-bottom:1px solid #151d30; padding:16px 24px; display:flex; justify-content:space-between; align-items:center; }
+    .header h1 { color:#cf6fef; font-size:1.3rem; }
+    .container { max-width:1000px; margin:0 auto; padding:24px; }
+    .stats { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px,1fr)); gap:12px; margin-bottom:24px; }
+    .stat-card { background:#111322; border:1px solid #151d30; border-radius:12px; padding:16px; text-align:center; }
+    .stat-value { font-size:1.8rem; font-weight:700; color:#cf6fef; }
+    .stat-label { font-size:.8rem; color:#7c7e9a; margin-top:4px; }
+    table { width:100%; border-collapse:collapse; background:#111322; border-radius:12px; overflow:hidden; border:1px solid #151d30; }
+    th { background:#0f1424; padding:12px 16px; text-align:left; font-size:.8rem; color:#7c7e9a; text-transform:uppercase; letter-spacing:1px; }
+    td { padding:12px 16px; border-top:1px solid #151d30; font-size:.9rem; }
+    tr:hover { background:#1a2240; }
+    .btn { padding:6px 12px; border-radius:8px; border:none; cursor:pointer; font-weight:600; font-size:.8rem; }
+    .btn-danger { background:#7f1d1d; color:#ffb3b3; }
+    .btn-danger:hover { background:#991b1b; }
+    .btn-warning { background:#78350f; color:#fbbf24; }
+    .btn-warning:hover { background:#92400e; }
+    .btn-success { background:#14532d; color:#86efac; }
+    .btn-success:hover { background:#166534; }
+    .btn-ghost { background:transparent; border:1px solid #2a2d48; color:#9ca3c7; }
+    .btn-ghost:hover { background:#1a2240; }
+    .admin-badge { background:#7a3bff; color:#fff; padding:2px 6px; border-radius:4px; font-size:.7rem; }
+    .tabs { display:flex; gap:8px; margin-bottom:20px; }
+    .tab { padding:8px 16px; border-radius:8px; border:1px solid #2a2d48; background:transparent; color:#9ca3c7; cursor:pointer; font-weight:600; }
+    .tab.active { background:#1c1030; color:#f3f1ff; border-color:#7a3bff; }
+    .section { display:none; }
+    .section.active { display:block; }
+    .actions { display:flex; gap:6px; }
+    a { color:#cf6fef; text-decoration:none; }
+    .banned { color:#ef4444; font-weight:600; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>CryptoChat Admin</h1>
+    <a href="/chat" class="btn btn-ghost">Tilbake til chat</a>
+  </div>
+  <div class="container">
+    <div class="stats" id="stats"></div>
+    <div class="tabs">
+      <button class="tab active" onclick="showSection('users')">Brukere</button>
+      <button class="tab" onclick="showSection('messages')">Meldinger</button>
+    </div>
+    <div id="users" class="section active">
+      <table><thead><tr><th>Brukernavn</th><th>Navn</th><th>Admin</th><th>2FA</th><th>Opprettet</th><th>Handlinger</th></tr></thead><tbody id="usersTable"></tbody></table>
+    </div>
+    <div id="messages" class="section">
+      <table><thead><tr><th>Sendt</th><th>Til</th><th>Type</th><th>Tid</th></tr></thead><tbody id="msgsTable"></tbody></table>
+    </div>
+  </div>
+  <script>
+    const token = document.cookie.match(/session=([^;]+)/)?.[1] || '';
+    async function api(path, opts) { const r = await fetch(path, opts); return r.json(); }
+    async function loadStats() {
+      const d = await api('/admin/stats');
+      if (!d.success) { document.getElementById('stats').innerHTML = '<p>Ingen tilgang. <a href="/login">Logg inn som admin</a></p>'; return; }
+      const s = d.stats;
+      document.getElementById('stats').innerHTML = [
+        ['Brukere', s.total_users], ['Meldinger', s.total_messages], ['Grupper', s.total_groups], ['Aktive økter', s.active_sessions], ['Admins', s.admin_users]
+      ].map(([l,v]) => '<div class="stat-card"><div class="stat-value">'+v+'</div><div class="stat-label">'+l+'</div></div>').join('');
+    }
+    async function loadUsers() {
+      const d = await api('/admin/users');
+      if (!d.success) return;
+      document.getElementById('usersTable').innerHTML = d.users.map(u =>
+        '<tr><td>'+escape(u.username)+'</td><td>'+escape(u.display_name||u.username)+'</td><td>'+(u.is_admin?'<span class="admin-badge">Admin</span>':'')+'</td><td>'+(u.twofa_enabled?'✅':'—')+'</td><td>'+(u.created_at||'').split('T')[0]+'</td><td class="actions"><button class="btn btn-ghost" onclick="toggleAdmin(\''+u.username+'\')">'+(u.is_admin?'Fjern admin':'Gjør til admin')+'</button><button class="btn btn-warning" onclick="banUser(\''+u.username+'\')">Utesteng</button><button class="btn btn-danger" onclick="deleteUser(\''+u.username+'\')">Slett</button></td></tr>'
+      ).join('');
+    }
+    async function loadMessages() {
+      const d = await api('/admin/messages?limit=100');
+      if (!d.success) return;
+      document.getElementById('msgsTable').innerHTML = d.messages.map(m =>
+        '<tr><td>'+escape(m.sender)+'</td><td>'+escape(m.recipient||m.group_id||'')+'</td><td>'+m.type+'</td><td>'+m.timestamp.split('T')[0]+'</td></tr>'
+      ).join('');
+    }
+    function showSection(id) {
+      document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.getElementById(id).classList.add('active');
+      event.target.classList.add('active');
+      if (id === 'users') loadUsers();
+      if (id === 'messages') loadMessages();
+    }
+    async function toggleAdmin(u) { await api('/admin/users/'+u+'/toggle-admin', {method:'POST'}); loadUsers(); loadStats(); }
+    async function banUser(u) { if (!confirm('Utestenge '+u+'?')) return; await api('/admin/users/'+u+'/ban', {method:'POST'}); loadUsers(); }
+    async function deleteUser(u) { if (!confirm('Slette '+u+'? Dette kan ikke angres.')) return; await api('/admin/users/'+u+'/delete', {method:'POST'}); loadUsers(); loadStats(); }
+    function escape(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+    loadStats(); loadUsers();
+  </script>
+</body>
+</html>
