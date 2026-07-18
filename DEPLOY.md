@@ -2,34 +2,36 @@
 
 ## Systemd services
 - App: `cryptochat.service` -> binds `127.0.0.1:5000`
-- Caddy: `caddy.service` -> serves HTTPS via `Caddyfile` on port `:8080`
+- Caddy: `caddy.service` -> serves HTTP on `*:8080`
 
-## HTTPS
-### Domain setup
-Replace `chat.din-domene.no` in `Caddyfile` with your actual domain.
-Ensure your router forwards ports 80 and 443 to this machine,
-and DNS points to this host's public IP.
-
-Apply config:
+## Access
+Local:
 ```bash
-sudo cp Caddyfile /etc/caddy/Caddyfile
-sudo systemctl reload caddy
+http://127.0.0.1:8080
+curl -s http://127.0.0.1:8080/health
 ```
 
-Caddy will request and renew Let's Encrypt certs automatically.
-
-### Local self-signed fallback
-If DNS is not ready, use:
+VPN/remote:
+```bash
+tailscale serve --http 8080
+# Access via https://<pi-hostname>.ts.net:8080
 ```
-:8080 {
+
+Public funnel (optional):
+```bash
+sudo tailscale funnel 80 http://127.0.0.1:8080
+# Access via https://<pi-hostname>.ts.net
+```
+
+## Caddyfile
+Configured for local reverse proxy on port `:8080`.
+
+To enable HTTPS with a real domain in Cloudflare, replace the Caddyfile with:
+```
+chat.din-domene.no {
   reverse_proxy 127.0.0.1:5000
-  tls internal
   encode gzip
 }
-```
-Install Caddy's internal CA locally:
-```bash
-sudo caddy trust
 ```
 
 ## Reports
