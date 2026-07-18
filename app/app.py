@@ -15,7 +15,15 @@ from cryptography.hazmat.bindings._openssl import ffi as _ffi
 import pyotp
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "change-me-in-production")
+app.secret_key = os.environ.get("SECRET_KEY") or (Path(os.environ.get("SECRET_KEY_FILE", "/run/secret_key")).read_bytes().decode() if Path(os.environ.get("SECRET_KEY_FILE", "/run/secret_key")).exists() else None)
+if not app.secret_key:
+    raise SystemExit('SECRET_KEY eller SECRET_KEY_FILE må settes i produksjon')
+app.config.update(
+    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE='Lax',
+    PERMANENT_SESSION_LIFETIME=timedelta(days=1),
+)
 
 BASE = Path(__file__).resolve().parent / "data"
 UPLOAD_DIR = BASE / "uploads"
@@ -109,7 +117,7 @@ def logout():
 @app.route("/chat")
 @require_login
 def chat():
-return render_template("chat.html", username=session.get("user"))
+    return render_template("chat.html", username=session.get("user"))
 
 @app.route("/users")
 @require_login
@@ -155,4 +163,4 @@ def uploaded_file(filename):
     return send_from_directory(str(UPLOAD_DIR), filename, as_attachment=False)
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    app.run(port=5000, debug=False)

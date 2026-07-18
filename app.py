@@ -17,7 +17,15 @@ from cryptography.exceptions import InvalidTag
 import pyotp
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', os.urandom(32))
+app.secret_key = os.environ.get('SECRET_KEY') or (Path(os.environ.get('SECRET_KEY_FILE', '/run/secret_key')).read_bytes().decode() if Path(os.environ.get('SECRET_KEY_FILE', '/run/secret_key')).exists() else None)
+if not app.secret_key:
+    raise SystemExit('SECRET_KEY eller SECRET_KEY_FILE må settes i produksjon')
+app.config.update(
+    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE='Lax',
+    PERMANENT_SESSION_LIFETIME=timedelta(minutes=app.config['SESSION_TIMEOUT_MINUTES']),
+)
 app.config.update(
     SESSION_TIMEOUT_MINUTES=30,
     MAX_CONTENT_LENGTH=50 * 1024 * 1024,
@@ -250,7 +258,6 @@ def register():
         'theme': 'dark',
         'twofa_enabled': False,
         'twofa_secret_hash': None,
-        'twofa_plain_secret': None,
         'identity_keypair': generate_identity_keypair(),
         'notifications_enabled': True,
     }
@@ -313,7 +320,6 @@ def enable_2fa():
     uri = totp.provisioning_uri(name=username, issuer_name='CryptoChat')
     users = load_json(USERS_FILE, {})
     users[username]['twofa_secret_hash'] = secret
-    users[username]['twofa_plain_secret'] = secret
     users[username]['twofa_enabled'] = True
     save_json(USERS_FILE, users)
     return jsonify({'success': True, 'secret': secret, 'uri': uri})
@@ -326,7 +332,6 @@ def disable_2fa():
     users = load_json(USERS_FILE, {})
     users[username]['twofa_enabled'] = False
     users[username]['twofa_secret_hash'] = None
-    users[username]['twofa_plain_secret'] = None
     save_json(USERS_FILE, users)
     return jsonify({'success': True})
 

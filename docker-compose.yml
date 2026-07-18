@@ -2,12 +2,12 @@ services:
   cryptochat:
     build: .
     ports:
-      - "5000:5000"
+      - "127.0.0.1:5000:5000"
     volumes:
       - cryptochat-data:/app/data
+      - ./secrets/secret_key:/run/secret_key:ro
     environment:
+      - SECRET_KEY_FILE=/run/secret_key
       - FLASK_ENV=production
-      - SECRET_KEY=***
-
 volumes:
   cryptochat-data:
