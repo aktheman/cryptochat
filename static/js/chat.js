@@ -124,6 +124,7 @@
                 <input id="searchPartner" class="input-text" placeholder="Kontakt for søk" autocomplete="off" />
                 <input id="searchInput" class="input-text" placeholder="Søk i meldinger..." autocomplete="off" />
                 <button id="searchBtn" class="btn btn-small btn-ghost">Søk</button>
+                <button id="myKeyBtn" class="btn btn-small btn-ghost">🔑 Min nøkkel</button>
               </div>
             </header>
             <div id="messages" class="messages">
@@ -221,11 +222,12 @@
       async function openChat(user) {
         activeChat = { type: 'user', target: user };
         chatTitle.textContent = user;
-        chatMeta.textContent = '';
+        chatMeta.innerHTML = '';
+        const key = await getPeerPublicKeyPem(user);
+        activeChat.peerPublicKey = key;
+        if (key) chatMeta.innerHTML = '<span class=\"e2ee\">🔒 Ende-til-ende-kryptert</span>';
         messagesBox.innerHTML = '';
         composer.style.display = 'flex';
-        activeChat.peerPublicKey = await getPeerPublicKeyPem(user);
-        chatMeta.textContent = activeChat?.peerPublicKey ? '🔒 Ende-til-ende-kryptert' : '';
         await loadChat(user);
         const input = document.getElementById('messageInput');
         if (input) input.focus();
@@ -389,20 +391,27 @@
       document.getElementById('searchBtn').addEventListener('click', async () => {
         const query = document.getElementById('searchInput').value.trim();
         const partner = document.getElementById('searchPartner').value.trim();
-        if (!query || !partner) return toast('Søk trenger tekst og kontakt');
-        try {
-          const data = await loadJSON('/search?q=' + encodeURIComponent(query) + '&partner=' + encodeURIComponent(partner));
-          messagesBox.innerHTML = '';
-          const list = data.messages || [];
-          if (!list.length) {
-            messagesBox.innerHTML = '<div class="empty-state"><p>Ingen treff</p></div>';
-          } else {
-            list.forEach(m => appendMessage(m, partner));
+        messagesBox.innerHTML = '';
+        const list = [];
+        const pushFrom = (msgs) => {
+          for (const m of (msgs || [])) {
+            const txt = String(m.text || '');
+            if (!query || txt.toLowerCase().includes(query.toLowerCase())) list.push(m);
           }
-          toast(list.length + ' treff', 'success');
-        } catch (e) {
-          toast('Søk feilet');
-        }
+        };
+        if (activeChat?.type === 'user' && partner) pushFrom([{text: (lastMessages[activeChat.target] || '')}]);
+        if (activeChat?.type === 'group') pushFrom([{text: (groupLastMessages[activeChat.target] || '')}]);
+        if (!partner) pushFrom(lastMessages);
+        if (!query && !partner) { toast('Søk trenger tekst eller aktiv chat'); return; }
+        if (!list.length) { messagesBox.innerHTML = '<div class="empty-state"><p>Ingen treff</p></div>'; toast('Ingen treff', 'success'); return; }
+        for (const m of list) appendMessage(m, partner || activeChat?.target || '');
+        toast(list.length + ' treff', 'success');
+      });
+
+      ['searchInput','searchPartner'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.addEventListener('keydown', (e) => { if (e.key === 'Enter') document.getElementById('searchBtn').click(); });
       });
 
       document.getElementById('themeBtn').addEventListener('click', async () => {
@@ -433,6 +442,20 @@
           wrap.innerHTML = '<img src="https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' + encodeURIComponent(data.uri) + '" alt="2FA QR" /><div>' + escapeHtml(data.secret || '') + '</div>';
         } catch (e) {
           toast('2FA feilet');
+        }
+      });
+
+      document.getElementById('myKeyBtn').addEventListener('click', async () => {
+        try {
+          const data = await loadJSON('/me/key');
+          const pub = data.publicKey || '';
+          const imported = data.importedKey || '';
+          const text = pub
+            ? 'Offentlig nøkkel:\n' + pub + (imported ? '\n\nImportert nøkkel:\n' + imported : '')
+            : 'Ingen nøkkel funnet. Opprettes automatisk ved første sending.';
+          alert(text);
+        } catch (e) {
+          toast('Kunne ikke hente nøkkel');
         }
       });
 

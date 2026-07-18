@@ -720,6 +720,15 @@ def import_key():
     save_json(USERS_FILE, users)
     return jsonify({'success': True, 'key': key})
 
+@app.route('/me/key')
+def my_key():
+    username = session.get('username')
+    if not username:
+        return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
+    users = load_json(USERS_FILE, {})
+    user = users.get(username, {})
+    return jsonify({'success': True, 'publicKey': user.get('public_key', ''), 'importedKey': user.get('imported_key', '')})
+
 # ──────────────────────────────────────────────
 # Offline / SW / PWA
 # ──────────────────────────────────────────────
