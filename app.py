@@ -17,17 +17,23 @@ from cryptography.exceptions import InvalidTag
 import pyotp
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY') or (Path(os.environ.get('SECRET_KEY_FILE', '/run/secret_key')).read_bytes().decode() if Path(os.environ.get('SECRET_KEY_FILE', '/run/secret_key')).exists() else None)
-if not app.secret_key:
-    raise SystemExit('SECRET_KEY eller SECRET_KEY_FILE må settes i produksjon')
+secret_key_path = Path(os.environ.get('SECRET_KEY_FILE', '')) if os.environ.get('SECRET_KEY_FILE') else None
+if secret_key_path and secret_key_path.exists():
+    app.secret_key = secret_key_path.read_bytes()
+elif Path('secrets/secret_key').exists():
+    app.secret_key = Path('secrets/secret_key').read_bytes()
+else:
+    app.secret_key = secret_key_path or os.environ.get('SECRET_KEY')
+    if not app.secret_key:
+        raise SystemExit('SECRET_KEY eller SECRET_KEY_FILE må settes i produksjon')
 app.config.update(
+    SESSION_TIMEOUT_MINUTES=30,
     SESSION_COOKIE_SECURE=True,
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE='Lax',
-    PERMANENT_SESSION_LIFETIME=timedelta(minutes=app.config['SESSION_TIMEOUT_MINUTES']),
+    PERMANENT_SESSION_LIFETIME=timedelta(minutes=30),
 )
 app.config.update(
-    SESSION_TIMEOUT_MINUTES=30,
     MAX_CONTENT_LENGTH=50 * 1024 * 1024,
     UPLOAD_FOLDER=os.path.join(os.path.dirname(__file__), 'data/uploads'),
     ALLOWED_EXTENSIONS={'png', 'jpg', 'jpeg', 'gif', 'webp', 'pdf', 'txt', 'zip'}
@@ -761,6 +767,7 @@ def service_worker():
 def offline_page():
     return render_template('offline.html')
 
+@app.route('/health')
 @app.route('/sw-test')
 def service_worker_test():
     return jsonify({'success': True})

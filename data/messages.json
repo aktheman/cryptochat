@@ -1,14 +1,1 @@
-[
-  {
-    "id": "a3d05483f4595415778975078d020fca7ed057a80a5d8a45c6447865cac18d68",
-    "pair_key": "testalice:::testbob",
-    "sender": "testalice",
-    "recipient": "testbob",
-    "ciphertext": "eyJuIjogIlJKZ1hpZ3VKZks3SWIzZHIiLCAiYyI6ICJvb3hBSFpyMG1nNHBRbnEzc0owWCt1QVRGVjVLaW0zYUNyTHd4QT09In0=",
-    "type": "text",
-    "timestamp": "2026-07-16T21:21:48.541711",
-    "read": false,
-    "self_destruct_at": null,
-    "filename": null
-  }
-]
+{}
