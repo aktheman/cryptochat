@@ -49,7 +49,7 @@ def set_security_headers(response):
     response.headers['X-Frame-Options'] = 'DENY'
     response.headers['X-XSS-Protection'] = '1; mode=block'
     response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
-    response.headers['Permissions-Policy'] = 'camera=(), microphone=(self), geolocation=()'
+    response.headers['Permissions-Policy'] = 'camera=(self), microphone=(self), geolocation=()'
     if request.path.startswith('/static/'):
         response.headers['Cache-Control'] = 'public, max-age=604800'
     else:
@@ -135,24 +135,78 @@ def is_online(username, timeout_minutes=5):
 
 def is_user_session_active(username):
     sessions = load_json(SESSIONS_FILE, {})
-    session_token = sessions.get(username, {})
-    if not session_token.get('token') or not session_token.get('active', False):
-        return False
-    if convert_to_bool(session_token.get('revoked', False), False):
-        return False
-    created = parse_iso(session_token.get('created'))
-    if not created:
-        return False
-    if created.tzinfo:
-        created = created.replace(tzinfo=None)
-    return (datetime.utcnow() - created) < timedelta(minutes=app.config['SESSION_TIMEOUT_MINUTES'])
+    user_sessions = sessions.get(username, {})
+    if isinstance(user_sessions, dict) and 'token' in user_sessions:
+        if not user_sessions.get('active', False):
+            return False
+        if convert_to_bool(user_sessions.get('revoked', False), False):
+            return False
+        created = parse_iso(user_sessions.get('created'))
+        if not created:
+            return False
+        if created.tzinfo:
+            created = created.replace(tzinfo=None)
+        return (datetime.utcnow() - created) < timedelta(minutes=app.config['SESSION_TIMEOUT_MINUTES'])
+    if isinstance(user_sessions, dict):
+        for sid, sdata in user_sessions.items():
+            if not isinstance(sdata, dict):
+                continue
+            if sdata.get('token') == session.get('session_token') and sdata.get('active', False):
+                if convert_to_bool(sdata.get('revoked', False), False):
+                    return False
+                created = parse_iso(sdata.get('created'))
+                if not created:
+                    return False
+                if created.tzinfo:
+                    created = created.replace(tzinfo=None)
+                return (datetime.utcnow() - created) < timedelta(minutes=app.config['SESSION_TIMEOUT_MINUTES'])
+    return False
 
 def invalidate_all_sessions(username):
     sessions = load_json(SESSIONS_FILE, {})
     if username in sessions:
-        sessions[username]['active'] = False
-        sessions[username]['revoked'] = True
+        user_sessions = sessions[username]
+        if isinstance(user_sessions, dict) and 'token' in user_sessions:
+            sessions[username] = {}
+        elif isinstance(user_sessions, dict):
+            for sid in user_sessions:
+                if isinstance(user_sessions[sid], dict):
+                    user_sessions[sid]['active'] = False
+                    user_sessions[sid]['revoked'] = True
         save_json(SESSIONS_FILE, sessions)
+
+def invalidate_session(username, session_id):
+    sessions = load_json(SESSIONS_FILE, {})
+    user_sessions = sessions.get(username, {})
+    if session_id in user_sessions and isinstance(user_sessions[session_id], dict):
+        user_sessions[session_id]['active'] = False
+        user_sessions[session_id]['revoked'] = True
+        save_json(SESSIONS_FILE, sessions)
+
+def get_user_sessions(username):
+    sessions = load_json(SESSIONS_FILE, {})
+    user_sessions = sessions.get(username, {})
+    if isinstance(user_sessions, dict) and 'token' in user_sessions:
+        return [{'id': 'default', 'created': user_sessions.get('created'), 'active': user_sessions.get('active', False)}]
+    result = []
+    now = datetime.utcnow()
+    for sid, sdata in user_sessions.items():
+        if not isinstance(sdata, dict):
+            continue
+        created = parse_iso(sdata.get('created'))
+        if created and created.tzinfo:
+            created = created.replace(tzinfo=None)
+        active = sdata.get('active', False) and not convert_to_bool(sdata.get('revoked', False), False)
+        if created and (now - created) > timedelta(minutes=app.config['SESSION_TIMEOUT_MINUTES']):
+            active = False
+        result.append({
+            'id': sid,
+            'created': sdata.get('created'),
+            'active': active,
+            'device': sdata.get('device', 'Unknown'),
+            'ip': sdata.get('ip', ''),
+        })
+    return result
 
 def get_user(username):
     return load_json(USERS_FILE, {}).get(username)
@@ -295,7 +349,12 @@ def login_page():
 def chat_page():
     if 'username' not in session:
         return redirect(url_for('login_page'))
-    return render_template('chat.html', username=session.get('username'))
+    return render_template('chat.html',
+        username=session.get('username'),
+        turn_url=os.environ.get('TURN_URL', ''),
+        turn_user=os.environ.get('TURN_USER', ''),
+        turn_pass=os.environ.get('TURN_PASS', ''),
+    )
 
 # ──────────────────────────────────────────────
 # Auth
@@ -327,12 +386,16 @@ def register():
     }
     save_json(USERS_FILE, users)
     session['username'] = username
+    session_id = secrets.token_hex(16)
+    session['session_token'] = session_id
     sessions = load_json(SESSIONS_FILE, {})
-    sessions[username] = {
-        'token': secrets.token_hex(32),
+    sessions.setdefault(username, {})[session_id] = {
+        'token': session_id,
         'created': now_iso(),
         'active': True,
         'revoked': False,
+        'device': request.user_agent.string[:100] if request.user_agent else 'Unknown',
+        'ip': request.remote_addr or '',
     }
     save_json(SESSIONS_FILE, sessions)
     touch_presence(username)
@@ -360,12 +423,16 @@ def login():
         if not totp.verify(twofa_code):
             return jsonify({'success': False, 'message': 'Ugyldig 2FA-kode.'}), 401
     session['username'] = username
+    session_id = secrets.token_hex(16)
+    session['session_token'] = session_id
     sessions = load_json(SESSIONS_FILE, {})
-    sessions[username] = {
-        'token': secrets.token_hex(32),
+    sessions.setdefault(username, {})[session_id] = {
+        'token': session_id,
         'created': now_iso(),
         'active': True,
         'revoked': False,
+        'device': request.user_agent.string[:100] if request.user_agent else 'Unknown',
+        'ip': request.remote_addr or '',
     }
     save_json(SESSIONS_FILE, sessions)
     touch_presence(username)
@@ -374,9 +441,37 @@ def login():
 @app.route('/auth/logout', methods=['POST'])
 def logout():
     username = session.get('username')
+    session_id = session.get('session_token')
+    if username and session_id:
+        invalidate_session(username, session_id)
+    session.clear()
+    return jsonify({'success': True})
+
+@app.route('/auth/logout-all', methods=['POST'])
+def logout_all():
+    username = session.get('username')
     if username:
         invalidate_all_sessions(username)
     session.clear()
+    return jsonify({'success': True})
+
+@app.route('/sessions')
+@require_login
+def list_sessions():
+    username = session['username']
+    sessions_list = get_user_sessions(username)
+    current_session_id = session.get('session_token', 'default')
+    for s in sessions_list:
+        s['current'] = s['id'] == current_session_id
+    return jsonify({'success': True, 'sessions': sessions_list})
+
+@app.route('/sessions/<session_id>/revoke', methods=['POST'])
+@require_login
+def revoke_session(session_id):
+    username = session['username']
+    if session_id == session.get('session_token'):
+        return jsonify({'success': False, 'message': 'Kan ikke avbryte nåværende økt.'}), 400
+    invalidate_session(username, session_id)
     return jsonify({'success': True})
 
 @app.route('/auth/2fa/enable', methods=['POST'])
@@ -622,17 +717,35 @@ def search_messages():
         return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
     query = (request.args.get('q') or '').strip()
     partner = (request.args.get('partner') or '').strip()
-    if not query or not partner:
+    search_type = (request.args.get('type') or 'text').strip()
+    if not query:
         return jsonify({'success': True, 'messages': []})
-    pk = pair_key(session['username'], partner)
-    shared_key = get_or_create_pair_key(session['username'], partner)
+    pk = pair_key(session['username'], partner) if partner else None
+    shared_key = get_or_create_pair_key(session['username'], partner) if partner else None
     messages = load_json(MESSAGES_FILE, [])
     results = []
     for m in messages:
-        if m.get('pair_key') != pk:
+        if pk and m.get('pair_key') != pk:
             continue
+        if not pk:
+            me = session['username']
+            if m.get('sender') != me and m.get('recipient') != me:
+                continue
         try:
-            text = decrypt_symmetric(m['ciphertext'], shared_key) if m.get('type') == 'text' else m.get('filename', '')
+            if m.get('type') == 'text':
+                if shared_key:
+                    text = decrypt_symmetric(m['ciphertext'], shared_key)
+                else:
+                    other = m['recipient'] if m['sender'] == me else m['sender']
+                    try:
+                        sk = get_or_create_pair_key(me, other)
+                        text = decrypt_symmetric(m['ciphertext'], sk)
+                    except Exception:
+                        continue
+            else:
+                text = m.get('filename', '')
+            if search_type == 'files' and m.get('type') != 'file':
+                continue
             if query.lower() in text.lower():
                 results.append({
                     'id': m.get('id'),
@@ -647,6 +760,35 @@ def search_messages():
             continue
     results.sort(key=lambda x: x['timestamp'])
     return jsonify({'success': True, 'messages': results})
+
+@app.route('/search/files', methods=['GET'])
+@require_login
+def search_files():
+    query = (request.args.get('q') or '').strip()
+    if not query:
+        return jsonify({'success': True, 'files': []})
+    me = session['username']
+    messages = load_json(MESSAGES_FILE, [])
+    results = []
+    seen = set()
+    for m in messages:
+        if m.get('type') != 'file':
+            continue
+        if m.get('sender') != me and m.get('recipient') != me:
+            continue
+        filename = m.get('filename', '')
+        if query.lower() in filename.lower():
+            if filename not in seen:
+                seen.add(filename)
+                other = m['recipient'] if m['sender'] == me else m['sender']
+                results.append({
+                    'filename': filename,
+                    'sender': m['sender'],
+                    'recipient': other,
+                    'timestamp': m['timestamp'],
+                })
+    results.sort(key=lambda x: x['timestamp'], reverse=True)
+    return jsonify({'success': True, 'files': results})
 
 @app.route('/read_receipts/<partner>', methods=['POST'])
 def mark_read(partner):
@@ -677,6 +819,51 @@ def get_notifications():
     notify = load_json(NOTIFICATIONS_FILE, {})
     entries = notify.get(username, [])
     return jsonify({'success': True, 'notifications': entries})
+
+# ──────────────────────────────────────────────
+# Groups
+# ──────────────────────────────────────────────
+# Group E2EE key distribution
+# ──────────────────────────────────────────────
+@app.route('/groups/<group_id>/keys', methods=['POST'])
+@require_login
+def upload_group_keys(group_id):
+    me = session['username']
+    data = request.get_json(force=True, silent=True) or {}
+    encrypted_keys = data.get('keys', {})
+    if not encrypted_keys:
+        return jsonify({'success': False, 'message': 'Manglende nøkler.'}), 400
+    groups = load_json(GROUPS_FILE, [])
+    group = next((g for g in groups if g['id'] == group_id), None)
+    if not group:
+        return jsonify({'success': False, 'message': 'Gruppe ikke funnet.'}), 404
+    if me not in group.get('members', []):
+        return jsonify({'success': False, 'message': 'Ikke medlem av gruppen.'}), 403
+    keys_data = load_json(KEYS_FILE, {})
+    group_e2ee_key = f"e2ee::{group_id}"
+    keys_data[group_e2ee_key] = {
+        'encrypted_keys': encrypted_keys,
+        'uploaded_by': me,
+        'updated': now_iso(),
+    }
+    save_json(KEYS_FILE, keys_data)
+    return jsonify({'success': True})
+
+@app.route('/groups/<group_id>/keys', methods=['GET'])
+@require_login
+def get_group_key_for_user(group_id):
+    me = session['username']
+    groups = load_json(GROUPS_FILE, [])
+    group = next((g for g in groups if g['id'] == group_id), None)
+    if not group:
+        return jsonify({'success': False, 'message': 'Gruppe ikke funnet.'}), 404
+    if me not in group.get('members', []):
+        return jsonify({'success': False, 'message': 'Ikke medlem av gruppen.'}), 403
+    keys_data = load_json(KEYS_FILE, {})
+    group_e2ee_key = f"e2ee::{group_id}"
+    entry = keys_data.get(group_e2ee_key, {})
+    encrypted_key = entry.get('encrypted_keys', {}).get(me)
+    return jsonify({'success': True, 'encryptedKey': encrypted_key, 'hasKeys': bool(entry.get('encrypted_keys'))})
 
 # ──────────────────────────────────────────────
 # Groups
@@ -724,7 +911,11 @@ def get_group_messages(group_id):
         if m.get('group_id') != group_id:
             continue
         try:
-            text = decrypt_symmetric(m['ciphertext'], group_key) if m.get('type') == 'text' else m.get('filename', '[fil]')
+            is_e2ee = convert_to_bool(m.get('e2ee'), False)
+            if is_e2ee:
+                text = m.get('ciphertext', '')
+            else:
+                text = decrypt_symmetric(m['ciphertext'], group_key) if m.get('type') == 'text' else m.get('filename', '[fil]')
             filtered.append({
                 'id': m.get('id'),
                 'sender': m['sender'],
@@ -736,6 +927,7 @@ def get_group_messages(group_id):
                 'deleted': convert_to_bool(m.get('deleted'), False),
                 'reply_to': m.get('reply_to'),
                 'reply_preview': '',
+                'e2ee': is_e2ee,
             })
         except Exception as e:
             filtered.append({
@@ -787,6 +979,7 @@ def send_group_message(group_id):
     mtype = data.get('type', 'text')
     filename = data.get('filename')
     reply_to = (data.get('reply_to') or '').strip() or None
+    is_e2ee = convert_to_bool(data.get('e2ee'), False)
     if not ciphertext:
         return jsonify({'success': False, 'message': 'Manglende innhold.'}), 400
     groups = load_json(GROUPS_FILE, [])
@@ -804,6 +997,7 @@ def send_group_message(group_id):
         'timestamp': datetime.utcnow().isoformat(),
         'filename': filename,
         'reply_to': reply_to,
+        'e2ee': is_e2ee,
     })
     save_json(MESSAGES_FILE, messages)
     return jsonify({'success': True, 'message': 'Melding sendt.'})

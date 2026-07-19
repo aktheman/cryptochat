@@ -16,7 +16,10 @@
     window.__APP__ = {
       username: {{ username | tojson }},
       partnerKeys: localStorage.getItem('partnerKeys') ? JSON.parse(localStorage.getItem('partnerKeys')) : {},
-      theme: localStorage.getItem('theme') || 'dark'
+      theme: localStorage.getItem('theme') || 'dark',
+      turnUrl: {{ turn_url | tojson }},
+      turnUser: {{ turn_user | tojson }},
+      turnPass: {{ turn_pass | tojson }}
     };
   </script>
   <script src="/static/js/crypto.js" defer></script>

@@ -230,6 +230,28 @@
     .verify-step-num { display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; border-radius:50%; background:var(--c-accent); color:#fff; font-size:.75rem; font-weight:700; margin-bottom:6px; }
     .verify-step-text { font-size:.82rem; color:var(--c-text-meta); margin-bottom:10px; }
     .sidebar .item .verify-icon { font-size:.7rem; margin-left:4px; }
+    .read-receipt { font-size:.72rem; font-weight:600; }
+    .read-receipt.read { color:var(--c-success); }
+    .read-receipt.unread { color:var(--c-text-muted); opacity:.6; }
+    .search-results-header { padding:8px 12px; background:var(--c-surface-2); border-bottom:1px solid var(--c-border-item); display:flex; justify-content:space-between; align-items:center; }
+    .search-results-header .count { color:var(--c-accent); font-weight:600; font-size:.85rem; }
+    .search-results-header .close-search { background:transparent; border:none; color:var(--c-text-meta); cursor:pointer; font-size:1.1rem; }
+    .search-results-header .close-search:hover { color:var(--c-text); }
+    .file-search-result { display:flex; align-items:center; gap:10px; padding:8px 12px; background:var(--c-surface-2); border:1px solid var(--c-border-item); border-radius:8px; margin:4px 0; cursor:pointer; transition:background .15s; }
+    .file-search-result:hover { background:var(--c-surface-hover); }
+    .file-search-result .file-icon { font-size:1.4rem; }
+    .file-search-result .file-info { flex:1; min-width:0; }
+    .file-search-result .file-name { font-size:.85rem; color:var(--c-text-chat); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .file-search-result .file-meta { font-size:.72rem; color:var(--c-text-muted); }
+    .multi-device-badge { display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:10px; font-size:.7rem; background:rgba(122,59,255,.12); color:var(--c-accent); margin-left:6px; }
+    .session-item { display:flex; align-items:center; justify-content:space-between; padding:8px 12px; border-bottom:1px solid var(--c-border-item); }
+    .session-item:last-child { border-bottom:none; }
+    .session-info { flex:1; }
+    .session-device { font-size:.85rem; color:var(--c-text-chat); font-weight:600; }
+    .session-time { font-size:.72rem; color:var(--c-text-muted); }
+    .session-current { font-size:.7rem; color:var(--c-success); }
+    .session-revoke { background:transparent; border:1px solid #ef4444; color:#ef4444; border-radius:6px; padding:2px 8px; cursor:pointer; font-size:.72rem; }
+    .session-revoke:hover { background:rgba(239,68,68,.1); }
   `;
   document.head.appendChild(_featureCSS);
 
@@ -263,9 +285,23 @@
     return String(str || '').replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m]);
   }
 
-  function formatTime(iso) {
-    try { return new Date(iso).toLocaleString('no-NO'); } catch { return iso; }
-  }
+      function formatTime(iso) {
+        try { return new Date(iso).toLocaleString('no-NO'); } catch { return iso; }
+      }
+
+      function arrayBufferToBase64(buffer) {
+        const bytes = new Uint8Array(buffer);
+        let binary = '';
+        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+        return btoa(binary);
+      }
+
+      function base64ToArrayBuffer(base64) {
+        const binary = atob(base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        return bytes.buffer;
+      }
 
   async function ensureIdentity() {
     try {
@@ -435,6 +471,7 @@
               <div id="themePicker" class="theme-picker"></div>
             </div>
             <button id="fa2Btn" class="btn btn-small btn-ghost">2FA</button>
+            <button id="sessionsBtn" class="btn btn-small btn-ghost">Enheter</button>
           </div>
         </header>
         <div class="app-row">
@@ -459,6 +496,7 @@
                 <input id="searchPartner" class="input-text" placeholder="Kontakt for soek" autocomplete="off" />
                 <input id="searchInput" class="input-text" placeholder="Soek i meldinger..." autocomplete="off" />
                 <button id="searchBtn" class="btn btn-small btn-ghost">Soek</button>
+                <button id="fileSearchBtn" class="btn btn-small btn-ghost" title="Soek i filer">📎</button>
                 <button id="myKeyBtn" class="btn btn-small btn-ghost">Min noekkel</button>
                 <button id="verifyBtn" class="btn btn-small btn-ghost verify-btn" style="display:none" title="Sikkerhetsnummer">🛡️</button>
               </div>
@@ -513,7 +551,19 @@
       let peerConnection = null;
       let localStream = null;
       let callPollInterval = null;
-      const ICE_SERVERS = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] };
+      const ICE_SERVERS = (() => {
+        const servers = [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+        ];
+        const turnUrl = window.__APP__?.turnUrl;
+        const turnUser = window.__APP__?.turnUser;
+        const turnPass = window.__APP__?.turnPass;
+        if (turnUrl && turnUser && turnPass) {
+          servers.push({ urls: turnUrl, username: turnUser, credential: turnPass });
+        }
+        return { iceServers: servers };
+      })();
       let presence = {};
       let typingTimeout = null;
       let isTyping = false;
@@ -849,7 +899,7 @@
 
       async function openGroup(groupId) {
         const group = groups.find(g => g.id === groupId);
-        activeChat = { type: 'group', target: groupId };
+        activeChat = { type: 'group', target: groupId, groupE2EEKey: null };
         replyingTo = null;
         const replyBar = document.getElementById('replyBar');
         if (replyBar) replyBar.style.display = 'none';
@@ -860,10 +910,30 @@
         composer.style.display = 'flex';
         clearImagePreview();
         let e2eeHtml = '';
-        if (group && (group.members || []).length) {
-          let anyKey = false;
-          for (const member of group.members) { if (await getPeerPublicKeyPem(member)) { anyKey = true; break; } }
-          if (anyKey) e2eeHtml = '<span class="e2ee">🔒 Delvis E2EE i gruppe</span>';
+        try {
+          const keyData = await loadJSON('/groups/' + encodeURIComponent(groupId) + '/keys');
+          if (keyData.encryptedKey) {
+            const myKeyPair = await window.__CRYPTO__.getOrCreateIdentity();
+            const myPrivKey = await window.__CRYPTO__.importPrivateKey(myKeyPair.privateKeyPem);
+            const parts = keyData.encryptedKey.split('.');
+            if (parts.length === 2) {
+              const iv = base64ToArrayBuffer(parts[0]);
+              const enc = base64ToArrayBuffer(parts[1]);
+              const rawKey = await window.crypto.subtle.decrypt({ name: 'AES-GCM', iv }, myPrivKey, enc);
+              activeChat.groupE2EEKey = await window.crypto.subtle.importKey('raw', rawKey, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+              e2eeHtml = '<span class="e2ee">🔒 E2EE i gruppe</span>';
+            }
+          } else if (group && (group.members || []).length) {
+            let anyKey = false;
+            for (const member of group.members) { if (await getPeerPublicKeyPem(member)) { anyKey = true; break; } }
+            if (anyKey) e2eeHtml = '<span class="e2ee">🔒 Delvis E2EE i gruppe</span>';
+          }
+        } catch (e) {
+          if (group && (group.members || []).length) {
+            let anyKey = false;
+            for (const member of group.members) { if (await getPeerPublicKeyPem(member)) { anyKey = true; break; } }
+            if (anyKey) e2eeHtml = '<span class="e2ee">🔒 Delvis E2EE i gruppe</span>';
+          }
         }
         setChatMeta(e2eeHtml);
         updateVerifyButton();
@@ -1139,8 +1209,29 @@
             const text = decryptFromPeer(message.text, activeChat.peerPublicKey);
             return text;
           }
+          if (!isMe && message.type === 'text' && activeChat?.type === 'group' && activeChat?.groupE2EEKey && message.e2ee) {
+            try {
+              const parts = String(message.text).split('.');
+              if (parts.length === 2) {
+                const iv = base64ToArrayBuffer(parts[0]);
+                const enc = base64ToArrayBuffer(parts[1]);
+                const dec = window.crypto.subtle.decrypt({ name: 'AES-GCM', iv }, activeChat.groupE2EEKey, enc);
+                return dec.then(buf => new TextDecoder().decode(buf));
+              }
+            } catch (e) {}
+            return '[Kunne ikke dekryptere]';
+          }
           return message.text || '';
         })();
+
+        if (typeof renderedText === 'string') {
+          finishAppend(message, chatId, isMe, renderedText);
+        } else {
+          renderedText.then(text => finishAppend(message, chatId, isMe, text)).catch(() => finishAppend(message, chatId, isMe, '[Dekrypteringsfeil]'));
+        }
+      }
+
+      function finishAppend(message, chatId, isMe, renderedText) {
 
         if (message.deleted) renderedText = '🗑️ [Melding slettet]';
 
@@ -1204,7 +1295,7 @@
           + fileHtml
           + '<div class="msg-text">' + (message.deleted ? '' : escapeHtml(renderedText)) + '</div>'
           + tagHtml
-          + '<div class="meta">' + e2eeIndicator + '<span class="read">' + (message.read === true ? 'Lest' : 'Ikke lest') + '</span></div>'
+          + '<div class="meta">' + e2eeIndicator + (isMe ? '<span class="read">' + (message.read ? '<span class="read-receipt read">✓✓</span>' : '<span class="read-receipt unread">✓</span>') + '</span>' : '') + '</div>'
           + reactionsHtml
           + actionsHtml
           + (message.id && !message.deleted ? '<button class="reaction-trigger" title="Reager">+</button>' : '')
@@ -1270,6 +1361,11 @@
               const ciphertext = await encryptForPeer(text, activeChat.peerPublicKey);
               body.ciphertext = ciphertext;
               body.recipient = activeChat.target;
+            } else if (activeChat.type === 'group' && activeChat.groupE2EEKey) {
+              const iv = window.crypto.getRandomValues(new Uint8Array(12));
+              const enc = await window.crypto.subtle.encrypt({ name: 'AES-GCM', iv }, activeChat.groupE2EEKey, new TextEncoder().encode(text));
+              body.ciphertext = arrayBufferToBase64(iv) + '.' + arrayBufferToBase64(enc);
+              body.e2ee = true;
             }
             if (replyingTo) body.reply_to = replyingTo.id;
             await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -1496,27 +1592,99 @@
       document.getElementById('searchBtn').addEventListener('click', async () => {
         const query = document.getElementById('searchInput').value.trim();
         const partner = document.getElementById('searchPartner').value.trim();
-        messagesBox.innerHTML = '';
-        const list = [];
-        const pushFrom = (msgs) => {
-          for (const m of (msgs || [])) {
-            const txt = String(m.text || '');
-            if (!query || txt.toLowerCase().includes(query.toLowerCase())) list.push(m);
+        if (!query) { toast('Skriv inn søketekst'); return; }
+        messagesBox.innerHTML = '<div class="skeleton-loader"><div class="skeleton-msg skeleton-sent"></div><div class="skeleton-msg skeleton-received"></div></div>';
+        try {
+          let allResults = [];
+          if (partner) {
+            const data = await loadJSON('/search?q=' + encodeURIComponent(query) + '&partner=' + encodeURIComponent(partner));
+            allResults = (data.messages || []).map(m => ({ ...m, _partner: partner }));
+          } else {
+            const usersData = await loadJSON('/users');
+            const userList = usersData.users || [];
+            const searches = userList.map(u => {
+              const name = typeof u === 'string' ? u : u.username;
+              return loadJSON('/search?q=' + encodeURIComponent(query) + '&partner=' + encodeURIComponent(name)).then(d => (d.messages || []).map(m => ({ ...m, _partner: name }))).catch(() => []);
+            });
+            const results = await Promise.all(searches);
+            allResults = results.flat();
           }
-        };
-        if (activeChat?.type === 'user' && partner) pushFrom([{text: (lastMessages[activeChat.target] || '')}]);
-        if (activeChat?.type === 'group') pushFrom([{text: (groupLastMessages[activeChat.target] || '')}]);
-        if (!partner) pushFrom(lastMessages);
-        if (!query && !partner) { toast('Soek trenger tekst eller aktiv chat'); return; }
-        if (!list.length) { messagesBox.innerHTML = '<div class="empty-state"><p>Ingen treff</p></div>'; toast('Ingen treff', 'success'); return; }
-        for (const m of list) appendMessage(m, partner || activeChat?.target || '');
-        toast(list.length + ' treff', 'success');
+          allResults.sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
+          messagesBox.innerHTML = '';
+          if (!allResults.length) {
+            messagesBox.innerHTML = '<div class="empty-state"><div class="empty-icon">🔍</div><p>Ingen treff for "' + escapeHtml(query) + '"</p></div>';
+            return;
+          }
+          const header = document.createElement('div');
+          header.className = 'search-results-header';
+          header.innerHTML = '<span class="count">' + allResults.length + ' treff</span><button class="close-search" id="closeSearchResults">✕</button>';
+          messagesBox.appendChild(header);
+          document.getElementById('closeSearchResults').addEventListener('click', () => {
+            if (activeChat?.type === 'user') openChat(activeChat.target);
+            else if (activeChat?.type === 'group') openGroup(activeChat.target);
+            else messagesBox.innerHTML = '<div class="empty-state"><div class="empty-icon">💬</div><h3>Ingen samtale valgt</h3><p>Velg en kontakt eller gruppe.</p></div>';
+          });
+          allResults.forEach(m => {
+            const item = document.createElement('div');
+            item.className = 'msg ' + (m.sender === (window.__APP__?.username || '') ? 'sent' : 'received');
+            const senderDisplay = getDisplayName(m.sender || '');
+            item.innerHTML = '<div class="meta"><span class="sender">' + escapeHtml(senderDisplay) + '</span><span class="time">' + escapeHtml(formatTime(m.timestamp)) + '</span></div>'
+              + '<div class="msg-text">' + escapeHtml(m.text || m.filename || '') + '</div>';
+            item.style.cursor = 'pointer';
+            item.addEventListener('click', () => {
+              openChat(m._partner);
+            });
+            messagesBox.appendChild(item);
+          });
+          toast(allResults.length + ' treff', 'success');
+        } catch (e) {
+          messagesBox.innerHTML = '<div class="empty-state"><div class="empty-icon">⚠️</div><p>Søk feilet</p></div>';
+          toast('Søk feilet');
+        }
       });
 
       ['searchInput','searchPartner'].forEach(id => {
         const el = document.getElementById(id);
         if (!el) return;
         el.addEventListener('keydown', (e) => { if (e.key === 'Enter') document.getElementById('searchBtn').click(); });
+      });
+
+      document.getElementById('fileSearchBtn').addEventListener('click', async () => {
+        const query = prompt('Soek i filnavn:');
+        if (!query) return;
+        messagesBox.innerHTML = '<div class="skeleton-loader"><div class="skeleton-msg skeleton-sent"></div></div>';
+        try {
+          const data = await loadJSON('/search/files?q=' + encodeURIComponent(query));
+          messagesBox.innerHTML = '';
+          const files = data.files || [];
+          if (!files.length) {
+            messagesBox.innerHTML = '<div class="empty-state"><div class="empty-icon">📎</div><p>Ingen filer for "' + escapeHtml(query) + '"</p></div>';
+            return;
+          }
+          const header = document.createElement('div');
+          header.className = 'search-results-header';
+          header.innerHTML = '<span class="count">' + files.length + ' filer funnet</span><button class="close-search" id="closeFileResults">✕</button>';
+          messagesBox.appendChild(header);
+          document.getElementById('closeFileResults').addEventListener('click', () => {
+            if (activeChat?.type === 'user') openChat(activeChat.target);
+            else if (activeChat?.type === 'group') openGroup(activeChat.target);
+            else messagesBox.innerHTML = '<div class="empty-state"><div class="empty-icon">💬</div><h3>Ingen samtale valgt</h3></div>';
+          });
+          files.forEach(f => {
+            const isImage = /\.(png|jpe?g|gif|webp)$/i.test(f.filename);
+            const isAudio = /\.(webm|mp3|ogg|wav|opus|m4a)$/i.test(f.filename);
+            const icon = isImage ? '🖼️' : isAudio ? '🎵' : '📄';
+            const item = document.createElement('div');
+            item.className = 'file-search-result';
+            item.innerHTML = '<div class="file-icon">' + icon + '</div>'
+              + '<div class="file-info"><div class="file-name">' + escapeHtml(f.filename) + '</div>'
+              + '<div class="file-meta">' + escapeHtml(f.sender) + ' → ' + escapeHtml(f.recipient) + ' · ' + escapeHtml(formatTime(f.timestamp)) + '</div></div>';
+            item.addEventListener('click', () => openChat(f.recipient === (window.__APP__?.username || '') ? f.sender : f.recipient));
+            messagesBox.appendChild(item);
+          });
+        } catch (e) {
+          messagesBox.innerHTML = '<div class="empty-state"><div class="empty-icon">⚠️</div><p>Filsøk feilet</p></div>';
+        }
       });
 
       function showEmojiPicker(msgEl, messageId) {
@@ -1746,7 +1914,28 @@
         if (!name) return;
         const members = (prompt('Medlemmer (komma-separert):', '') || '').split(',').map(x => x.trim()).filter(Boolean);
         try {
-          await fetch('/groups', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, members }) });
+          const res = await fetch('/groups', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, members }) });
+          const resData = await res.json();
+          if (resData.success && resData.group) {
+            try {
+              const groupKeyBytes = window.crypto.getRandomValues(new Uint8Array(32));
+              const allMembers = [window.__APP__?.username, ...members];
+              const encryptedKeys = {};
+              for (const member of allMembers) {
+                const pubKey = await getPeerPublicKeyPem(member);
+                if (pubKey) {
+                  const key = await window.__CRYPTO__.getSharedKey(pubKey);
+                  const rawKey = await window.crypto.subtle.exportKey('raw', key);
+                  const iv = window.crypto.getRandomValues(new Uint8Array(12));
+                  const enc = await window.crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, groupKeyBytes);
+                  encryptedKeys[member] = arrayBufferToBase64(iv) + '.' + arrayBufferToBase64(enc);
+                }
+              }
+              if (Object.keys(encryptedKeys).length > 0) {
+                await fetch('/groups/' + encodeURIComponent(resData.group.id) + '/keys', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keys: encryptedKeys }) });
+              }
+            } catch (e2) { console.warn('Group E2EE key distribution failed', e2); }
+          }
           toast('Gruppe opprettet', 'success');
           const data = await loadJSON('/groups');
           groups.length = 0;
@@ -1765,6 +1954,47 @@
         } catch (e) {
           toast('2FA feilet');
         }
+      });
+
+      document.getElementById('sessionsBtn').addEventListener('click', async () => {
+        document.querySelectorAll('.modal-overlay').forEach(el => el.remove());
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        overlay.innerHTML = '<div class="modal" style="max-width:480px"><h2>Enheter</h2><div id="sessionsList" style="max-height:400px;overflow:auto;">Laster...</div><div class="modal-actions"><button id="sessionsCloseBtn" class="btn btn-ghost">Lukk</button></div></div>';
+        document.body.appendChild(overlay);
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+        overlay.querySelector('#sessionsCloseBtn').addEventListener('click', () => overlay.remove());
+
+        async function loadSessions() {
+          try {
+            const data = await loadJSON('/sessions');
+            const list = overlay.querySelector('#sessionsList');
+            if (!data.sessions || !data.sessions.length) {
+              list.innerHTML = '<p style="color:var(--c-text-muted)">Ingen aktive økter</p>';
+              return;
+            }
+            list.innerHTML = data.sessions.map(s => '<div class="session-item">'
+              + '<div class="session-info"><div class="session-device">' + escapeHtml(s.device || 'Unknown')
+              + (s.current ? ' <span class="session-current">(denne)</span>' : '')
+              + '</div><div class="session-time">' + escapeHtml(formatTime(s.created)) + (s.ip ? ' · ' + escapeHtml(s.ip) : '') + '</div></div>'
+              + (s.current ? '' : '<button class="session-revoke" data-id="' + escapeHtml(s.id) + '">Avbryt</button>')
+              + '</div>').join('');
+            list.querySelectorAll('.session-revoke').forEach(btn => {
+              btn.addEventListener('click', async () => {
+                try {
+                  await loadJSON('/sessions/' + encodeURIComponent(btn.dataset.id) + '/revoke', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+                  toast('Økt avbrutt', 'success');
+                  loadSessions();
+                } catch (e) {
+                  toast('Kunne ikke avbryte økt');
+                }
+              });
+            });
+          } catch (e) {
+            overlay.querySelector('#sessionsList').innerHTML = '<p style="color:var(--c-text-muted)">Kunne ikke laste økter</p>';
+          }
+        }
+        loadSessions();
       });
 
       document.getElementById('myKeyBtn').addEventListener('click', async () => {
