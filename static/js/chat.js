@@ -252,6 +252,50 @@
     .session-current { font-size:.7rem; color:var(--c-success); }
     .session-revoke { background:transparent; border:1px solid #ef4444; color:#ef4444; border-radius:6px; padding:2px 8px; cursor:pointer; font-size:.72rem; }
     .session-revoke:hover { background:rgba(239,68,68,.1); }
+    .pinned-bar { display:flex; align-items:center; gap:8px; padding:6px 14px; background:var(--c-surface-2); border-bottom:1px solid var(--c-border-item); cursor:pointer; font-size:.82rem; color:var(--c-text-meta); transition:background .15s; }
+    .pinned-bar:hover { background:var(--c-surface-hover); }
+    .pinned-bar .pin-icon { font-size:1rem; }
+    .pinned-bar .pin-text { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .pinned-bar .pin-close { background:transparent; border:none; color:var(--c-text-muted); cursor:pointer; font-size:.9rem; padding:2px 4px; }
+    .disappear-toggle { display:flex; align-items:center; gap:6px; font-size:.78rem; color:var(--c-text-muted); margin-left:8px; }
+    .disappear-toggle select { background:var(--c-input-bg); color:var(--c-input-text); border:1px solid var(--c-input-border); border-radius:6px; padding:2px 6px; font-size:.75rem; }
+    .schedule-bar { display:flex; align-items:center; gap:6px; padding:6px 12px; background:var(--c-surface-2); border-top:1px solid var(--c-border-item); }
+    .schedule-bar input { background:var(--c-input-bg); color:var(--c-input-text); border:1px solid var(--c-input-border); border-radius:6px; padding:3px 8px; font-size:.78rem; flex:1; }
+    .schedule-bar .btn { font-size:.75rem; }
+    .link-preview-card { margin:6px 0; padding:10px 12px; background:var(--c-surface-2); border:1px solid var(--c-border-item); border-left:3px solid var(--c-accent); border-radius:8px; max-width:360px; }
+    .link-preview-card .lp-title { font-size:.85rem; font-weight:600; color:var(--c-text-chat); margin-bottom:3px; }
+    .link-preview-card .lp-desc { font-size:.75rem; color:var(--c-text-meta); line-height:1.3; max-height:3em; overflow:hidden; }
+    .link-preview-card .lp-url { font-size:.7rem; color:var(--c-text-muted); margin-top:3px; }
+    .link-preview-card .lp-image { max-width:100%; max-height:160px; border-radius:6px; margin-top:6px; object-fit:cover; }
+    .full-emoji-picker {
+      position:absolute; bottom:calc(100% + 4px); left:0;
+      background:var(--c-surface-2); border:1px solid var(--c-border-item);
+      border-radius:12px; padding:8px; width:320px; max-height:360px;
+      display:none; flex-direction:column; z-index:200;
+      box-shadow:0 8px 32px rgba(0,0,0,.5);
+    }
+    .full-emoji-picker.open { display:flex; }
+    .emoji-search { width:100%; padding:6px 10px; background:var(--c-input-bg); border:1px solid var(--c-input-border); border-radius:8px; color:var(--c-input-text); font-size:.82rem; margin-bottom:6px; outline:none; }
+    .emoji-search:focus { border-color:var(--c-border-focus); }
+    .emoji-categories { display:flex; gap:2px; margin-bottom:6px; }
+    .emoji-cat-btn { background:transparent; border:none; font-size:1rem; cursor:pointer; padding:3px 6px; border-radius:6px; transition:background .12s; }
+    .emoji-cat-btn:hover, .emoji-cat-btn.active { background:rgba(255,255,255,.1); }
+    .emoji-grid { display:grid; grid-template-columns:repeat(8,1fr); gap:2px; max-height:250px; overflow-y:auto; }
+    .emoji-grid-item { width:100%; aspect-ratio:1; border:none; background:transparent; font-size:1.3rem; cursor:pointer; border-radius:6px; display:flex; align-items:center; justify-content:center; transition:background .1s; }
+    .emoji-grid-item:hover { background:rgba(255,255,255,.12); }
+    .call-record-btn { background:transparent; border:1px solid #ef4444; color:#ef4444; border-radius:50%; width:36px; height:36px; cursor:pointer; font-size:1rem; display:flex; align-items:center; justify-content:center; transition:background .15s; }
+    .call-record-btn:hover { background:rgba(239,68,68,.15); }
+    .call-record-btn.recording { background:#ef4444; color:#fff; animation:recPulse 1s infinite; }
+    .scheduled-list { max-height:200px; overflow:auto; }
+    .scheduled-item { display:flex; align-items:center; justify-content:space-between; padding:6px 8px; border-bottom:1px solid var(--c-border-item); font-size:.82rem; }
+    .scheduled-item:last-child { border-bottom:none; }
+    .scheduled-text { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--c-text-chat); }
+    .scheduled-time { color:var(--c-text-muted); font-size:.72rem; margin:0 8px; }
+    [aria-hidden="true"] { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); border:0; }
+    .skip-link { position:absolute; top:-40px; left:0; background:var(--c-accent); color:#fff; padding:8px 16px; z-index:10000; transition:top .2s; }
+    .skip-link:focus { top:0; }
+    .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); border:0; }
+    .kbd { display:inline-block; padding:1px 5px; background:var(--c-surface-2); border:1px solid var(--c-border-item); border-radius:4px; font-size:.7rem; font-family:monospace; color:var(--c-text-meta); }
   `;
   document.head.appendChild(_featureCSS);
 
@@ -470,61 +514,79 @@
               <button id="themeBtn" class="btn btn-small btn-ghost">Tema</button>
               <div id="themePicker" class="theme-picker"></div>
             </div>
-            <button id="fa2Btn" class="btn btn-small btn-ghost">2FA</button>
-            <button id="sessionsBtn" class="btn btn-small btn-ghost">Enheter</button>
+            <button id="fa2Btn" class="btn btn-small btn-ghost" aria-label="Tofaktorautentisering">2FA</button>
+            <button id="sessionsBtn" class="btn btn-small btn-ghost" aria-label="Administrer enheter">Enheter</button>
+            <button id="rotateKeyBtn" class="btn btn-small btn-ghost" title="Roter.noekkel" aria-label="Roter krypteringsnoekkel">🔄</button>
           </div>
         </header>
         <div class="app-row">
-          <aside class="sidebar">
+          <aside class="sidebar" role="navigation" aria-label="Kontakter">
             <div class="section">
               <div class="section-title">MELDINGER</div>
-              <div id="usersList" class="list"></div>
+              <div id="usersList" class="list" role="listbox" aria-label="Kontakter"></div>
             </div>
             <div class="section">
               <div class="section-title">GRUPPER</div>
-              <div id="groupsList" class="list"></div>
-              <button id="createGroupBtn" class="btn btn-small btn-ghost">+ Ny gruppe</button>
+              <div id="groupsList" class="list" role="listbox" aria-label="Grupper"></div>
+              <button id="createGroupBtn" class="btn btn-small btn-ghost" aria-label="Opprett ny gruppe">+ Ny gruppe</button>
             </div>
           </aside>
-          <main class="chat-main">
-            <header class="chat-header">
+          <main class="chat-main" role="main">
+            <header class="chat-header" role="banner">
               <div>
-                <div id="chatTitle" class="chat-title">Velg en samtale</div>
-                <div id="chatMeta" class="chat-meta"></div>
+                <div id="chatTitle" class="chat-title" aria-live="polite">Velg en samtale</div>
+                <div id="chatMeta" class="chat-meta" aria-live="polite"></div>
               </div>
               <div class="chat-actions">
-                <input id="searchPartner" class="input-text" placeholder="Kontakt for soek" autocomplete="off" />
-                <input id="searchInput" class="input-text" placeholder="Soek i meldinger..." autocomplete="off" />
-                <button id="searchBtn" class="btn btn-small btn-ghost">Soek</button>
-                <button id="fileSearchBtn" class="btn btn-small btn-ghost" title="Soek i filer">📎</button>
-                <button id="myKeyBtn" class="btn btn-small btn-ghost">Min noekkel</button>
-                <button id="verifyBtn" class="btn btn-small btn-ghost verify-btn" style="display:none" title="Sikkerhetsnummer">🛡️</button>
+                <input id="searchPartner" class="input-text" placeholder="Kontakt for soek" autocomplete="off" aria-label="Soek paa kontakt" />
+                <input id="searchInput" class="input-text" placeholder="Soek i meldinger..." autocomplete="off" aria-label="Soek i meldinger" />
+                <button id="searchBtn" class="btn btn-small btn-ghost" aria-label="Soek">Soek</button>
+                <button id="fileSearchBtn" class="btn btn-small btn-ghost" title="Soek i filer" aria-label="Soek i filer">📎</button>
+                <button id="myKeyBtn" class="btn btn-small btn-ghost" aria-label="Vis min offentlige noekkel">Min noekkel</button>
+                <button id="verifyBtn" class="btn btn-small btn-ghost verify-btn" style="display:none" title="Sikkerhetsnummer" aria-label="Verifiser samtale">🛡️</button>
               </div>
             </header>
-            <div id="messages" class="messages">
+            <div id="pinnedBar" class="pinned-bar" style="display:none" role="button" tabindex="0" aria-label="Fast melding">
+              <span class="pin-icon">📌</span>
+              <span class="pin-text" id="pinnedText"></span>
+              <button class="pin-close" id="pinnedClose" aria-label="Fjern fast melding">&#10005;</button>
+            </div>
+            <div id="messages" class="messages" role="log" aria-live="polite" aria-label="Meldinger">
               <div class="empty-state">
                 <div class="empty-icon">💬</div>
                 <h3>Ingen samtale valgt</h3>
                 <p>Velg en kontakt eller gruppe.</p>
               </div>
             </div>
-            <div id="dropOverlay" class="drop-overlay">
+            <div id="dropOverlay" class="drop-overlay" aria-hidden="true">
               <div class="drop-overlay-content">
                 <div class="drop-icon">📁</div>
                 <div>Slipp fil her</div>
               </div>
             </div>
-            <div id="composer" class="composer" style="display:none">
+            <div id="composer" class="composer" style="display:none" role="form" aria-label="Meldingskomposisjon">
               <div id="imagePreview" class="image-preview" style="display:none"></div>
-              <input id="fileInput" type="file" class="input-text" />
-              <div id="replyBar" class="reply-bar" style="display:none">
+              <input id="fileInput" type="file" class="input-text" aria-label="Velg fil" />
+              <div id="replyBar" class="reply-bar" style="display:none" aria-live="polite">
                 <span class="reply-bar-text">Svarer paa: <strong id="replyBarName"></strong> <span id="replyBarPreview"></span></span>
-                <button id="cancelReply" class="reply-bar-cancel">&#10005;</button>
+                <button id="cancelReply" class="reply-bar-cancel" aria-label="Avbryt svar">&#10005;</button>
               </div>
-              <div class="composer-row">
-                <input id="messageInput" class="input-text" placeholder="Skriv en melding..." autocomplete="off" />
-                <button id="voiceRecordBtn" class="btn btn-small btn-ghost" title="Talebeskjed">🎙️</button>
-                <button id="sendBtn" class="btn btn-primary" disabled>Send</button>
+              <div class="composer-row" style="position:relative">
+                <button id="emojiToggleBtn" class="btn btn-small btn-ghost" title="Emoji" aria-label="Velg emoji">😀</button>
+                <div id="fullEmojiPicker" class="full-emoji-picker" role="dialog" aria-label="Emoji-velger">
+                  <input id="emojiSearch" class="emoji-search" placeholder="Soek emoji..." aria-label="Soek emoji" />
+                  <div id="emojiCategories" class="emoji-categories"></div>
+                  <div id="emojiGrid" class="emoji-grid" role="grid" aria-label="Emoji"></div>
+                </div>
+                <input id="messageInput" class="input-text" placeholder="Skriv en melding..." autocomplete="off" aria-label="Skriv en melding" />
+                <button id="voiceRecordBtn" class="btn btn-small btn-ghost" title="Talebeskjed" aria-label="Talebeskjed">🎙️</button>
+                <button id="sendBtn" class="btn btn-primary" disabled aria-label="Send melding">Send</button>
+              </div>
+              <div id="scheduleBar" class="schedule-bar" style="display:none">
+                <span style="font-size:.78rem;color:var(--c-text-muted)">📅</span>
+                <input id="scheduleTime" type="datetime-local" aria-label="Send senere" />
+                <button id="scheduleSendBtn" class="btn btn-small btn-primary">Planlegg</button>
+                <button id="scheduleCancelBtn" class="btn btn-small btn-ghost">✕</button>
               </div>
             </div>
           </main>
@@ -864,6 +926,8 @@
         await fetchVerificationStatus(user);
         updateVerifyButton();
         await loadChat(user);
+        loadPinnedMessages('user', user);
+        addDisappearToggle();
         await checkTypingIndicator();
         const input = document.getElementById('messageInput');
         if (input) input.focus();
@@ -938,6 +1002,7 @@
         setChatMeta(e2eeHtml);
         updateVerifyButton();
         await loadGroup(groupId);
+        loadPinnedMessages('group', groupId);
         await checkTypingIndicator();
         const input = document.getElementById('messageInput');
         if (input) input.focus();
@@ -1368,6 +1433,7 @@
               body.e2ee = true;
             }
             if (replyingTo) body.reply_to = replyingTo.id;
+            if (window._disappearMinutes && activeChat.type === 'user') body.self_destruct_minutes = window._disappearMinutes;
             await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
           }
           input.value = '';
@@ -1710,6 +1776,378 @@
           document.addEventListener('click', close);
         }, 10);
       }
+
+      // ── Full Emoji Picker ──
+      const EMOJI_DATA = {
+        'Smiley': ['😀','😃','😄','😁','😆','😅','🤣','😂','🙂','🙃','😉','😊','😇','🥰','😍','🤩','😘','😗','😚','😙','🥲','😋','😛','😜','🤪','😝','🤑','🤗','🤭','🫢','🤫','🤔','🫡','🤐','🤨','😐','😑','😶','🫥','😏','😒','🙄','😬','🤥','😌','😔','😪','🤤','😴','😷','🤒','🤕','🤢','🤮','🥵','🥶','🥴','😵','🤯','🤠','🥳','🥸','😎','🤓','🧐'],
+        'Gest': ['👋','🤚','🖐️','✋','🖖','🫱','🫲','🫳','🫴','👌','🤌','🤏','✌️','🤞','🫰','🤟','🤘','🤙','👈','👉','👆','🖕','👇','☝️','🫵','👍','👎','✊','👊','🤛','🤜','👏','🙌','🫶','👐','🤲','🤝','🙏'],
+        'Nature': ['🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐻‍❄️','🐨','🐯','🦁','🐮','🐷','🐸','🐵','🙈','🙉','🙊','🐒','🐔','🐧','🐦','🐤','🐣','🐥','🦆','🦅','🦉','🦇','🐺','🐗','🐴','🦄','🐝','🪱','🐛','🦋','🐌','🐞','🐜','🪲','🪳','🦟','🦗','🕷️','🦂','🐢','🐍','🦎','🦖','🦕','🐙','🦑','🦐','🦞','🦀','🐡','🐠','🐟','🐬','🐳','🐋','🦈','🐊'],
+        'Food': ['🍎','🍐','🍊','🍋','🍌','🍉','🍇','🍓','🫐','🍈','🍒','🍑','🥭','🍍','🥥','🥝','🍅','🍆','🥑','🥦','🥬','🥒','🌶️','🫑','🌽','🥕','🫒','🧄','🧅','🥔','🍠','🥐','🥯','🍞','🥖','🥨','🧀','🥚','🍳','🧈','🥞','🧇','🥓','🥩','🍗','🍖','🌭','🍔','🍟','🍕','🫓','🥪','🥙','🧆','🌮','🌯','🫔','🥗','🥘','🫕','🥫','🍝','🍜','🍲','🍛','🍣','🍱','🥟','🦪','🍤','🍙','🍚','🍘','🍥','🥠','🥮','🍢','🍡','🍧','🍨','🍦','🥧','🧁','🍰','🎂','🍮','🍭','🍬','🍫','🍿','🍩','🍪','🌰','🥜','🍯','🥛','🍼','🫖','☕','🍵','🧃','🥤','🧋','🍶','🍺','🍻','🥂','🍷','🥃','🍸','🍹','🧉','🍾'],
+        'Activities': ['⚽','🏀','🏈','⚾','🥎','🎾','🏐','🏉','🥏','🎱','🪀','🏓','🏸','🏒','🏑','🥍','🏏','🪃','🥅','⛳','🪁','🏹','🎣','🤿','🥊','🥋','🎽','🛹','🛼','🛷','⛸️','🥌','🎿','🪂','🎯','🪩','🎮','🕹️','🎰','🎲'],
+        'Objects': ['⌚','📱','📲','💻','⌨️','🖥️','🖨️','🖱️','🖲️','🕹️','🗜️','💽','💾','💿','📀','📼','📷','📸','📹','🎥','📽️','🎞️','📞','☎️','📟','📠','📺','📻','🎙️','🎚️','🎛️','🧭','⏱️','⏲️','⏰','🕰️','📡','🔋','🔌','💡','🔦','🕯️','🪔','🧯','🛢️','💸','💵','💴','💶','💷','🪙','💰','💳','💎','⚖️','🪜','🧰','🪛','🔧','🔩','⚙️','🗜️','⛏️','🛠️','⚒️','🔨','🪚','🔗','⛓️','🪝','🧲','🔫','💣','🧨','🪓','🔪','🗡️','⚔️','🛡️','🚬','⚰️','🪦','⚱️','🏺','🔮','📿','🧿','🪬','💈','⚗️','🔭','🔬','🕳️','🩹','🩺','💊','💉','🩸','🧬','🦠','🧫','🧪','🌡️','🧹','🪠','🧺','🧻','🚰','🚿','🛁','🛀','🧼','🪥','🪒','🧽','🪣','🧴','🛎️','🔑','🗝️','🚪','🪑','🛋️','🛏️','🛌','🧸','🪆','🖼️','🪞','🪟','🛍️','🛒','🎁','🎈','🎏','🪅','🎊','🎎','🏮','🎐','🧧','✉️','📩','📨','📧','💌','📥','📤','📦','🏷️','🪧','📪','📫','📬','📭','📮','📯','📜','📃','📄','📑','🧾','📊','📈','📉','🗒️','🗓️','📆','📅','🗑️','📇','🗃️','🗳️','🗄️','📋','📁','📂','🗂️','🗞️','📰','📓','📔','📒','📕','📗','📘','📙','📚','📖','🔖','🧷','🔗','📎','🖇️','📐','📏','🧮','📌','📍','✂️','🖊️','🖋️','✒️','🖌️','🖍️','📝','✏️','🔍','🔎','🔏','🔐','🔒','🔓'],
+        'Symbols': ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❤️‍🔥','❤️‍🩹','❣️','💕','💞','💓','💗','💖','💘','💝','💟','☮️','✝️','☪️','🕉️','☸️','✡️','🔯','🕎','☯️','☦️','🛐','⛎','♈','♉','♊','♋','♌','♍','♎','♏','♐','♑','♒','♓','🆔','⚛️','🉑','☢️','☣️','📴','📳','🈶','🈚','🈸','🈺','🈷️','✴️','🆚','💮','🉐','㊙️','㊗️','🈴','🈵','🈹','🈲','🅰️','🅱️','🆎','🆑','🅾️','🆘','❌','⭕','🛑','⛔','📛','🚫','💯','💢','♨️','🚷','🚯','🚳','🚱','🔞','📵','🚭','❗','❕','❓','❔','‼️','⁉️','🔅','🔆','〽️','⚠️','🚸','🔱','⚜️','🔰','♻️','✅','🈯','💹','❇️','✳️','❎','🌐','💠','Ⓜ️','🌀','💤','🏧','🚾','🅿️','🛗','🈳','🈂️','🛂','🛃','🛄','🛅','🚹','🚺','🚼','⚧️','🚻','🚮','🎦','📶','🈁','🔣','ℹ️','🔤','🔡','🔠','🆖','🆗','🆙','🆒','🆕','🆓','0️⃣','1️⃣','2️⃣','3️⃣','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣','🔟','🔢','#️⃣','*️⃣','⏏️','▶️','⏸️','⏯️','⏹️','⏺️','⏭️','⏮️','⏩','⏪','⏫','⏬','◀️','🔼','🔽','➡️','⬅️','⬆️','⬇️','↗️','↘️','↙️','↖️','↕️','↔️','↪️','↩️','⤴️','⤵️','🔀','🔁','🔂','🔄','🔃','🎵','🎶','➕','➖','➗','✖️','🟰','♾️','💲','💱','™️','©️','®️','〰️','➰','➿','🔚','🔙','🔛','🔝','🔜','✔️','☑️','🔘','🔴','🟠','🟡','🟢','🔵','🟣','⚫','⚪','🟤','🔺','🔻','🔸','🔹','🔶','🔷','🔳','🔲','▪️','▫️','◾','◽','◼️','◻️','🟥','🟧','🟨','🟩','🟦','🟪','⬛','⬜','🟫','🔈','🔇','🔉','🔊','🔔','🔕','📣','📢']
+      };
+      const EMOJI_CATEGORIES = Object.keys(EMOJI_DATA);
+      let currentEmojiCategory = 'Smiley';
+      let currentReactionTarget = null;
+
+      function initFullEmojiPicker() {
+        const toggleBtn = document.getElementById('emojiToggleBtn');
+        const picker = document.getElementById('fullEmojiPicker');
+        const searchInput = document.getElementById('emojiSearch');
+        const categoriesEl = document.getElementById('emojiCategories');
+        const gridEl = document.getElementById('emojiGrid');
+        if (!toggleBtn || !picker) return;
+
+        EMOJI_CATEGORIES.forEach(cat => {
+          const btn = document.createElement('button');
+          btn.className = 'emoji-cat-btn' + (cat === currentEmojiCategory ? ' active' : '');
+          btn.textContent = EMOJI_DATA[cat][0];
+          btn.title = cat;
+          btn.addEventListener('click', () => { currentEmojiCategory = cat; renderEmojiGrid(); });
+          categoriesEl.appendChild(btn);
+        });
+
+        toggleBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          picker.classList.toggle('open');
+          if (picker.classList.contains('open')) { renderEmojiGrid(); searchInput.focus(); }
+        });
+
+        searchInput.addEventListener('input', () => renderEmojiGrid(searchInput.value.trim()));
+        document.addEventListener('click', (e) => { if (!picker.contains(e.target) && e.target !== toggleBtn) picker.classList.remove('open'); });
+      }
+
+      function renderEmojiGrid(filter) {
+        const gridEl = document.getElementById('emojiGrid');
+        if (!gridEl) return;
+        gridEl.innerHTML = '';
+        let emojis = [];
+        if (filter) {
+          for (const cat of EMOJI_CATEGORIES) {
+            emojis.push(...EMOJI_DATA[cat]);
+          }
+        } else {
+          emojis = EMOJI_DATA[currentEmojiCategory] || [];
+        }
+        emojis.forEach(emoji => {
+          if (filter && !emoji.includes(filter)) return;
+          const btn = document.createElement('button');
+          btn.className = 'emoji-grid-item';
+          btn.textContent = emoji;
+          btn.setAttribute('aria-label', emoji);
+          btn.addEventListener('click', () => {
+            if (currentReactionTarget) {
+              toggleReaction(currentReactionTarget, emoji);
+              currentReactionTarget = null;
+            } else {
+              const input = document.getElementById('messageInput');
+              if (input) { input.value += emoji; input.focus(); updateSendButton(); }
+            }
+            document.getElementById('fullEmojiPicker')?.classList.remove('open');
+          });
+          gridEl.appendChild(btn);
+        });
+      }
+
+      initFullEmojiPicker();
+
+      // ── Link Previews ──
+      const linkPreviewCache = {};
+      async function fetchLinkPreview(text) {
+        const urlMatch = text.match(/https?:\/\/[^\s<>"')]+/);
+        if (!urlMatch) return null;
+        const url = urlMatch[0];
+        if (linkPreviewCache[url]) return linkPreviewCache[url];
+        try {
+          const data = await loadJSON('/link-preview?url=' + encodeURIComponent(url));
+          if (data.preview) { linkPreviewCache[url] = data.preview; return data.preview; }
+        } catch (e) {}
+        return null;
+      }
+
+      function renderLinkPreview(preview) {
+        if (!preview) return '';
+        let html = '<div class="link-preview-card">';
+        if (preview.image) html += '<img class="lp-image" src="' + escapeHtml(preview.image) + '" alt="" onerror="this.remove()" />';
+        if (preview.title) html += '<div class="lp-title">' + escapeHtml(preview.title) + '</div>';
+        if (preview.description) html += '<div class="lp-desc">' + escapeHtml(preview.description) + '</div>';
+        try { html += '<div class="lp-url">' + escapeHtml(new URL(preview.url).hostname) + '</div>'; } catch {}
+        html += '</div>';
+        return html;
+      }
+
+      const origFinishAppend = finishAppend;
+      function finishAppendWithLinkPreview(message, chatId, isMe, renderedText) {
+        origFinishAppend(message, chatId, isMe, renderedText);
+        if (!isMe && message.type === 'text' && renderedText && renderedText.match(/https?:\/\//)) {
+          const lastMsg = messagesBox.lastElementChild;
+          if (lastMsg && lastMsg.dataset.msgId === message.id) {
+            fetchLinkPreview(renderedText).then(preview => {
+              if (preview && lastMsg.isConnected) {
+                const card = document.createElement('div');
+                card.innerHTML = renderLinkPreview(preview);
+                const msgText = lastMsg.querySelector('.msg-text');
+                if (msgText && card.firstElementChild) msgText.after(card.firstElementChild);
+              }
+            }).catch(() => {});
+          }
+        }
+      }
+      finishAppend = finishAppendWithLinkPreview;
+
+      // ── Pinned Messages ──
+      async function loadPinnedMessages(chatType, chatId) {
+        const bar = document.getElementById('pinnedBar');
+        const text = document.getElementById('pinnedText');
+        if (!bar || !text) return;
+        try {
+          const data = await loadJSON('/pins/' + encodeURIComponent(chatType) + '/' + encodeURIComponent(chatId));
+          if (data.pins && data.pins.length > 0) {
+            const pin = data.pins[0];
+            text.textContent = '📌 ' + (pin.text || '').substring(0, 100);
+            bar.style.display = 'flex';
+            bar.onclick = () => {
+              const el = document.querySelector('[data-message-id="' + pin.id + '"]');
+              if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            };
+          } else {
+            bar.style.display = 'none';
+          }
+        } catch (e) { bar.style.display = 'none'; }
+      }
+
+      document.getElementById('pinnedClose')?.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if (!activeChat) return;
+        const chatType = activeChat.type === 'group' ? 'group' : 'user';
+        const chatId = activeChat.target;
+        try {
+          const data = await loadJSON('/pins/' + encodeURIComponent(chatType) + '/' + encodeURIComponent(chatId));
+          if (data.pins && data.pins.length > 0) {
+            await loadJSON('/pins/' + encodeURIComponent(chatType) + '/' + encodeURIComponent(chatId) + '/' + data.pins[0].id, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+            document.getElementById('pinnedBar').style.display = 'none';
+          }
+        } catch (e) {}
+      });
+
+      // ── Scheduled Messages ──
+      function showScheduleBar() {
+        const bar = document.getElementById('scheduleBar');
+        if (bar) bar.style.display = bar.style.display === 'none' ? 'flex' : 'none';
+      }
+
+      document.getElementById('scheduleSendBtn')?.addEventListener('click', async () => {
+        if (!activeChat) return;
+        const timeInput = document.getElementById('scheduleTime');
+        const sendAt = timeInput?.value;
+        if (!sendAt) { toast('Velg tidspunkt'); return; }
+        const input = document.getElementById('messageInput');
+        const text = (input?.value || '').trim();
+        if (!text) { toast('Skriv en melding'); return; }
+        try {
+          const body = { ciphertext: text, send_at: new Date(sendAt).toISOString() };
+          if (activeChat.type === 'user') body.recipient = activeChat.target;
+          else body.group_id = activeChat.target;
+          await fetch('/schedule', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+          toast('Melding planlagt', 'success');
+          input.value = '';
+          updateSendButton();
+          document.getElementById('scheduleBar').style.display = 'none';
+        } catch (e) { toast('Kunne ikke planlegge melding'); }
+      });
+
+      document.getElementById('scheduleCancelBtn')?.addEventListener('click', () => {
+        document.getElementById('scheduleBar').style.display = 'none';
+      });
+
+      // Add schedule toggle to send button area
+      document.getElementById('sendBtn')?.addEventListener('contextmenu', (e) => { e.preventDefault(); showScheduleBar(); });
+
+      // ── Disappearing Messages Toggle ──
+      function addDisappearToggle() {
+        const meta = document.getElementById('chatMeta');
+        if (!meta || !activeChat || activeChat.type !== 'user') return;
+        const existing = meta.querySelector('.disappear-toggle');
+        if (existing) existing.remove();
+        const wrap = document.createElement('span');
+        wrap.className = 'disappear-toggle';
+        wrap.innerHTML = '💣 <select id="disappearSelect" aria-label="Forsvinnende meldinger">'
+          + '<option value="">Av</option>'
+          + '<option value="5">5 min</option>'
+          + '<option value="30">30 min</option>'
+          + '<option value="60">1 time</option>'
+          + '<option value="1440">24 timer</option>'
+          + '<option value="10080">7 dager</option>'
+          + '</select>';
+        meta.appendChild(wrap);
+        document.getElementById('disappearSelect')?.addEventListener('change', (e) => {
+          window._disappearMinutes = parseInt(e.target.value) || 0;
+          toast(window._disappearMinutes ? 'Forsvinnende meldinger: ' + e.target.value + ' min' : 'Forsvinnende meldinger av', 'success');
+        });
+      }
+
+      // ── Keyboard Shortcuts ──
+      document.addEventListener('keydown', (e) => {
+        if (e.ctrlKey && e.key === 'k') {
+          e.preventDefault();
+          const searchInput = document.getElementById('searchInput');
+          if (searchInput) searchInput.focus();
+        }
+        if (e.key === 'Escape') {
+          document.querySelectorAll('.modal-overlay').forEach(el => el.remove());
+          document.querySelectorAll('.full-emoji-picker.open').forEach(el => el.classList.remove('open'));
+          const replyBar = document.getElementById('replyBar');
+          if (replyBar) replyBar.style.display = 'none';
+          replyingTo = null;
+        }
+        if (e.ctrlKey && e.key === 'Enter') {
+          e.preventDefault();
+          sendMessage();
+        }
+        if (e.ctrlKey && e.key === 'n') {
+          e.preventDefault();
+          const msgInput = document.getElementById('messageInput');
+          if (msgInput) msgInput.focus();
+        }
+        if (e.key === 'ArrowUp' && !e.target.closest('input, textarea')) {
+          e.preventDefault();
+          const msgs = messagesBox.querySelectorAll('.msg.sent');
+          if (msgs.length) msgs[msgs.length - 1]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        if (e.key === 'ArrowDown' && !e.target.closest('input, textarea')) {
+          e.preventDefault();
+          const msgs = messagesBox.querySelectorAll('.msg.received');
+          if (msgs.length) msgs[0]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      });
+
+      // ── PWA Push Notifications ──
+      async function initPushNotifications() {
+        if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+        try {
+          const reg = await navigator.serviceWorker.register('/sw.js');
+          const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: (await loadJSON('/push/vapid-key')).key || '' });
+          await fetch('/push/subscribe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ subscription: sub }) });
+        } catch (e) {}
+      }
+      if (Notification.permission === 'granted') initPushNotifications();
+
+      // ── Call Recording ──
+      let callRecorder = null;
+      let callRecordingChunks = [];
+
+      function addRecordingButton() {
+        const actions = document.querySelector('.call-actions');
+        if (!actions || document.getElementById('callRecordBtn')) return;
+        const btn = document.createElement('button');
+        btn.id = 'callRecordBtn';
+        btn.className = 'call-record-btn';
+        btn.title = 'Ta opp samtale';
+        btn.setAttribute('aria-label', 'Ta opp samtale');
+        btn.textContent = '⏺️';
+        btn.addEventListener('click', () => {
+          if (callRecorder && callRecorder.state === 'recording') {
+            callRecorder.stop();
+            btn.classList.remove('recording');
+            btn.textContent = '⏺️';
+          } else {
+            startCallRecording();
+            btn.classList.add('recording');
+            btn.textContent = '⏹️';
+          }
+        });
+        actions.insertBefore(btn, actions.firstChild);
+      }
+
+      function startCallRecording() {
+        if (!localStream && !peerConnection) return;
+        const remoteVideo = document.getElementById('remoteVideo');
+        const streams = [];
+        if (localStream) streams.push(localStream);
+        if (remoteVideo?.srcObject) streams.push(remoteVideo.srcObject);
+        if (!streams.length) return;
+        try {
+          const combined = new MediaStream([
+            ...streams.flatMap(s => s.getAudioTracks()),
+          ]);
+          callRecorder = new MediaRecorder(combined, { mimeType: 'audio/webm;codecs=opus' });
+          callRecordingChunks = [];
+          callRecorder.ondataavailable = (e) => { if (e.data.size > 0) callRecordingChunks.push(e.data); };
+          callRecorder.onstop = async () => {
+            const blob = new Blob(callRecordingChunks, { type: 'audio/webm' });
+            const form = new FormData();
+            form.append('file', blob, 'call-recording-' + Date.now() + '.webm');
+            if (activeChat?.type === 'user') form.append('recipient', activeChat.target);
+            else if (activeChat?.type === 'group') form.append('groupId', activeChat.target);
+            await fetch('/upload', { method: 'POST', body: form });
+            toast('Opptak lagret', 'success');
+          };
+          callRecorder.start();
+        } catch (e) { toast('Kunne ikke starte opptak'); }
+      }
+
+      const origRenderCallOverlay = renderCallOverlay;
+      function renderCallOverlayWithRecord(info) {
+        origRenderCallOverlay(info);
+        addRecordingButton();
+      }
+      renderCallOverlay = renderCallOverlayWithRecord;
+
+      // ── Key Rotation ──
+      document.getElementById('rotateKeyBtn')?.addEventListener('click', async () => {
+        if (!confirm('Roter.noekkel? Du maa dele den nye offentlige noekkelen med alle kontakter.')) return;
+        try {
+          const data = await loadJSON('/key/rotate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+          toast(data.message || 'Noekkel rotert', 'success');
+          await window.__CRYPTO__.getOrCreateIdentity();
+        } catch (e) { toast('Kunne ikke rotere noekkel'); }
+      });
+
+      // ── Pin action in message context menu ──
+      const origContextHandler = (message, item) => {
+        item.addEventListener('contextmenu', (e) => {
+          e.preventDefault();
+          if (message.deleted) return;
+          replyingTo = { id: message.id, sender: message.sender, text: message.text || '' };
+          document.getElementById('replyBar').style.display = 'flex';
+          document.getElementById('replyBarName').textContent = message.sender;
+          document.getElementById('replyBarPreview').textContent = (message.text || '').substring(0, 60);
+          document.getElementById('messageInput').focus();
+          const pinBtn = document.createElement('button');
+          pinBtn.className = 'msg-action-btn';
+          pinBtn.textContent = '📌';
+          pinBtn.title = 'Fest melding';
+          pinBtn.setAttribute('aria-label', 'Fest melding');
+          let actions = item.querySelector('.msg-actions');
+          if (!actions) {
+            actions = document.createElement('div');
+            actions.className = 'msg-actions';
+            item.appendChild(actions);
+          }
+          if (!actions.querySelector('.pin-msg-btn')) {
+            pinBtn.classList.add('pin-msg-btn');
+            pinBtn.addEventListener('click', async (ev) => {
+              ev.stopPropagation();
+              const chatType = activeChat?.type === 'group' ? 'group' : 'user';
+              const chatId = activeChat?.target;
+              try {
+                await loadJSON('/pins/' + encodeURIComponent(chatType) + '/' + encodeURIComponent(chatId) + '/' + message.id, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+                toast('Melding festet', 'success');
+                loadPinnedMessages(chatType, chatId);
+              } catch (e) { toast('Kunne ikke feste melding'); }
+            });
+            actions.appendChild(pinBtn);
+          }
+        });
+      };
+      // Patch finishAppend to add pin action
+      const _origFinishAppend = finishAppend;
+      finishAppend = function(message, chatId, isMe, renderedText) {
+        _origFinishAppend(message, chatId, isMe, renderedText);
+        const item = messagesBox.querySelector('[data-message-id="' + message.id + '"]');
+        if (item && !message.deleted) origContextHandler(message, item);
+      };
 
       async function toggleReaction(messageId, emoji) {
         try {

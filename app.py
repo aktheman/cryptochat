@@ -90,6 +90,10 @@ REACTIONS_FILE = DATA_DIR / 'reactions.json'
 TYPING_FILE = DATA_DIR / 'typing.json'
 VERIFICATION_FILE = DATA_DIR / 'verification.json'
 CALLS_FILE = DATA_DIR / 'calls.json'
+PINS_FILE = DATA_DIR / 'pins.json'
+SCHEDULED_FILE = DATA_DIR / 'scheduled.json'
+PUSH_SUBSCRIPTIONS_FILE = DATA_DIR / 'push_subscriptions.json'
+LINK_PREVIEWS_FILE = DATA_DIR / 'link_previews.json'
 
 # ──────────────────────────────────────────────
 # Helpers
@@ -1603,6 +1607,269 @@ def verify_batch():
     return jsonify({'success': True, 'statuses': result})
 
 # ──────────────────────────────────────────────
+# Pinned Messages
+# ──────────────────────────────────────────────
+@app.route('/pins/<chat_type>/<chat_id>', methods=['GET'])
+@require_login
+def get_pins(chat_type, chat_id):
+    pins = load_json(PINS_FILE, {})
+    key = f"{chat_type}::{chat_id}"
+    pinned_ids = pins.get(key, [])
+    messages = load_json(MESSAGES_FILE, [])
+    pinned = [m for m in messages if m.get('id') in pinned_ids]
+    pinned.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+    result = []
+    for m in pinned[:10]:
+        entry = {'id': m.get('id'), 'sender': m.get('sender'), 'timestamp': m.get('timestamp'), 'type': m.get('type')}
+        if m.get('type') == 'file':
+            entry['text'] = m.get('filename', '[fil]')
+        elif m.get('type') == 'text':
+            entry['text'] = (m.get('ciphertext') or '')[:120]
+        else:
+            entry['text'] = ''
+        result.append(entry)
+    return jsonify({'success': True, 'pins': result})
+
+@app.route('/pins/<chat_type>/<chat_id>/<message_id>', methods=['POST'])
+@require_login
+def pin_message(chat_type, chat_id, message_id):
+    pins = load_json(PINS_FILE, {})
+    key = f"{chat_type}::{chat_id}"
+    pinned = pins.get(key, [])
+    if message_id not in pinned:
+        pinned.append(message_id)
+    pins[key] = pinned[-20:]
+    save_json(PINS_FILE, pins)
+    return jsonify({'success': True})
+
+@app.route('/pins/<chat_type>/<chat_id>/<message_id>', methods=['DELETE'])
+@require_login
+def unpin_message(chat_type, chat_id, message_id):
+    pins = load_json(PINS_FILE, {})
+    key = f"{chat_type}::{chat_id}"
+    pinned = pins.get(key, [])
+    if message_id in pinned:
+        pinned.remove(message_id)
+    pins[key] = pinned
+    save_json(PINS_FILE, pins)
+    return jsonify({'success': True})
+
+# ──────────────────────────────────────────────
+# Scheduled Messages
+# ──────────────────────────────────────────────
+@app.route('/schedule', methods=['POST'])
+@require_login
+def schedule_message():
+    me = session['username']
+    data = request.get_json(force=True, silent=True) or {}
+    recipient = (data.get('recipient') or '').strip()
+    group_id = (data.get('group_id') or '').strip()
+    ciphertext = sanitize_input(data.get('ciphertext', ''), 10000)
+    send_at = (data.get('send_at') or '').strip()
+    if not ciphertext or not send_at:
+        return jsonify({'success': False, 'message': 'Manglende innhold eller tid.'}), 400
+    if not recipient and not group_id:
+        return jsonify({'success': False, 'message': 'Manglende mottaker.'}), 400
+    try:
+        scheduled_time = datetime.fromisoformat(send_at.replace('Z', '+00:00')).replace(tzinfo=None)
+    except Exception:
+        return jsonify({'success': False, 'message': 'Ugyldig tidspunkt.'}), 400
+    if scheduled_time <= datetime.utcnow():
+        return jsonify({'success': False, 'message': 'Tidspunkt maa vaere i fremtiden.'}), 400
+    scheduled = load_json(SCHEDULED_FILE, [])
+    entry = {
+        'id': secrets.token_hex(8),
+        'sender': me,
+        'recipient': recipient,
+        'group_id': group_id,
+        'ciphertext': ciphertext,
+        'send_at': scheduled_time.isoformat(),
+        'created': now_iso(),
+        'sent': False,
+    }
+    scheduled.append(entry)
+    save_json(SCHEDULED_FILE, scheduled)
+    return jsonify({'success': True, 'id': entry['id']})
+
+@app.route('/schedule', methods=['GET'])
+@require_login
+def list_scheduled():
+    me = session['username']
+    scheduled = load_json(SCHEDULED_FILE, [])
+    my_scheduled = [s for s in scheduled if s.get('sender') == me and not s.get('sent')]
+    return jsonify({'success': True, 'scheduled': my_scheduled})
+
+@app.route('/schedule/<schedule_id>', methods=['DELETE'])
+@require_login
+def cancel_scheduled(schedule_id):
+    me = session['username']
+    scheduled = load_json(SCHEDULED_FILE, [])
+    scheduled = [s for s in scheduled if not (s.get('id') == schedule_id and s.get('sender') == me)]
+    save_json(SCHEDULED_FILE, scheduled)
+    return jsonify({'success': True})
+
+def deliver_scheduled_messages():
+    now = datetime.utcnow()
+    scheduled = load_json(SCHEDULED_FILE, [])
+    messages = load_json(MESSAGES_FILE, [])
+    changed = False
+    for entry in scheduled:
+        if entry.get('sent'):
+            continue
+        send_at = parse_iso(entry.get('send_at'))
+        if send_at and send_at.replace(tzinfo=None) <= now:
+            if entry.get('recipient'):
+                pk = pair_key(entry['sender'], entry['recipient'])
+                shared_key = get_or_create_pair_key(entry['sender'], entry['recipient'])
+                messages.append({
+                    'id': hashlib.sha256(f"{entry['ciphertext']}{datetime.utcnow().isoformat()}{entry['sender']}{entry['recipient']}".encode()).hexdigest(),
+                    'pair_key': pk,
+                    'sender': entry['sender'],
+                    'recipient': entry['recipient'],
+                    'ciphertext': entry['ciphertext'],
+                    'type': 'text',
+                    'timestamp': datetime.utcnow().isoformat(),
+                    'read': False,
+                    'filename': None,
+                    'reply_to': None,
+                })
+            elif entry.get('group_id'):
+                group_key = get_or_create_group_key(entry['group_id'])
+                messages.append({
+                    'id': hashlib.sha256(f"{entry['ciphertext']}{entry['group_id']}{datetime.utcnow().isoformat()}{entry['sender']}".encode()).hexdigest(),
+                    'group_id': entry['group_id'],
+                    'sender': entry['sender'],
+                    'ciphertext': entry['ciphertext'],
+                    'type': 'text',
+                    'timestamp': datetime.utcnow().isoformat(),
+                    'filename': None,
+                    'reply_to': None,
+                })
+            entry['sent'] = True
+            changed = True
+    if changed:
+        save_json(MESSAGES_FILE, messages)
+        save_json(SCHEDULED_FILE, scheduled)
+
+def cleanup_disappearing_messages():
+    messages = load_json(MESSAGES_FILE, [])
+    now = datetime.utcnow()
+    before = len(messages)
+    cleaned = [m for m in messages if not m.get('self_destruct_at') or parse_iso(m.get('self_destruct_at')) and parse_iso(m.get('self_destruct_at')).replace(tzinfo=None) > now]
+    if len(cleaned) < before:
+        save_json(MESSAGES_FILE, cleaned)
+
+@app.before_request
+def background_tasks():
+    if not hasattr(app, '_last_bg') or time.time() - app._last_bg > 60:
+        app._last_bg = time.time()
+        try:
+            deliver_scheduled_messages()
+            cleanup_disappearing_messages()
+        except Exception:
+            pass
+
+# ──────────────────────────────────────────────
+# PWA Push Notifications
+# ──────────────────────────────────────────────
+@app.route('/push/subscribe', methods=['POST'])
+@require_login
+def push_subscribe():
+    me = session['username']
+    data = request.get_json(force=True, silent=True) or {}
+    subscription = data.get('subscription')
+    if not subscription:
+        return jsonify({'success': False, 'message': 'Manglende abonnement.'}), 400
+    subs = load_json(PUSH_SUBSCRIPTIONS_FILE, {})
+    subs.setdefault(me, [])
+    endpoint = subscription.get('endpoint', '')
+    subs[me] = [s for s in subs[me] if s.get('endpoint') != endpoint]
+    subs[me].append(subscription)
+    save_json(PUSH_SUBSCRIPTIONS_FILE, subs)
+    return jsonify({'success': True})
+
+@app.route('/push/unsubscribe', methods=['POST'])
+@require_login
+def push_unsubscribe():
+    me = session['username']
+    data = request.get_json(force=True, silent=True) or {}
+    endpoint = data.get('endpoint', '')
+    subs = load_json(PUSH_SUBSCRIPTIONS_FILE, {})
+    if me in subs:
+        subs[me] = [s for s in subs[me] if s.get('endpoint') != endpoint]
+        save_json(PUSH_SUBSCRIPTIONS_FILE, subs)
+    return jsonify({'success': True})
+
+@app.route('/push/vapid-key')
+def push_vapid_key():
+    vapid_key = os.environ.get('VAPID_PUBLIC_KEY', '')
+    return jsonify({'success': True, 'key': vapid_key})
+
+# ──────────────────────────────────────────────
+# Link Previews
+# ──────────────────────────────────────────────
+@app.route('/link-preview')
+@require_login
+def get_link_preview():
+    url = (request.args.get('url') or '').strip()
+    if not url or not url.startswith(('http://', 'https://')):
+        return jsonify({'success': True, 'preview': None})
+    cache = load_json(LINK_PREVIEWS_FILE, {})
+    if url in cache:
+        return jsonify({'success': True, 'preview': cache[url]})
+    import urllib.request
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (compatible; CryptoChat/1.0)'})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            html = resp.read(200000).decode('utf-8', errors='ignore')
+        import re
+        title_match = re.search(r'<title[^>]*>(.*?)</title>', html, re.IGNORECASE | re.DOTALL)
+        desc_match = re.search(r'<meta[^>]*name=["\']description["\'][^>]*content=["\'](.*?)["\']', html, re.IGNORECASE) or re.search(r'<meta[^>]*content=["\'](.*?)["\'][^>]*name=["\']description["\']', html, re.IGNORECASE)
+        og_img = re.search(r'<meta[^>]*property=["\']og:image["\'][^>]*content=["\'](.*?)["\']', html, re.IGNORECASE) or re.search(r'<meta[^>]*content=["\'](.*?)["\'][^>]*property=["\']og:image["\']', html, re.IGNORECASE)
+        preview = {
+            'url': url,
+            'title': (title_match.group(1).strip() if title_match else '')[:200],
+            'description': (desc_match.group(1).strip() if desc_match else '')[:300],
+            'image': (og_img.group(1).strip() if og_img else ''),
+        }
+        cache[url] = preview
+        if len(cache) > 500:
+            oldest = list(cache.keys())[:100]
+            for k in oldest: del cache[k]
+        save_json(LINK_PREVIEWS_FILE, cache)
+        return jsonify({'success': True, 'preview': preview})
+    except Exception:
+        return jsonify({'success': True, 'preview': None})
+
+# ──────────────────────────────────────────────
+# Key Rotation
+# ──────────────────────────────────────────────
+@app.route('/key/rotate', methods=['POST'])
+@require_login
+def rotate_key():
+    me = session['username']
+    users = load_json(USERS_FILE, {})
+    if me not in users:
+        return jsonify({'success': False, 'message': 'Bruker ikke funnet.'}), 404
+    new_keypair = generate_identity_keypair()
+    users[me]['identity_keypair'] = new_keypair
+    users[me]['key_rotated_at'] = now_iso()
+    save_json(USERS_FILE, users)
+    return jsonify({'success': True, 'message': 'Noekkel rotert. Del den nye offentlige noekkelen med kontakter.'})
+
+@app.route('/key/rotation-status')
+@require_login
+def key_rotation_status():
+    me = session['username']
+    users = load_json(USERS_FILE, {})
+    user = users.get(me, {})
+    return jsonify({
+        'success': True,
+        'rotated_at': user.get('key_rotated_at'),
+        'created_at': user.get('created_at'),
+    })
+
+# ──────────────────────────────────────────────
 # Offline / SW / PWA
 # ──────────────────────────────────────────────
 @app.route('/manifest.json')
@@ -1622,7 +1889,24 @@ def manifest_json():
 
 @app.route('/sw.js')
 def service_worker():
-    sw = "const CACHE='cryptochat-v1';const ASSETS=['/','/static/css/style.css','/static/js/chat.js','/static/js/crypto.js','/manifest.json'];self.addEventListener('install',(e)=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)));self.skipWaiting();});self.addEventListener('activate',(e)=>{e.waitUntil(self.clients.claim());});self.addEventListener('fetch',(event)=>{event.respondWith(fetch(event.request).catch(()=>caches.match(event.request)));});"
+    sw = """const CACHE='cryptochat-v2';const ASSETS=['/','/static/css/style.css','/static/js/chat.js','/static/js/crypto.js','/manifest.json'];
+self.addEventListener('install',(e)=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)));self.skipWaiting();});
+self.addEventListener('activate',(e)=>{e.waitUntil(self.clients.claim());});
+self.addEventListener('fetch',(event)=>{event.respondWith(fetch(event.request).catch(()=>caches.match(event.request)));});
+self.addEventListener('push',(event)=>{
+  const data=event.data?event.data.json():{};
+  const title=data.title||'CryptoChat';
+  const options={body:data.body||'',icon:'/static/img/icon-192.png',badge:'/static/img/icon-192.png',data:data.url||'/'};
+  event.waitUntil(self.registration.showNotification(title,options));
+});
+self.addEventListener('notificationclick',(event)=>{
+  event.notification.close();
+  event.waitUntil(clients.matchAll({type:'window'}).then(c=>{
+    const url=event.notification.data||'/';
+    for(const client of c){if(client.url.includes(url)&&'focus' in client)return client.focus();}
+    return clients.openWindow(url);
+  }));
+});"""
     return Response(sw, mimetype='application/javascript')
 
 @app.route('/offline.html')
