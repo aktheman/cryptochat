@@ -629,6 +629,10 @@ def get_messages(other_user):
             'deleted': convert_to_bool(m.get('deleted'), False),
             'reply_to': m.get('reply_to'),
             'reply_preview': '',
+            'silent': convert_to_bool(m.get('silent'), False),
+            'forwarded_from': m.get('forwarded_from'),
+            'poll_id': m.get('poll_id'),
+            'e2ee': convert_to_bool(m.get('e2ee'), False),
         })
     filtered.sort(key=lambda x: x['timestamp'])
     msg_map = {f['id']: f for f in filtered}
@@ -677,6 +681,7 @@ def send_message():
         'self_destruct_at': self_destruct_at,
         'filename': filename,
         'reply_to': reply_to,
+        'silent': convert_to_bool(data.get('silent', False), False),
     })
     save_json(MESSAGES_FILE, messages)
     return jsonify({'success': True, 'message': 'Melding sendt.'})
@@ -932,6 +937,9 @@ def get_group_messages(group_id):
                 'reply_to': m.get('reply_to'),
                 'reply_preview': '',
                 'e2ee': is_e2ee,
+                'silent': convert_to_bool(m.get('silent'), False),
+                'forwarded_from': m.get('forwarded_from'),
+                'poll_id': m.get('poll_id'),
             })
         except Exception as e:
             filtered.append({
@@ -990,6 +998,17 @@ def send_group_message(group_id):
     group = next((g for g in groups if g['id'] == group_id), None)
     if not group or session['username'] not in group.get('members', []):
         return jsonify({'success': False, 'message': 'Ingen tilgang til gruppen.'}), 403
+    if group.get('created_by') != session['username'] and session['username'] not in group.get('admins', []):
+        sm = load_json(SLOWMODE_FILE, {})
+        sm_seconds = sm.get(group_id, 0)
+        if sm_seconds > 0:
+            messages = load_json(MESSAGES_FILE, [])
+            user_msgs = [m for m in messages if m.get('group_id') == group_id and m.get('sender') == session['username']]
+            if user_msgs:
+                last_ts = parse_iso(user_msgs[-1].get('timestamp'))
+                if last_ts and (datetime.utcnow() - last_ts).total_seconds() < sm_seconds:
+                    wait = int(sm_seconds - (datetime.utcnow() - last_ts).total_seconds())
+                    return jsonify({'success': False, 'message': f'Sakte modus. Vent {wait} sek.'}), 429
     group_key = get_or_create_group_key(group_id)
     messages = load_json(MESSAGES_FILE, [])
     messages.append({
@@ -1994,6 +2013,257 @@ def close_poll(poll_id):
     polls[poll_id] = poll
     save_json(POLLS_FILE, polls)
     return jsonify({'success': True})
+
+# ──────────────────────────────────────────────
+# Stickers & GIFs
+# ──────────────────────────────────────────────
+STICKER_PACKS = {
+    'smileys': {
+        'name': 'Smileys',
+        'stickers': [
+            {'id': 's1', 'emoji': '😀', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="50" r="45" fill="%23fdd835"/%3E%3Ccircle cx="35" cy="38" r="5" fill="%23333"/%3E%3Ccircle cx="65" cy="38" r="5" fill="%23333"/%3E%3Cpath d="M30 55 Q50 80 70 55" stroke="%23333" stroke-width="3" fill="none"/%3E%3C/svg%3E'},
+            {'id': 's2', 'emoji': '😂', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="50" r="45" fill="%23fdd835"/%3E%3Cpath d="M30 38 Q35 28 40 38" stroke="%23333" stroke-width="2" fill="none"/%3E%3Cpath d="M60 38 Q65 28 70 38" stroke="%23333" stroke-width="2" fill="none"/%3E%3Cpath d="M25 55 Q50 85 75 55" stroke="%23333" stroke-width="3" fill="%23ffeb3b"/%3E%3Cpath d="M32 48 L28 56" stroke="%23333" stroke-width="2"/%3E%3Cpath d="M68 48 L72 56" stroke="%23333" stroke-width="2"/%3E%3C/svg%3E'},
+            {'id': 's3', 'emoji': '❤️', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Cpath d="M50 88 C25 65 5 50 5 30 C5 15 18 5 30 5 C40 5 48 12 50 18 C52 12 60 5 70 5 C82 5 95 15 95 30 C95 50 75 65 50 88Z" fill="%23e53935"/%3E%3C/svg%3E'},
+            {'id': 's4', 'emoji': '👍', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Cpath d="M30 90 L30 45 L40 45 L42 30 C42 20 50 15 55 20 L60 30 L75 30 C80 30 85 35 83 42 L78 80 C77 85 72 90 67 90Z" fill="%23fdd835" stroke="%23e6a800" stroke-width="2"/%3E%3Crect x="15" y="45" width="15" height="45" rx="5" fill="%23fdd835" stroke="%23e6a800" stroke-width="2"/%3E%3C/svg%3E'},
+            {'id': 's5', 'emoji': '🔥', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Cpath d="M50 5 C50 5 70 30 70 55 C70 75 60 90 50 95 C40 90 30 75 30 55 C30 30 50 5 50 5Z" fill="%23ff9800"/%3E%3Cpath d="M50 35 C50 35 60 50 60 65 C60 80 55 88 50 90 C45 88 40 80 40 65 C40 50 50 35 50 35Z" fill="%23fdd835"/%3E%3C/svg%3E'},
+            {'id': 's6', 'emoji': '🎉', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Crect x="35" y="10" width="30" height="80" rx="5" fill="%237a3bff"/%3E%3Cpolygon points="50,5 55,15 45,15" fill="%23fdd835"/%3E%3Ccircle cx="25" cy="30" r="4" fill="%23e53935"/%3E%3Ccircle cx="75" cy="25" r="3" fill="%2322c55e"/%3E%3Ccircle cx="20" cy="60" r="3" fill="%232196f3"/%3E%3Ccircle cx="80" cy="65" r="4" fill="%23ff9800"/%3E%3Ccircle cx="30" cy="85" r="2" fill="%23e53935"/%3E%3Ccircle cx="70" cy="80" r="3" fill="%237a3bff"/%3E%3C/svg%3E'},
+            {'id': 's7', 'emoji': '💯', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ctext x="50" y="65" text-anchor="middle" font-size="50" font-weight="bold" fill="%23e53935"%3E100%3C/text%3E%3Cline x1="15" y1="75" x2="85" y2="75" stroke="%23e53935" stroke-width="4"/%3E%3C/svg%3E'},
+            {'id': 's8', 'emoji': '🤔', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="50" r="45" fill="%23fdd835"/%3E%3Ccircle cx="35" cy="38" r="5" fill="%23333"/%3E%3Ccircle cx="65" cy="35" r="5" fill="%23333"/%3E%3Cpath d="M40 65 Q50 70 60 62" stroke="%23333" stroke-width="3" fill="none"/%3E%3Cpath d="M70 18 L80 8" stroke="%23333" stroke-width="3"/%3E%3C/svg%3E'},
+        ]
+    },
+    'animals': {
+        'name': 'Dyr',
+        'stickers': [
+            {'id': 'a1', 'emoji': '🐱', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="55" r="40" fill="%239e9e9e"/%3E%3Cpolygon points="15,30 25,5 40,25" fill="%239e9e9e"/%3E%3Cpolygon points="85,30 75,5 60,25" fill="%239e9e9e"/%3E%3Ccircle cx="38" cy="48" r="5" fill="%234caf50"/%3E%3Ccircle cx="62" cy="48" r="5" fill="%234caf50"/%3E%3Cellipse cx="50" cy="58" rx="4" ry="3" fill="%23e91e63"/%3E%3Cpath d="M45 63 Q50 68 55 63" stroke="%23333" stroke-width="2" fill="none"/%3E%3C/svg%3E'},
+            {'id': 'a2', 'emoji': '🐶', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="55" r="40" fill="%238d6e63"/%3E%3Cellipse cx="20" cy="35" rx="12" ry="20" fill="%236d4c41"/%3E%3Cellipse cx="80" cy="35" rx="12" ry="20" fill="%236d4c41"/%3E%3Ccircle cx="38" cy="48" r="5" fill="%23333"/%3E%3Ccircle cx="62" cy="48" r="5" fill="%23333"/%3E%3Cellipse cx="50" cy="60" rx="8" ry="6" fill="%23333"/%3E%3C/svg%3E'},
+            {'id': 'a3', 'emoji': '🦊', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="55" r="40" fill="%23ff9800"/%3E%3Cpolygon points="15,25 25,5 40,30" fill="%23ff9800"/%3E%3Cpolygon points="85,25 75,5 60,30" fill="%23ff9800"/%3E%3Ccircle cx="38" cy="48" r="5" fill="%23333"/%3E%3Ccircle cx="62" cy="48" r="5" fill="%23333"/%3E%3Cellipse cx="50" cy="62" rx="6" ry="4" fill="%23333"/%3E%3Cpath d="M30 70 Q50 85 70 70" fill="%23fff3e0"/%3E%3C/svg%3E'},
+            {'id': 'a4', 'emoji': '🐼', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="50" r="45" fill="%23fff"/%3E%3Cellipse cx="30" cy="40" rx="12" ry="10" fill="%23333"/%3E%3Cellipse cx="70" cy="40" rx="12" ry="10" fill="%23333"/%3E%3Ccircle cx="38" cy="42" r="3" fill="%23fff"/%3E%3Ccircle cx="62" cy="42" r="3" fill="%23fff"/%3E%3Cellipse cx="50" cy="58" rx="6" ry="4" fill="%23333"/%3E%3C/svg%3E'},
+        ]
+    }
+}
+
+@app.route('/stickers')
+def get_sticker_packs():
+    packs = []
+    for key, pack in STICKER_PACKS.items():
+        packs.append({'id': key, 'name': pack['name'], 'count': len(pack['stickers'])})
+    return jsonify({'success': True, 'packs': packs})
+
+@app.route('/stickers/<pack_id>')
+def get_sticker_pack(pack_id):
+    pack = STICKER_PACKS.get(pack_id)
+    if not pack:
+        return jsonify({'success': False, 'message': 'Pakke ikke funnet.'}), 404
+    return jsonify({'success': True, 'pack': pack})
+
+@app.route('/gifs/search')
+@require_login
+def search_gifs():
+    query = sanitize_input(request.args.get('q', ''), 100)
+    if not query:
+        return jsonify({'success': True, 'gifs': []})
+    try:
+        import urllib.request, urllib.parse
+        url = 'https://tenor.googleapis.com/v2/search?q=' + urllib.parse.quote(query) + '&key=AIzaSyAyimkuYQYF_FXVALexPuGQctUWRURdCYQ&limit=20&media_filter=gif,tinygif'
+        req = urllib.request.Request(url, headers={'User-Agent': 'CryptoChat/1.0'})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read())
+        gifs = []
+        for r in data.get('results', []):
+            media = r.get('media_formats', {}).get('gif', {})
+            tiny = r.get('media_formats', {}).get('tinygif', {})
+            if media.get('url'):
+                gifs.append({'url': media['url'], 'preview': tiny.get('url', media['url']), 'title': r.get('title', '')})
+        return jsonify({'success': True, 'gifs': gifs})
+    except Exception:
+        return jsonify({'success': True, 'gifs': []})
+
+# ──────────────────────────────────────────────
+# Location Sharing
+# ──────────────────────────────────────────────
+@app.route('/send/location', methods=['POST'])
+@require_login
+def send_location():
+    me = session['username']
+    data = request.get_json(force=True, silent=True) or {}
+    recipient = sanitize_input(data.get('recipient', ''), 30).lower()
+    lat = data.get('lat')
+    lng = data.get('lng')
+    label = sanitize_input(data.get('label', ''), 100)
+    group_id = sanitize_input(data.get('group_id', ''), 30)
+    if lat is None or lng is None:
+        return jsonify({'success': False, 'message': 'Manglende koordinater.'}), 400
+    loc_data = json.dumps({'lat': float(lat), 'lng': float(lng), 'label': label})
+    if group_id:
+        pk = f"group::{group_id}"
+        target = group_id
+    else:
+        pk = pair_key(me, recipient)
+        target = recipient
+    messages = load_json(MESSAGES_FILE, [])
+    messages.append({
+        'id': hashlib.sha256(f"loc:{loc_data}:{datetime.utcnow().isoformat()}{me}".encode()).hexdigest(),
+        'pair_key': pk,
+        'sender': me,
+        'recipient': target,
+        'ciphertext': loc_data,
+        'type': 'location',
+        'timestamp': datetime.utcnow().isoformat(),
+        'read': False,
+        'self_destruct_at': None,
+    })
+    save_json(MESSAGES_FILE, messages)
+    return jsonify({'success': True})
+
+# ──────────────────────────────────────────────
+# Slow Mode (group admin setting)
+# ──────────────────────────────────────────────
+SLOWMODE_FILE = DATA_DIR / 'slowmode.json'
+
+@app.route('/groups/<group_id>/slowmode', methods=['POST'])
+@require_login
+def set_slowmode(group_id):
+    me = session['username']
+    data = request.get_json(force=True, silent=True) or {}
+    seconds = int(data.get('seconds', 0))
+    groups = load_json(GROUPS_FILE, [])
+    group = next((g for g in groups if g.get('id') == group_id), None)
+    if not group:
+        return jsonify({'success': False, 'message': 'Gruppe ikke funnet.'}), 404
+    if group.get('created_by') != me and me not in group.get('admins', []):
+        return jsonify({'success': False, 'message': 'Mangler tillatelse.'}), 403
+    sm = load_json(SLOWMODE_FILE, {})
+    sm[group_id] = max(0, min(seconds, 3600))
+    save_json(SLOWMODE_FILE, sm)
+    return jsonify({'success': True})
+
+@app.route('/groups/<group_id>/slowmode')
+def get_slowmode(group_id):
+    sm = load_json(SLOWMODE_FILE, {})
+    return jsonify({'success': True, 'seconds': sm.get(group_id, 0)})
+
+# ──────────────────────────────────────────────
+# Group Admin Roles
+# ──────────────────────────────────────────────
+@app.route('/groups/<group_id>/admins', methods=['POST'])
+@require_login
+def set_group_admin(group_id):
+    me = session['username']
+    data = request.get_json(force=True, silent=True) or {}
+    target = sanitize_input(data.get('username', ''), 30).lower()
+    role = data.get('role', 'admin')
+    groups = load_json(GROUPS_FILE, [])
+    group = next((g for g in groups if g.get('id') == group_id), None)
+    if not group:
+        return jsonify({'success': False, 'message': 'Gruppe ikke funnet.'}), 404
+    if group.get('created_by') != me:
+        return jsonify({'success': False, 'message': 'Kun oppretter kan angi roller.'}), 403
+    if not target or target not in (group.get('members', [])):
+        return jsonify({'success': False, 'message': 'Bruker er ikke medlem.'}), 400
+    if role == 'admin':
+        group.setdefault('admins', [])
+        if target not in group['admins']:
+            group['admins'].append(target)
+        group['mods'] = [m for m in group.get('mods', []) if m != target]
+    elif role == 'mod':
+        group.setdefault('mods', [])
+        if target not in group['mods']:
+            group['mods'].append(target)
+        group['admins'] = [a for a in group.get('admins', []) if a != target]
+    else:
+        group['admins'] = [a for a in group.get('admins', []) if a != target]
+        group['mods'] = [m for m in group.get('mods', []) if m != target]
+    save_json(GROUPS_FILE, groups)
+    return jsonify({'success': True})
+
+@app.route('/groups/<group_id>/admins/<username>', methods=['DELETE'])
+@require_login
+def remove_group_admin(group_id, username):
+    me = session['username']
+    groups = load_json(GROUPS_FILE, [])
+    group = next((g for g in groups if g.get('id') == group_id), None)
+    if not group:
+        return jsonify({'success': False, 'message': 'Gruppe ikke funnet.'}), 404
+    if group.get('created_by') != me:
+        return jsonify({'success': False, 'message': 'Kun oppretter kan fjerne roller.'}), 403
+    group['admins'] = [a for a in group.get('admins', []) if a != username]
+    group['mods'] = [m for m in group.get('mods', []) if m != username]
+    save_json(GROUPS_FILE, groups)
+    return jsonify({'success': True})
+
+# ──────────────────────────────────────────────
+# Draft Messages
+# ──────────────────────────────────────────────
+DRAFTS_FILE = DATA_DIR / 'drafts.json'
+
+@app.route('/drafts', methods=['POST'])
+@require_login
+def save_draft():
+    me = session['username']
+    data = request.get_json(force=True, silent=True) or {}
+    target = sanitize_input(data.get('target', ''), 30).lower()
+    text = sanitize_input(data.get('text', ''), 5000)
+    drafts = load_json(DRAFTS_FILE, {})
+    drafts.setdefault(me, {})
+    if text:
+        drafts[me][target] = {'text': text, 'updated_at': datetime.utcnow().isoformat()}
+    else:
+        drafts[me].pop(target, None)
+    save_json(DRAFTS_FILE, drafts)
+    return jsonify({'success': True})
+
+@app.route('/drafts')
+@require_login
+def get_drafts():
+    me = session['username']
+    drafts = load_json(DRAFTS_FILE, {})
+    return jsonify({'success': True, 'drafts': drafts.get(me, {})})
+
+# ──────────────────────────────────────────────
+# Chat Wallpapers
+# ──────────────────────────────────────────────
+WALLPAPERS_FILE = DATA_DIR / 'wallpapers.json'
+WALLPAPER_PRESETS = [
+    {'id': 'default', 'name': 'Standard', 'css': ''},
+    {'id': 'stars', 'name': 'Stjerner', 'css': 'radial-gradient(2px 2px at 20px 30px, #eee, transparent), radial-gradient(2px 2px at 40px 70px, #ccc, transparent), radial-gradient(1px 1px at 90px 40px, #fff, transparent), radial-gradient(2px 2px at 160px 120px, #ddd, transparent), radial-gradient(1px 1px at 200px 60px, #fff, transparent); background-size: 250px 200px; background-color: #0f1826;'},
+    {'id': 'gradient', 'name': 'Gradient', 'css': 'background: linear-gradient(135deg, #0f1826 0%, #1c1030 50%, #0f1424 100%);'},
+    {'id': 'grid', 'name': 'Rutenett', 'css': 'background-image: linear-gradient(rgba(255,255,255,.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.03) 1px, transparent 1px); background-size: 30px 30px; background-color: #0f1826;'},
+    {'id': 'ocean', 'name': 'Hav', 'css': 'background: linear-gradient(180deg, #0a1628 0%, #0d2137 40%, #102a40 70%, #0f1826 100%);'},
+    {'id': 'forest', 'name': 'Skog', 'css': 'background: linear-gradient(180deg, #0d1a12 0%, #112218 50%, #0d1a12 100%);'},
+    {'id': 'sunset', 'name': 'Solnedgang', 'css': 'background: linear-gradient(180deg, #1a0f0a 0%, #2a1510 30%, #3a2018 60%, #1a0f0a 100%);'},
+]
+
+@app.route('/wallpapers')
+def get_wallpaper_presets():
+    return jsonify({'success': True, 'presets': WALLPAPER_PRESETS})
+
+@app.route('/wallpaper/<chat_type>/<chat_id>', methods=['POST'])
+@require_login
+def set_wallpaper(chat_type, chat_id):
+    me = session['username']
+    data = request.get_json(force=True, silent=True) or {}
+    wallpaper_id = data.get('wallpaper_id', 'default')
+    wp = load_json(WALLPAPERS_FILE, {})
+    key = f"{me}:{chat_type}:{chat_id}"
+    wp[key] = wallpaper_id
+    save_json(WALLPAPERS_FILE, wp)
+    return jsonify({'success': True})
+
+@app.route('/wallpaper/<chat_type>/<chat_id>')
+@require_login
+def get_wallpaper(chat_type, chat_id):
+    me = session['username']
+    wp = load_json(WALLPAPERS_FILE, {})
+    key = f"{me}:{chat_type}:{chat_id}"
+    wallpaper_id = wp.get(key, 'default')
+    preset = next((p for p in WALLPAPER_PRESETS if p['id'] == wallpaper_id), WALLPAPER_PRESETS[0])
+    return jsonify({'success': True, 'wallpaper': preset})
+
+# ──────────────────────────────────────────────
+# Silent Messages
+# ──────────────────────────────────────────────
+# Handled in send_message via 'silent' field in request body
+# No new endpoint needed - just pass silent:true with the send
 
 # ──────────────────────────────────────────────
 # PWA Push Notifications

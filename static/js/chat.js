@@ -549,6 +549,8 @@
                 <button id="myKeyBtn" class="btn btn-small btn-ghost" aria-label="Vis min offentlige noekkel">Min noekkel</button>
                 <button id="verifyBtn" class="btn btn-small btn-ghost verify-btn" style="display:none" title="Sikkerhetsnummer" aria-label="Verifiser samtale">🛡️</button>
                 <button id="exportBtn" class="btn btn-small btn-ghost" title="Eksporter samtale" aria-label="Eksporter chat" style="display:none">💾</button>
+                <button id="wallpaperBtn" class="btn btn-small btn-ghost" title="Bakgrunn" aria-label="Velg bakgrunn" style="display:none">🖼️</button>
+                <button id="groupAdminBtn" class="btn btn-small btn-ghost" title="Gruppeinnstillinger" aria-label="Gruppeinnstillinger" style="display:none">⚙️</button>
               </div>
             </header>
             <div id="pinnedBar" class="pinned-bar" style="display:none" role="button" tabindex="0" aria-label="Fast melding">
@@ -578,6 +580,11 @@
               </div>
               <div class="composer-row" style="position:relative">
                 <button id="emojiToggleBtn" class="btn btn-small btn-ghost" title="Emoji" aria-label="Velg emoji">😀</button>
+                <button id="stickerBtn" class="btn btn-small btn-ghost" title="Stickers/GIFs" aria-label="Stickers og GIFs">🎨</button>
+                <div id="stickerPicker" class="sticker-picker" role="dialog" aria-label="Sticker-velger">
+                  <div id="stickerTabs" class="sticker-tabs"></div>
+                  <div id="stickerContent" class="sticker-grid"></div>
+                </div>
                 <div id="fullEmojiPicker" class="full-emoji-picker" role="dialog" aria-label="Emoji-velger">
                   <input id="emojiSearch" class="emoji-search" placeholder="Soek emoji..." aria-label="Soek emoji" />
                   <div id="emojiCategories" class="emoji-categories"></div>
@@ -585,7 +592,10 @@
                 </div>
                 <input id="messageInput" class="input-text" placeholder="Skriv en melding..." autocomplete="off" aria-label="Skriv en melding" />
                 <button id="voiceRecordBtn" class="btn btn-small btn-ghost" title="Talebeskjed" aria-label="Talebeskjed">🎙️</button>
+                <button id="videoRecordBtn" class="btn btn-small btn-ghost" title="Videomelding" aria-label="Videomelding">📹</button>
+                <button id="locationBtn" class="btn btn-small btn-ghost" title="Del posisjon" aria-label="Del posisjon">📍</button>
                 <button id="pollBtn" class="btn btn-small btn-ghost" title="Opprett avstemning" aria-label="Opprett avstemning" style="display:none">📊</button>
+                <span id="silentToggle" class="silent-toggle" title="Lydløs melding" aria-label="Lydløs melding">🔇</span>
                 <button id="sendBtn" class="btn btn-primary" disabled aria-label="Send melding">Send</button>
               </div>
               <div id="scheduleBar" class="schedule-bar" style="display:none">
@@ -1414,6 +1424,7 @@
         let tagHtml = '';
         if (message.edited) tagHtml += '<div class="edited-tag">[Redigert]</div>';
         if (message.deleted) tagHtml += '<div class="deleted-tag">[Slettet]</div>';
+        if (message.silent) tagHtml += '<div class="edited-tag">🔇 Lydløs</div>';
 
         const reactionsHtml = renderReactionBadges(message.reactions);
 
@@ -2381,6 +2392,7 @@
 
       function showMessageNotification(message) {
         try {
+          if (message.silent) return;
           playNotificationSound();
           if (Notification.permission !== 'granted') return;
           if (message.sender === (window.__APP__?.username || '')) return;
@@ -2731,6 +2743,436 @@
 
       document.body.classList.toggle('theme-light', (window.__APP__?.theme || 'dark') === 'light');
       await loadUserProfiles();
+
+      // ── Sticker/GIF Picker ──
+      let stickerMode = 'stickers';
+      const stickerPicker = document.getElementById('stickerPicker');
+      const stickerTabs = document.getElementById('stickerTabs');
+      const stickerContent = document.getElementById('stickerContent');
+      const stickerBtn = document.getElementById('stickerBtn');
+
+      async function initStickerPicker() {
+        try {
+          const data = await loadJSON('/stickers');
+          stickerTabs.innerHTML = '';
+          const stickersTab = document.createElement('button');
+          stickersTab.className = 'sticker-tab active';
+          stickersTab.textContent = '📦';
+          stickersTab.title = 'Stickers';
+          stickersTab.addEventListener('click', () => { stickerMode = 'stickers'; renderStickerContent(); updateStickerTabs(); });
+          stickerTabs.appendChild(stickersTab);
+          const gifsTab = document.createElement('button');
+          gifsTab.className = 'sticker-tab';
+          gifsTab.textContent = 'GIF';
+          gifsTab.title = 'GIFs';
+          gifsTab.addEventListener('click', () => { stickerMode = 'gifs'; renderStickerContent(); updateStickerTabs(); });
+          stickerTabs.appendChild(gifsTab);
+          (data.packs || []).forEach(pack => {
+            const btn = document.createElement('button');
+            btn.className = 'sticker-tab';
+            btn.textContent = pack.name;
+            btn.dataset.packId = pack.id;
+            btn.addEventListener('click', () => { stickerMode = 'pack:' + pack.id; renderStickerContent(); updateStickerTabs(); });
+            stickerTabs.appendChild(btn);
+          });
+          renderStickerContent();
+        } catch (e) {}
+      }
+
+      function updateStickerTabs() {
+        stickerTabs.querySelectorAll('.sticker-tab').forEach(tab => {
+          tab.classList.remove('active');
+          if (stickerMode === 'stickers' && tab.textContent === '📦') tab.classList.add('active');
+          else if (stickerMode === 'gifs' && tab.textContent === 'GIF') tab.classList.add('active');
+          else if (stickerMode === 'pack:' + tab.dataset.packId) tab.classList.add('active');
+        });
+      }
+
+      async function renderStickerContent(query) {
+        stickerContent.innerHTML = '';
+        stickerContent.className = stickerMode === 'gifs' ? 'gif-grid' : 'sticker-grid';
+        if (stickerMode === 'gifs') {
+          if (query) {
+            try {
+              const data = await loadJSON('/gifs/search?q=' + encodeURIComponent(query));
+              (data.gifs || []).forEach(gif => {
+                const item = document.createElement('div');
+                item.className = 'gif-item';
+                item.innerHTML = '<img src="' + escapeHtml(gif.preview) + '" alt="" loading="lazy" />';
+                item.addEventListener('click', () => { sendStickerOrGif(gif.url, 'gif'); stickerPicker.classList.remove('open'); });
+                stickerContent.appendChild(item);
+              });
+            } catch (e) {}
+          } else {
+            stickerContent.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:#7c7e9a;padding:20px;">Søk etter GIFs...</div>';
+          }
+        } else if (stickerMode.startsWith('pack:')) {
+          const packId = stickerMode.slice(5);
+          try {
+            const data = await loadJSON('/stickers/' + encodeURIComponent(packId));
+            (data.pack?.stickers || []).forEach(sticker => {
+              const item = document.createElement('div');
+              item.className = 'sticker-item';
+              item.innerHTML = '<img src="' + escapeHtml(sticker.url) + '" alt="' + escapeHtml(sticker.emoji) + '" />';
+              item.addEventListener('click', () => { sendStickerOrGif(sticker.url, 'sticker'); stickerPicker.classList.remove('open'); });
+              stickerContent.appendChild(item);
+            });
+          } catch (e) {}
+        } else {
+          try {
+            const data = await loadJSON('/stickers');
+            (data.packs || []).forEach(pack => {
+              try {
+                const packData = loadJSON('/stickers/' + encodeURIComponent(pack.id));
+                const sticker = packData.stickers?.[0];
+                if (sticker) {
+                  const item = document.createElement('div');
+                  item.className = 'sticker-item';
+                  item.innerHTML = '<img src="' + escapeHtml(sticker.url) + '" alt="" />';
+                  item.title = pack.name;
+                  item.addEventListener('click', () => { stickerMode = 'pack:' + pack.id; renderStickerContent(); updateStickerTabs(); });
+                  stickerContent.appendChild(item);
+                }
+              } catch (e2) {}
+            });
+          } catch (e) {}
+        }
+      }
+
+      async function sendStickerOrGif(url, type) {
+        if (!activeChat) return;
+        try {
+          if (activeChat.type === 'user') {
+            const key = activeChat.peerPublicKey;
+            const encUrl = key ? await encryptForPeer(url, key) : url;
+            await fetch('/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ recipient: activeChat.target, ciphertext: encUrl, type: 'text' }) });
+            await loadChat(activeChat.target);
+          } else if (activeChat.type === 'group') {
+            await fetch('/groups/' + encodeURIComponent(activeChat.target) + '/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ciphertext: url, type: 'text' }) });
+            await loadGroup(activeChat.target);
+          }
+        } catch (e) { toast('Kunne ikke sende'); }
+      }
+
+      if (stickerBtn) {
+        stickerBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          stickerPicker.classList.toggle('open');
+          if (stickerPicker.classList.contains('open')) {
+            await initStickerPicker();
+          }
+        });
+      }
+
+      let stickerSearchTimeout = null;
+      const gifSearchInput = document.createElement('input');
+      gifSearchInput.className = 'input-text';
+      gifSearchInput.placeholder = 'Søk GIFs...';
+      gifSearchInput.style.cssText = 'width:100%;margin-bottom:6px;font-size:.82rem;display:none;';
+      gifSearchInput.addEventListener('input', () => {
+        clearTimeout(stickerSearchTimeout);
+        stickerSearchTimeout = setTimeout(() => renderStickerContent(gifSearchInput.value.trim()), 400);
+      });
+
+      document.addEventListener('click', (e) => {
+        if (stickerPicker && !stickerPicker.contains(e.target) && e.target !== stickerBtn) stickerPicker.classList.remove('open');
+      });
+
+      // ── Video Message Recording ──
+      let videoRecorder = null;
+      let videoChunks = [];
+      let isRecordingVideo = false;
+      const videoBtn = document.getElementById('videoRecordBtn');
+      if (videoBtn) {
+        videoBtn.addEventListener('click', async () => {
+          if (isRecordingVideo) { stopVideoRecording(); return; }
+          try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 360, height: 360, facingMode: 'user' }, audio: true });
+            videoChunks = [];
+            videoRecorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp8,opus' });
+            videoRecorder.ondataavailable = (e) => { if (e.data.size > 0) videoChunks.push(e.data); };
+            videoRecorder.onstop = async () => {
+              stream.getTracks().forEach(t => t.stop());
+              const blob = new Blob(videoChunks, { type: 'video/webm' });
+              await sendVideoMessage(blob);
+            };
+            videoRecorder.start();
+            isRecordingVideo = true;
+            videoBtn.textContent = '⏹️';
+            videoBtn.classList.add('recording');
+          } catch (e) { toast('Kunne ikke starte videoopptak: ' + e.message); }
+        });
+      }
+
+      function stopVideoRecording() {
+        if (videoRecorder && videoRecorder.state !== 'inactive') videoRecorder.stop();
+        isRecordingVideo = false;
+        const btn = document.getElementById('videoRecordBtn');
+        if (btn) { btn.textContent = '📹'; btn.classList.remove('recording'); }
+      }
+
+      async function sendVideoMessage(blob) {
+        if (!activeChat || blob.size < 1000) return;
+        const form = new FormData();
+        const filename = 'video-' + Date.now() + '.webm';
+        form.append('file', blob, filename);
+        if (activeChat.type === 'user') form.append('recipient', activeChat.target);
+        else form.append('groupId', activeChat.target);
+        try {
+          if (activeChat.type === 'group') {
+            await fetch('/groups/' + encodeURIComponent(activeChat.target) + '/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ciphertext: filename, type: 'file', filename }) });
+            await loadGroup(activeChat.target);
+          } else {
+            await fetch('/upload', { method: 'POST', body: form });
+            await loadChat(activeChat.target);
+          }
+          toast('Videomelding sendt', 'success');
+        } catch (e) { toast('Kunne ikke sende videomelding'); }
+      }
+
+      // ── Location Sharing ──
+      document.getElementById('locationBtn')?.addEventListener('click', () => {
+        if (!activeChat || activeChat.type === 'saved') { toast('Velg en samtale'); return; }
+        if (!navigator.geolocation) { toast('Nettleseren støtter ikke posisjon'); return; }
+        navigator.geolocation.getCurrentPosition(async (pos) => {
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
+          const label = prompt('Etikett (valgfritt):') || '';
+          try {
+            if (activeChat.type === 'user') {
+              await fetch('/send/location', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ recipient: activeChat.target, lat, lng, label }) });
+              await loadChat(activeChat.target);
+            } else {
+              await fetch('/send/location', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ group_id: activeChat.target, lat, lng, label }) });
+              await loadGroup(activeChat.target);
+            }
+            toast('Posisjon delt', 'success');
+          } catch (e) { toast('Kunne ikke dele posisjon'); }
+        }, (err) => { toast('Kunne ikke hente posisjon: ' + err.message); }, { enableHighAccuracy: true, timeout: 10000 });
+      });
+
+      // ── Silent Messages Toggle ──
+      let silentMode = false;
+      const silentToggle = document.getElementById('silentToggle');
+      if (silentToggle) {
+        silentToggle.addEventListener('click', () => {
+          silentMode = !silentMode;
+          silentToggle.classList.toggle('active', silentMode);
+          silentToggle.textContent = silentMode ? '🔔' : '🔇';
+        });
+      }
+
+      // ── Draft Messages ──
+      let draftSaveTimeout = null;
+      const messageInput = document.getElementById('messageInput');
+      if (messageInput) {
+        messageInput.addEventListener('input', () => {
+          clearTimeout(draftSaveTimeout);
+          draftSaveTimeout = setTimeout(() => {
+            if (!activeChat || activeChat.type === 'saved') return;
+            const text = messageInput.value.trim();
+            fetch('/drafts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target: activeChat.target, text }) }).catch(() => {});
+          }, 1000);
+        });
+      }
+
+      async function loadDraft(target) {
+        try {
+          const data = await loadJSON('/drafts');
+          return data.drafts?.[target]?.text || '';
+        } catch (e) { return ''; }
+      }
+
+      // ── Wallpaper Picker ──
+      document.getElementById('wallpaperBtn')?.addEventListener('click', async () => {
+        if (!activeChat) return;
+        try {
+          const data = await loadJSON('/wallpapers');
+          const presets = data.presets || [];
+          let html = '<div class="modal-overlay" id="wallpaperModal"><div class="modal" style="max-width:500px"><h2>Velg bakgrunn</h2><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">';
+          presets.forEach(p => {
+            html += '<div class="wallpaper-option" data-id="' + escapeHtml(p.id) + '" style="height:60px;border-radius:8px;border:2px solid #2a2d48;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:.8rem;color:#9ca3c7;transition:border-color .15s;' + (p.css || 'background:#0f1826;') + '">' + escapeHtml(p.name) + '</div>';
+          });
+          html += '</div><div class="modal-actions"><button class="btn btn-ghost" onclick="document.getElementById(\'wallpaperModal\').remove()">Lukk</button></div></div></div>';
+          document.body.insertAdjacentHTML('beforeend', html);
+          document.getElementById('wallpaperModal').addEventListener('click', async (e) => {
+            const opt = e.target.closest('.wallpaper-option');
+            if (opt) {
+              const wpId = opt.dataset.id;
+              const chatType = activeChat.type === 'saved' ? 'user' : activeChat.type;
+              const chatId = activeChat.type === 'saved' ? '__self__' : activeChat.target;
+              await loadJSON('/wallpaper/' + chatType + '/' + encodeURIComponent(chatId), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ wallpaper_id: wpId }) });
+              applyWallpaper(wpId);
+              toast('Bakgrunn endret', 'success');
+              document.getElementById('wallpaperModal')?.remove();
+            }
+          });
+        } catch (e) { toast('Kunne ikke laste bakgrunner'); }
+      });
+
+      function applyWallpaper(wpId) {
+        const chatMain = document.querySelector('.chat-main');
+        if (!chatMain) return;
+        chatMain.className = 'chat-main';
+        if (wpId && wpId !== 'default') chatMain.classList.add('wallpaper-' + wpId);
+      }
+
+      async function loadAndApplyWallpaper() {
+        if (!activeChat || activeChat.type === 'saved') { applyWallpaper('default'); return; }
+        try {
+          const data = await loadJSON('/wallpaper/' + activeChat.type + '/' + encodeURIComponent(activeChat.target));
+          applyWallpaper(data.wallpaper?.id || 'default');
+        } catch (e) { applyWallpaper('default'); }
+      }
+
+      // ── Group Admin Panel ──
+      document.getElementById('groupAdminBtn')?.addEventListener('click', async () => {
+        if (!activeChat || activeChat.type !== 'group') return;
+        const group = groups.find(g => g.id === activeChat.target);
+        if (!group) return;
+        const isCreator = group.creator === (window.__APP__?.username || '');
+        const isAdmin = (group.admins || []).includes(window.__APP__?.username || '');
+        let html = '<div class="modal-overlay" id="groupAdminModal"><div class="modal" style="max-width:500px"><h2>Gruppeinnstillinger</h2>';
+        if (isCreator) {
+          html += '<div class="field"><label>Sakte modus</label><select id="slowmodeSelect" class="input-text">';
+          [0, 10, 30, 60, 120, 300, 600].forEach(s => {
+            html += '<option value="' + s + '">' + (s === 0 ? 'Av' : s + ' sek') + '</option>';
+          });
+          html += '</select></div>';
+        }
+        if (isCreator) {
+          html += '<div class="field"><label>Admins & Moderatorer</label><div id="adminList">';
+          (group.members || []).forEach(m => {
+            const isAdm = (group.admins || []).includes(m);
+            const isMod = (group.mods || []).includes(m);
+            const role = m === group.creator ? 'Oppretter' : isAdm ? 'Admin' : isMod ? 'Mod' : '';
+            html += '<div style="display:flex;align-items:center;gap:8px;margin:4px 0;">';
+            html += '<span style="flex:1;">' + escapeHtml(m) + (role ? ' <span class="' + (isAdm ? 'admin-badge' : 'mod-badge') + '">' + role + '</span>' : '') + '</span>';
+            if (m !== group.creator) {
+              html += '<select class="input-text admin-role-select" data-user="' + escapeHtml(m) + '" style="width:120px;padding:4px;">';
+              html += '<option value="member"' + (!isAdm && !isMod ? ' selected' : '') + '>Medlem</option>';
+              html += '<option value="mod"' + (isMod ? ' selected' : '') + '>Moderator</option>';
+              html += '<option value="admin"' + (isAdm ? ' selected' : '') + '>Admin</option>';
+              html += '</select>';
+            }
+            html += '</div>';
+          });
+          html += '</div></div>';
+        }
+        html += '<div class="modal-actions"><button class="btn btn-ghost" id="groupAdminClose">Lukk</button></div></div></div>';
+        document.body.insertAdjacentHTML('beforeend', html);
+        const modal = document.getElementById('groupAdminModal');
+        modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+        modal.querySelector('#groupAdminClose').addEventListener('click', () => modal.remove());
+        if (isCreator) {
+          const smSelect = modal.querySelector('#slowmodeSelect');
+          if (smSelect) {
+            try {
+              const smData = await loadJSON('/groups/' + encodeURIComponent(activeChat.target) + '/slowmode');
+              smSelect.value = smData.seconds || 0;
+            } catch (e) {}
+            smSelect.addEventListener('change', async () => {
+              await loadJSON('/groups/' + encodeURIComponent(activeChat.target) + '/slowmode', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ seconds: parseInt(smSelect.value) }) });
+              toast('Sakte modus oppdatert', 'success');
+            });
+          }
+          modal.querySelectorAll('.admin-role-select').forEach(sel => {
+            sel.addEventListener('change', async () => {
+              const user = sel.dataset.user;
+              const role = sel.value;
+              await loadJSON('/groups/' + encodeURIComponent(activeChat.target) + '/admins', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: user, role }) });
+              toast(user + ' er nå ' + role, 'success');
+              const data = await loadJSON('/groups');
+              groups.length = 0;
+              groups.push(...(data.groups || []));
+              renderGroups();
+            });
+          });
+        }
+      });
+
+      // ── Hook into openChat/openGroup for new features ──
+      const _origOpenChat = openChat;
+      openChat = async function(user) {
+        await _origOpenChat(user);
+        document.getElementById('wallpaperBtn').style.display = '';
+        document.getElementById('groupAdminBtn').style.display = 'none';
+        document.getElementById('pollBtn').style.display = 'none';
+        silentMode = false;
+        if (silentToggle) { silentToggle.classList.remove('active'); silentToggle.textContent = '🔇'; }
+        await loadAndApplyWallpaper();
+        const draft = await loadDraft(user);
+        if (draft) { const inp = document.getElementById('messageInput'); if (inp) inp.value = draft; }
+      };
+
+      const _origOpenGroup = openGroup;
+      openGroup = async function(groupId) {
+        await _origOpenGroup(groupId);
+        document.getElementById('wallpaperBtn').style.display = '';
+        document.getElementById('groupAdminBtn').style.display = '';
+        await loadAndApplyWallpaper();
+      };
+
+      const _origOpenSaved = openSavedMessages;
+      openSavedMessages = async function() {
+        await _origOpenSaved();
+        document.getElementById('wallpaperBtn').style.display = 'none';
+        document.getElementById('groupAdminBtn').style.display = 'none';
+      };
+
+      // Patch sendMessage to include silent flag
+      const _origSendMsg = sendMessage;
+      sendMessage = async function() {
+        const origSilent = silentMode;
+        const _origFetch = window.fetch;
+        if (origSilent) {
+          window.fetch = function(...args) {
+            if (args[0] === '/send' && args[1]?.body) {
+              try {
+                const body = JSON.parse(args[1].body);
+                body.silent = true;
+                args[1].body = JSON.stringify(body);
+              } catch (e) {}
+            }
+            return _origFetch.apply(this, args);
+          };
+        }
+        await _origSendMsg();
+        if (origSilent) window.fetch = _origFetch;
+      };
+
+      // ── Show location messages on map ──
+      function renderLocationHtml(locData) {
+        try {
+          const loc = typeof locData === 'string' ? JSON.parse(locData) : locData;
+          const mapUrl = 'https://www.openstreetmap.org/export/embed.html?bbox=' + (loc.lng - 0.01) + ',' + (loc.lat - 0.01) + ',' + (loc.lng + 0.01) + ',' + (loc.lat + 0.01) + '&layer=mapnik&marker=' + loc.lat + ',' + loc.lng;
+          return '<div class="location-card"><iframe src="' + mapUrl + '" style="width:100%;height:140px;border:0;border-radius:8px;" loading="lazy"></iframe>'
+            + (loc.label ? '<div class="loc-label">📍 ' + escapeHtml(loc.label) + '</div>' : '<div class="loc-label">📍 ' + loc.lat.toFixed(5) + ', ' + loc.lng.toFixed(5) + '</div>') + '</div>';
+        } catch (e) { return ''; }
+      }
+
+      // Patch appendMessage to handle location and video types
+      const _origFinishAppend = finishAppend;
+      finishAppend = function(message, chatId, isMe, renderedText) {
+        if (message.type === 'location' && !message.deleted) {
+          try {
+            const loc = JSON.parse(message.ciphertext || message.text || '{}');
+            const item = document.createElement('div');
+            item.className = 'msg ' + (isMe ? 'sent' : 'received');
+            if (message.id) item.dataset.messageId = message.id;
+            item.dataset.msgId = message.id || '';
+            const senderDisplay = getDisplayName(message.sender || '');
+            item.innerHTML = '<div class="meta"><span class="sender">' + escapeHtml(senderDisplay) + '</span><span class="time">' + escapeHtml(formatTime(message.timestamp)) + '</span></div>'
+              + renderLocationHtml(loc)
+              + '<div class="meta">' + e2eeIndicator + (isMe ? '<span class="read">' + (message.read ? '<span class="read-receipt read">✓✓</span>' : '<span class="read-receipt unread">✓</span>') + '</span>' : '') + '</div>';
+            messagesBox.appendChild(item);
+            if (!userScrolledUp) messagesBox.scrollTop = messagesBox.scrollHeight;
+            return;
+          } catch (e) {}
+        }
+        _origFinishAppend(message, chatId, isMe, renderedText);
+      };
+
     } catch (e) {
       document.getElementById('app').innerHTML = '<pre style="color:#ff8888;background:#0f1424;padding:16px;">' + escapeHtml(e.stack || e.message) + '</pre>';
     }

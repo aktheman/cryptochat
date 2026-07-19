@@ -300,3 +300,46 @@ body.theme-light .skeleton-msg { background:linear-gradient(90deg,#e5e7eb 25%,#f
 .file-icon { font-size:1.4rem; }
 .file-name { font-weight:600; color:#e9eaff; font-size:.9rem; }
 .file-meta { font-size:.75rem; color:#7c7e9a; }
+
+/* ── Sticker/GIF picker ── */
+.sticker-picker { position:absolute; bottom:100%; left:0; background:#111322; border:1px solid #2a2d48; border-radius:12px; padding:8px; width:280px; max-height:350px; display:none; flex-direction:column; z-index:200; box-shadow:0 4px 20px #0008; }
+.sticker-picker.open { display:flex; }
+.sticker-tabs { display:flex; gap:4px; margin-bottom:6px; flex-wrap:wrap; }
+.sticker-tab { background:transparent; border:1px solid #2a2d48; border-radius:8px; padding:4px 8px; cursor:pointer; font-size:.8rem; color:#9ca3c7; }
+.sticker-tab.active { border-color:#7a3bff; color:#f3f1ff; background:#1c1030; }
+.sticker-grid { display:grid; grid-template-columns:repeat(4, 1fr); gap:4px; overflow:auto; max-height:250px; }
+.sticker-item { cursor:pointer; padding:6px; border-radius:8px; text-align:center; transition:background .1s; font-size:2rem; display:flex; align-items:center; justify-content:center; aspect-ratio:1; }
+.sticker-item:hover { background:#1a2240; }
+.sticker-item img { max-width:64px; max-height:64px; }
+.gif-grid { display:grid; grid-template-columns:repeat(2, 1fr); gap:4px; overflow:auto; max-height:250px; }
+.gif-item { cursor:pointer; border-radius:8px; overflow:hidden; background:#0a0c18; }
+.gif-item img { width:100%; height:120px; object-fit:cover; }
+
+/* ── Video message ── */
+.video-msg video { max-width:200px; border-radius:50%; border:2px solid #7a3bff; }
+.video-msg { display:inline-block; }
+
+/* ── Location ── */
+.location-card { background:#16203a; border:1px solid #2d3a6a; border-radius:10px; padding:8px; max-width:280px; cursor:pointer; }
+.location-card .loc-map { width:100%; height:140px; border-radius:8px; object-fit:cover; }
+.location-card .loc-label { font-size:.8rem; color:#9ca3c7; margin-top:4px; }
+
+/* ── Wallpaper chat bg ── */
+.chat-main.wallpaper-stars { background:radial-gradient(2px 2px at 20px 30px, #eee, transparent), radial-gradient(2px 2px at 40px 70px, #ccc, transparent), radial-gradient(1px 1px at 90px 40px, #fff, transparent), radial-gradient(2px 2px at 160px 120px, #ddd, transparent); background-size:250px 200px; background-color:#0f1826; }
+.chat-main.wallpaper-gradient { background:linear-gradient(135deg, #0f1826 0%, #1c1030 50%, #0f1424 100%); }
+.chat-main.wallpaper-grid { background-image:linear-gradient(rgba(255,255,255,.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.03) 1px, transparent 1px); background-size:30px 30px; background-color:#0f1826; }
+.chat-main.wallpaper-ocean { background:linear-gradient(180deg, #0a1628 0%, #0d2137 40%, #102a40 70%, #0f1826 100%); }
+.chat-main.wallpaper-forest { background:linear-gradient(180deg, #0d1a12 0%, #112218 50%, #0d1a12 100%); }
+.chat-main.wallpaper-sunset { background:linear-gradient(180deg, #1a0f0a 0%, #2a1510 30%, #3a2018 60%, #1a0f0a 100%); }
+
+/* ── Silent toggle ── */
+.silent-toggle { display:inline-flex; align-items:center; gap:4px; cursor:pointer; padding:2px 8px; border-radius:8px; font-size:.8rem; color:#7c7e9a; transition:background .15s; }
+.silent-toggle:hover { background:#1a2240; }
+.silent-toggle.active { color:#ff9800; }
+
+/* ── Slow mode indicator ── */
+.slowmode-badge { display:inline-flex; align-items:center; gap:4px; background:#ff980033; color:#ff9800; padding:2px 8px; border-radius:6px; font-size:.72rem; margin-left:8px; }
+
+/* ── Admin badge ── */
+.admin-badge { font-size:.65rem; background:#7a3bff33; color:#7a3bff; padding:1px 5px; border-radius:4px; margin-left:4px; }
+.mod-badge { font-size:.65rem; background:#22c55e33; color:#22c55e; padding:1px 5px; border-radius:4px; margin-left:4px; }
