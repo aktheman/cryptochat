@@ -10,7 +10,7 @@ os.environ['SECRET_KEY'] = 'test-secret-key-for-testing'
 
 from app import app
 from app import RATE_LIMIT_STORE
-from db import _get_conn
+from db import _get_conn, invalidate_cache
 
 
 @pytest.fixture
@@ -23,12 +23,14 @@ def client():
 
 @pytest.fixture(autouse=True)
 def clean_data():
+    invalidate_cache()
     conn = _get_conn()
     conn.execute('DELETE FROM kv_store')
     conn.commit()
     conn.close()
     RATE_LIMIT_STORE.clear()
     yield
+    invalidate_cache()
     conn = _get_conn()
     conn.execute('DELETE FROM kv_store')
     conn.commit()

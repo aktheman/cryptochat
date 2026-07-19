@@ -1,4 +1,4 @@
-import os, json, base64, secrets, hashlib, time, re, collections
+import os, json, base64, secrets, hashlib, time, re, collections, threading
 from datetime import datetime, timedelta
 from pathlib import Path
 from functools import wraps
@@ -15,7 +15,7 @@ from cryptography.hazmat.primitives.asymmetric import x25519
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.exceptions import InvalidTag
 import pyotp
-from db import load_json, save_json, init_db, migrate_json_files
+from db import load_json, save_json, init_db, migrate_json_files, invalidate_cache, _cache
 
 app = Flask(__name__)
 secret_key_path = Path(os.environ.get('SECRET_KEY_FILE', '')) if os.environ.get('SECRET_KEY_FILE') else None
@@ -42,6 +42,7 @@ app.config.update(
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 init_db()
 migrate_json_files()
+app._start_time = time.time()
 
 @app.after_request
 def set_security_headers(response):
@@ -69,6 +70,12 @@ def rate_limit(max_requests=30, window_seconds=60):
             if len(RATE_LIMIT_STORE[key]) >= max_requests:
                 return jsonify({'success': False, 'message': 'For mange forespørsler. Vent litt.'}), 429
             RATE_LIMIT_STORE[key].append(now)
+            if len(RATE_LIMIT_STORE) > 10000:
+                cutoff = now - window_seconds * 2
+                for k in list(RATE_LIMIT_STORE.keys()):
+                    RATE_LIMIT_STORE[k] = [t for t in RATE_LIMIT_STORE[k] if t > cutoff]
+                    if not RATE_LIMIT_STORE[k]:
+                        del RATE_LIMIT_STORE[k]
             return f(*args, **kwargs)
         return wrapper
     return decorator
@@ -213,7 +220,8 @@ def get_user_sessions(username):
     return result
 
 def get_user(username):
-    return load_json(USERS_FILE, {}).get(username)
+    users = load_json(USERS_FILE, {}, ttl=5)
+    return users.get(username)
 
 def require_login(f):
     @wraps(f)
@@ -510,9 +518,14 @@ def disable_2fa():
 def presence_batch():
     data = request.get_json(force=True, silent=True) or {}
     users = data.get('users', [])
+    presence = load_json(USER_PRESENCE_FILE, {})
+    now = datetime.utcnow()
     result = []
     for u in users:
-        result.append({'username': u, 'online': is_online(u, timeout_minutes=5), 'lastSeen': load_json(USER_PRESENCE_FILE, {}).get(u)})
+        last = presence.get(u)
+        last_dt = parse_iso(last)
+        online = bool(last_dt and (now - last_dt) < timedelta(minutes=5))
+        result.append({'username': u, 'online': online, 'lastSeen': last})
     return jsonify({'success': True, 'presence': result})
 
 # ──────────────────────────────────────────────
@@ -606,6 +619,8 @@ def get_messages(other_user):
         return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
     me = session['username']
     pk = pair_key(me, other_user)
+    limit = min(int(request.args.get('limit', 200)), 500)
+    offset = max(int(request.args.get('offset', 0)), 0)
     messages = load_json(MESSAGES_FILE, [])
     filtered = []
     for m in messages:
@@ -635,6 +650,8 @@ def get_messages(other_user):
             'e2ee': convert_to_bool(m.get('e2ee'), False),
         })
     filtered.sort(key=lambda x: x['timestamp'])
+    total = len(filtered)
+    filtered = filtered[offset:offset + limit]
     msg_map = {f['id']: f for f in filtered}
     for f in filtered:
         if f.get('reply_to') and f['reply_to'] in msg_map:
@@ -646,7 +663,7 @@ def get_messages(other_user):
     all_reactions = load_json(REACTIONS_FILE, {})
     for f in filtered:
         f['reactions'] = all_reactions.get(f['id'], {})
-    return jsonify({'success': True, 'messages': filtered, 'pair_key': pk})
+    return jsonify({'success': True, 'messages': filtered, 'pair_key': pk, 'total': total, 'has_more': (offset + limit) < total})
 
 @app.route('/send', methods=['POST'])
 def send_message():
@@ -1002,8 +1019,8 @@ def send_group_message(group_id):
         sm = load_json(SLOWMODE_FILE, {})
         sm_seconds = sm.get(group_id, 0)
         if sm_seconds > 0:
-            messages = load_json(MESSAGES_FILE, [])
-            user_msgs = [m for m in messages if m.get('group_id') == group_id and m.get('sender') == session['username']]
+            all_msgs = load_json(MESSAGES_FILE, [])
+            user_msgs = [m for m in all_msgs if m.get('group_id') == group_id and m.get('sender') == session['username']]
             if user_msgs:
                 last_ts = parse_iso(user_msgs[-1].get('timestamp'))
                 if last_ts and (datetime.utcnow() - last_ts).total_seconds() < sm_seconds:
@@ -1778,15 +1795,22 @@ def cleanup_disappearing_messages():
     if len(cleaned) < before:
         save_json(MESSAGES_FILE, cleaned)
 
-@app.before_request
-def background_tasks():
-    if not hasattr(app, '_last_bg') or time.time() - app._last_bg > 60:
-        app._last_bg = time.time()
+def _background_worker():
+    import threading
+    while True:
+        time.sleep(60)
         try:
             deliver_scheduled_messages()
             cleanup_disappearing_messages()
         except Exception:
             pass
+
+_bg_thread = threading.Thread(target=_background_worker, daemon=True)
+_bg_thread.start()
+
+@app.before_request
+def touch_session():
+    pass
 
 # ──────────────────────────────────────────────
 # Forward Messages
@@ -2373,13 +2397,17 @@ def manifest_json():
     return jsonify({
         'name': 'CryptoChat',
         'short_name': 'Chat',
-        'start_url': '/',
+        'description': 'Ende-til-ende-kryptert chat',
+        'start_url': '/chat',
+        'scope': '/',
         'display': 'standalone',
         'background_color': '#0b0c12',
         'theme_color': '#cf6fef',
+        'orientation': 'portrait-primary',
+        'categories': ['social', 'communication'],
         'icons': [
-            {'src': '/static/img/icon-192.png', 'sizes': '192x192', 'type': 'image/png'},
-            {'src': '/static/img/icon-512.png', 'sizes': '512x512', 'type': 'image/png'}
+            {'src': '/static/img/icon-192.png', 'sizes': '192x192', 'type': 'image/png', 'purpose': 'any maskable'},
+            {'src': '/static/img/icon-512.png', 'sizes': '512x512', 'type': 'image/png', 'purpose': 'any maskable'}
         ]
     })
 
@@ -2410,6 +2438,24 @@ def offline_page():
     return render_template('offline.html')
 
 @app.route('/health')
+def health_check():
+    try:
+        from db import _get_conn
+        conn = _get_conn()
+        conn.execute('SELECT 1')
+        db_ok = True
+        conn.close()
+    except Exception:
+        db_ok = False
+    return jsonify({
+        'success': True,
+        'status': 'healthy' if db_ok else 'degraded',
+        'db': 'ok' if db_ok else 'error',
+        'version': '3.0.0',
+        'uptime': time.time() - app._start_time if hasattr(app, '_start_time') else 0,
+        'cache_size': len(_cache),
+    })
+
 @app.route('/sw-test')
 def service_worker_test():
     return jsonify({'success': True})
