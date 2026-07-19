@@ -88,6 +88,7 @@ READ_RECEIPTS_FILE = DATA_DIR / 'read_receipts.json'
 SESSIONS_FILE = DATA_DIR / 'sessions.json'
 REACTIONS_FILE = DATA_DIR / 'reactions.json'
 TYPING_FILE = DATA_DIR / 'typing.json'
+VERIFICATION_FILE = DATA_DIR / 'verification.json'
 CALLS_FILE = DATA_DIR / 'calls.json'
 
 # ──────────────────────────────────────────────
@@ -1308,6 +1309,104 @@ def my_key():
     users = load_json(USERS_FILE, {})
     user = users.get(username, {})
     return jsonify({'success': True, 'publicKey': user.get('public_key', ''), 'importedKey': user.get('imported_key', '')})
+
+# ──────────────────────────────────────────────
+# Key Verification (Signal-style safety numbers)
+# ──────────────────────────────────────────────
+def compute_safety_number(username_a, username_b):
+    users = load_json(USERS_FILE, {})
+    user_a = users.get(username_a, {})
+    user_b = users.get(username_b, {})
+    pub_a = user_a.get('identity_keypair', {}).get('public', '')
+    pub_b = user_b.get('identity_keypair', {}).get('public', '')
+    if not pub_a or not pub_b:
+        return None
+    pair = sorted([pub_a, pub_b])
+    combined = (pair[0] + pair[1]).encode('utf-8')
+    digest = hashlib.sha256(combined).digest()
+    fingerprint_bytes = digest[:30]
+    digits = ''.join(str(b % 10) for b in fingerprint_bytes)
+    return digits
+
+def get_verification_key(username_a, username_b):
+    return ':::'.join(sorted([username_a, username_b]))
+
+@app.route('/verify/safety-number/<username>')
+@require_login
+def get_safety_number(username):
+    me = session['username']
+    if not get_user(username):
+        return jsonify({'success': False, 'message': 'Bruker ikke funnet.'}), 404
+    number = compute_safety_number(me, username)
+    if not number:
+        return jsonify({'success': False, 'message': 'Kunne ikke beregne sikkerhetsnummer.'}), 400
+    formatted = ' '.join(number[i:i+5] for i in range(0, len(number), 5))
+    verifications = load_json(VERIFICATION_FILE, {})
+    vk = get_verification_key(me, username)
+    verified = verifications.get(vk, {}).get('verified', False)
+    verified_at = verifications.get(vk, {}).get('verified_at')
+    return jsonify({
+        'success': True,
+        'safetyNumber': number,
+        'formatted': formatted,
+        'verified': verified,
+        'verifiedAt': verified_at,
+        'usernameA': me,
+        'usernameB': username,
+    })
+
+@app.route('/verify/<username>', methods=['POST'])
+@require_login
+def verify_user(username):
+    me = session['username']
+    if not get_user(username):
+        return jsonify({'success': False, 'message': 'Bruker ikke funnet.'}), 404
+    verifications = load_json(VERIFICATION_FILE, {})
+    vk = get_verification_key(me, username)
+    verifications[vk] = {
+        'verified': True,
+        'verified_at': now_iso(),
+        'verified_by': me,
+    }
+    save_json(VERIFICATION_FILE, verifications)
+    return jsonify({'success': True, 'verified': True})
+
+@app.route('/verify/<username>', methods=['DELETE'])
+@require_login
+def unverify_user(username):
+    me = session['username']
+    verifications = load_json(VERIFICATION_FILE, {})
+    vk = get_verification_key(me, username)
+    if vk in verifications:
+        del verifications[vk]
+        save_json(VERIFICATION_FILE, verifications)
+    return jsonify({'success': True, 'verified': False})
+
+@app.route('/verify/status/<username>')
+@require_login
+def verify_status(username):
+    me = session['username']
+    verifications = load_json(VERIFICATION_FILE, {})
+    vk = get_verification_key(me, username)
+    v = verifications.get(vk, {})
+    return jsonify({
+        'success': True,
+        'verified': v.get('verified', False),
+        'verifiedAt': v.get('verified_at'),
+    })
+
+@app.route('/verify/batch', methods=['POST'])
+@require_login
+def verify_batch():
+    me = session['username']
+    data = request.get_json(force=True, silent=True) or {}
+    usernames = data.get('users', [])
+    verifications = load_json(VERIFICATION_FILE, {})
+    result = {}
+    for u in usernames:
+        vk = get_verification_key(me, u)
+        result[u] = verifications.get(vk, {}).get('verified', False)
+    return jsonify({'success': True, 'statuses': result})
 
 # ──────────────────────────────────────────────
 # Offline / SW / PWA

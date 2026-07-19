@@ -195,6 +195,41 @@
     .reply-ref { font-size:.72rem; color:#7c7e9a; border-left:2px solid #7a3bff; padding:2px 8px; margin-bottom:4px; max-height:40px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
     .reply-msg-btn { background:transparent; border:none; color:var(--c-text-meta); cursor:pointer; font-size:12px; padding:2px 4px; opacity:0.5; transition:opacity .15s; }
     .reply-msg-btn:hover { opacity:1; }
+    .verify-btn { cursor:pointer; }
+    .verify-btn.verified { color:var(--c-success) !important; }
+    .verify-indicator { display:inline-flex; align-items:center; gap:4px; font-size:.78rem; color:var(--c-success); margin-left:6px; }
+    .verify-indicator.unverified { color:var(--c-text-muted); }
+    .safety-number-display {
+      font-family:monospace; font-size:1.1rem; letter-spacing:1px;
+      background:var(--c-surface); border:1px solid var(--c-border-item);
+      border-radius:10px; padding:14px 18px; text-align:center;
+      color:var(--c-text-chat); line-height:1.8; word-break:break-all;
+      user-select:all;
+    }
+    .safety-number-display .digit-group {
+      display:inline-block; margin:0 2px;
+      padding:2px 4px; border-radius:4px;
+      background:rgba(122,59,255,.08);
+    }
+    .safety-number-label {
+      font-size:.75rem; color:var(--c-text-muted); text-align:center;
+      margin-top:4px; font-style:italic;
+    }
+    .verify-qr-wrap {
+      display:flex; justify-content:center; margin:12px 0;
+    }
+    .verify-qr-wrap canvas { border-radius:10px; border:2px solid var(--c-border-item); }
+    .verify-status-badge {
+      display:inline-flex; align-items:center; gap:5px;
+      padding:3px 10px; border-radius:12px; font-size:.75rem; font-weight:600;
+    }
+    .verify-status-badge.verified { background:rgba(34,197,94,.15); color:var(--c-success); }
+    .verify-status-badge.unverified { background:rgba(255,255,255,.06); color:var(--c-text-muted); }
+    .verify-actions { display:flex; gap:8px; justify-content:center; margin-top:12px; }
+    .verify-step { text-align:center; }
+    .verify-step-num { display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; border-radius:50%; background:var(--c-accent); color:#fff; font-size:.75rem; font-weight:700; margin-bottom:6px; }
+    .verify-step-text { font-size:.82rem; color:var(--c-text-meta); margin-bottom:10px; }
+    .sidebar .item .verify-icon { font-size:.7rem; margin-left:4px; }
   `;
   document.head.appendChild(_featureCSS);
 
@@ -425,6 +460,7 @@
                 <input id="searchInput" class="input-text" placeholder="Soek i meldinger..." autocomplete="off" />
                 <button id="searchBtn" class="btn btn-small btn-ghost">Soek</button>
                 <button id="myKeyBtn" class="btn btn-small btn-ghost">Min noekkel</button>
+                <button id="verifyBtn" class="btn btn-small btn-ghost verify-btn" style="display:none" title="Sikkerhetsnummer">🛡️</button>
               </div>
             </header>
             <div id="messages" class="messages">
@@ -486,6 +522,208 @@
       let userProfiles = {};
       let currentTheme = localStorage.getItem('chat-theme') || window.__APP__?.theme || 'dark';
       let droppedFile = null;
+      let verificationStatuses = {};
+
+      async function fetchVerificationStatus(username) {
+        try {
+          const data = await loadJSON('/verify/status/' + encodeURIComponent(username));
+          verificationStatuses[username] = data.verified || false;
+          return data.verified || false;
+        } catch { return false; }
+      }
+
+      async function fetchBatchVerification(usernames) {
+        try {
+          const data = await loadJSON('/verify/batch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ users: usernames })
+          });
+          if (data.statuses) Object.assign(verificationStatuses, data.statuses);
+        } catch {}
+      }
+
+      function formatSafetyNumber(digits) {
+        if (!digits) return '';
+        const groups = [];
+        for (let i = 0; i < digits.length; i += 5) {
+          groups.push('<span class="digit-group">' + escapeHtml(digits.slice(i, i + 5)) + '</span>');
+        }
+        return groups.join(' ');
+      }
+
+      function generateQRCode(text, size) {
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        const modules = generateQRMatrix(text);
+        const moduleCount = modules.length;
+        const cellSize = size / (moduleCount + 8);
+        const offset = cellSize * 4;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, size, size);
+        ctx.fillStyle = '#000000';
+        for (let r = 0; r < moduleCount; r++) {
+          for (let c = 0; c < moduleCount; c++) {
+            if (modules[r][c]) {
+              ctx.fillRect(offset + c * cellSize, offset + r * cellSize, cellSize + 0.5, cellSize + 0.5);
+            }
+          }
+        }
+        return canvas;
+      }
+
+      function generateQRMatrix(text) {
+        const data = [];
+        for (let i = 0; i < text.length; i++) {
+          const charCode = text.charCodeAt(i);
+          if (charCode < 128) data.push(charCode);
+          else if (charCode < 2048) { data.push(192 | (charCode >> 6)); data.push(128 | (charCode & 63)); }
+          else { data.push(224 | (charCode >> 12)); data.push(128 | ((charCode >> 6) & 63)); data.push(128 | (charCode & 63)); }
+        }
+        const mode = 4;
+        const ecLevel = 1;
+        const version = Math.max(1, Math.min(10, Math.ceil((data.length + 10) / 30)));
+        const size = 17 + version * 4;
+        const matrix = Array.from({ length: size }, () => Array(size).fill(false));
+        const reserved = Array.from({ length: size }, () => Array(size).fill(false));
+        for (let i = 0; i < 8; i++) {
+          setModule(matrix, reserved, 0, i, i < 6);
+          setModule(matrix, reserved, i, 0, i < 6);
+          setModule(matrix, reserved, size - 1 - i, 0, i < 6);
+          setModule(matrix, reserved, 0, size - 1 - i, i < 6);
+          setModule(matrix, reserved, size - 7 + i, 0, false);
+          setModule(matrix, reserved, 0, size - 7 + i, false);
+        }
+        for (let i = 8; i < size - 8; i++) {
+          setModule(matrix, reserved, 6, i, i % 2 === 0);
+          setModule(matrix, reserved, i, 6, i % 2 === 0);
+        }
+        let bitIndex = 0;
+        const allBits = [];
+        allBits.push(1, 0, 0, 0);
+        const dataLength = data.length;
+        for (let i = 7; i >= 0; i--) allBits.push((dataLength >> i) & 1);
+        for (const byte of data) {
+          for (let i = 7; i >= 0; i--) allBits.push((byte >> i) & 1);
+        }
+        while (allBits.length < (size * size * 2)) allBits.push(0, 1, 1, 0, 1, 1, 1, 0, 0, 1, 0, 1, 0, 1, 0, 1);
+        let bitPos = 0;
+        for (let right = size - 1; right >= 1; right -= 2) {
+          if (right === 6) right = 5;
+          for (let vert = 0; vert < size; vert++) {
+            for (let j = 0; j < 2; j++) {
+              const col = right - j;
+              const row = ((Math.floor((size - 1 - right) / 2)) % 2 === 0) ? size - 1 - vert : vert;
+              if (!reserved[row][col] && bitPos < allBits.length) {
+                matrix[row][col] = !!allBits[bitPos];
+                bitPos++;
+              }
+            }
+          }
+        }
+        return matrix;
+      }
+
+      function setModule(matrix, reserved, row, col, value) {
+        if (row >= 0 && row < matrix.length && col >= 0 && col < matrix.length) {
+          matrix[row][col] = value;
+          reserved[row][col] = true;
+        }
+      }
+
+      function showSafetyNumberModal(username) {
+        document.querySelectorAll('.modal-overlay').forEach(el => el.remove());
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        overlay.innerHTML = '<div class="modal" style="max-width:460px">'
+          + '<h2>Sikkerhetsnummer</h2>'
+          + '<div class="verify-step"><div class="verify-step-num">1</div>'
+          + '<div class="verify-step-text">Sammenlign sikkerhetsnummeret med ' + escapeHtml(getDisplayName(username)) + '</div></div>'
+          + '<div id="safetyNumberContent" style="text-align:center;color:var(--c-text-muted);">Laster...</div>'
+          + '<div id="verifyStatusBadge"></div>'
+          + '<div class="verify-actions">'
+          + '<button id="verifyToggleBtn" class="btn btn-primary"></button>'
+          + '<button id="verifyCloseBtn" class="btn btn-ghost">Lukk</button>'
+          + '</div></div>';
+        document.body.appendChild(overlay);
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+        overlay.querySelector('#verifyCloseBtn').addEventListener('click', () => overlay.remove());
+
+        loadJSON('/verify/safety-number/' + encodeURIComponent(username)).then(data => {
+          const content = overlay.querySelector('#safetyNumberContent');
+          const badge = overlay.querySelector('#verifyStatusBadge');
+          const toggleBtn = overlay.querySelector('#verifyToggleBtn');
+          if (!data.success) {
+            content.innerHTML = '<p style="color:var(--c-text-muted)">' + escapeHtml(data.message || 'Kunne ikke hente sikkerhetsnummer') + '</p>';
+            return;
+          }
+          const qrCanvas = generateQRCode(data.safetyNumber, 180);
+          content.innerHTML = '<div class="verify-qr-wrap"></div>'
+            + '<div class="safety-number-display">' + formatSafetyNumber(data.safetyNumber) + '</div>'
+            + '<div class="safety-number-label">Sikkerhetsnummer for ' + escapeHtml(getDisplayName(data.usernameA)) + ' &harr; ' + escapeHtml(getDisplayName(data.usernameB)) + '</div>';
+          content.querySelector('.verify-qr-wrap').appendChild(qrCanvas);
+
+          if (data.verified) {
+            badge.innerHTML = '<span class="verify-status-badge verified">✓ Verifisert' + (data.verifiedAt ? ' — ' + formatTime(data.verifiedAt) : '') + '</span>';
+            toggleBtn.textContent = 'Fjern verifisering';
+            toggleBtn.className = 'btn btn-ghost';
+          } else {
+            badge.innerHTML = '<span class="verify-status-badge unverified">Ikke verifisert</span>';
+            toggleBtn.textContent = 'Jeg har verifisert';
+            toggleBtn.className = 'btn btn-primary';
+          }
+
+          toggleBtn.addEventListener('click', async () => {
+            try {
+              if (data.verified) {
+                await loadJSON('/verify/' + encodeURIComponent(username), { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+                toast('Verifisering fjernet', 'success');
+              } else {
+                await loadJSON('/verify/' + encodeURIComponent(username), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+                toast('Samtale verifisert', 'success');
+              }
+              await fetchVerificationStatus(username);
+              updateVerifyButton();
+              overlay.remove();
+            } catch (e) {
+              toast('Kunne ikke oppdatere verifisering');
+            }
+          });
+        }).catch(() => {
+          overlay.querySelector('#safetyNumberContent').innerHTML = '<p style="color:var(--c-text-muted)">Kunne ikke hente sikkerhetsnummer</p>';
+        });
+      }
+
+      function updateVerifyButton() {
+        const btn = document.getElementById('verifyBtn');
+        if (!btn) return;
+        if (activeChat && activeChat.type === 'user') {
+          btn.style.display = '';
+          const verified = verificationStatuses[activeChat.target] || false;
+          btn.classList.toggle('verified', verified);
+          btn.title = verified ? 'Verifisert — klikk for å se sikkerhetsnummer' : 'Verifiser samtale';
+        } else {
+          btn.style.display = 'none';
+        }
+        if (activeChat && activeChat.type === 'user') {
+          const meta = document.getElementById('chatMeta');
+          const existingIndicator = meta.querySelector('.verify-indicator');
+          if (existingIndicator) existingIndicator.remove();
+          const verified = verificationStatuses[activeChat.target] || false;
+          const indicator = document.createElement('span');
+          indicator.className = 'verify-indicator' + (verified ? '' : ' unverified');
+          indicator.textContent = verified ? '🛡️ Verifisert' : '';
+          if (verified) meta.insertBefore(indicator, meta.firstChild);
+        }
+      }
+
+      document.getElementById('verifyBtn').addEventListener('click', () => {
+        if (activeChat && activeChat.type === 'user') {
+          showSafetyNumberModal(activeChat.target);
+        }
+      });
 
       function getDisplayName(username) {
         const p = userProfiles[username];
@@ -508,7 +746,9 @@
           item.className = 'item';
           item.dataset.user = name;
           const preview = lastMessages[name] || '';
-          item.innerHTML = '<div class="avatar-wrap"><div class="avatar">' + escapeHtml((displayName || name)[0]) + '</div>' + (presence[name] ? '<div class="presence"></div>' : '') + '</div><div><div class="name">' + escapeHtml(displayName) + '</div><div class="preview">' + escapeHtml(preview) + '</div></div>';
+          const verified = verificationStatuses[name] || false;
+          const verifyIcon = verified ? '<span class="verify-icon" title="Verifisert">🛡️</span>' : '';
+          item.innerHTML = '<div class="avatar-wrap"><div class="avatar">' + escapeHtml((displayName || name)[0]) + '</div>' + (presence[name] ? '<div class="presence"></div>' : '') + '</div><div><div class="name">' + escapeHtml(displayName) + verifyIcon + '</div><div class="preview">' + escapeHtml(preview) + '</div></div>';
           item.addEventListener('click', () => { activateItem(usersList, item); openChat(name); });
           usersList.appendChild(item);
         });
@@ -571,6 +811,8 @@
         messagesBox.innerHTML = '';
         composer.style.display = 'flex';
         clearImagePreview();
+        await fetchVerificationStatus(user);
+        updateVerifyButton();
         await loadChat(user);
         await checkTypingIndicator();
         const input = document.getElementById('messageInput');
@@ -624,6 +866,7 @@
           if (anyKey) e2eeHtml = '<span class="e2ee">🔒 Delvis E2EE i gruppe</span>';
         }
         setChatMeta(e2eeHtml);
+        updateVerifyButton();
         await loadGroup(groupId);
         await checkTypingIndicator();
         const input = document.getElementById('messageInput');
@@ -1568,7 +1811,12 @@
           users.length = 0;
           users.push(...(data.users || []));
           renderUsers();
+          const usernames = users.map(u => typeof u === 'string' ? u : (u && u.username) || '').filter(Boolean);
+          if (usernames.length) fetchBatchVerification(usernames).then(() => renderUsers()).catch(() => {});
         }).catch(() => {});
+        if (activeChat?.type === 'user') {
+          fetchVerificationStatus(activeChat.target).then(() => updateVerifyButton()).catch(() => {});
+        }
         loadJSON('/groups').then(data => { groups.length = 0; groups.push(...(data.groups || [])); renderGroups(); }).catch(() => {});
         updatePresence().catch(() => {});
         checkIncomingCalls().catch(() => {});
