@@ -264,3 +264,39 @@ body.theme-light .skeleton-msg { background:linear-gradient(90deg,#e5e7eb 25%,#f
   .btn { touch-action:manipulation; }
 }
 .call-btn.active-share { background:#22c55e; }
+
+/* ── Unread badge ── */
+.badge-count { min-width:20px; height:20px; border-radius:10px; background:#7a3bff; color:#fff; font-size:.7rem; font-weight:700; display:inline-flex; align-items:center; justify-content:center; padding:0 5px; margin-left:auto; flex-shrink:0; }
+
+/* ── Last seen ── */
+.last-seen { font-size:.72rem; color:#64748b; margin-top:2px; }
+
+/* ── Forwarded tag ── */
+.forwarded-tag { font-size:.7rem; color:#7c7e9a; font-style:italic; margin-bottom:2px; }
+
+/* ── Saved Messages sidebar item ── */
+.saved-messages-item { background:linear-gradient(135deg,#1c1030,#0a0c18); border:1px solid #7a3bff33; }
+.saved-messages-item:hover { border-color:#7a3bff; }
+
+/* ── Poll styles ── */
+.poll-card { background:#111322; border:1px solid #2a2d48; border-radius:12px; padding:12px; margin-top:6px; }
+.poll-question { font-weight:700; color:#f3f1ff; margin-bottom:8px; }
+.poll-option { display:flex; align-items:center; gap:8px; padding:6px 10px; border-radius:8px; cursor:pointer; border:1px solid #2a2d48; margin-bottom:4px; transition:background .15s; }
+.poll-option:hover { background:#1a2240; }
+.poll-option.voted { border-color:#7a3bff; background:#1c1030; }
+.poll-option .poll-bar { height:100%; background:#7a3bff33; border-radius:4px; transition:width .3s; }
+.poll-option .poll-label { font-size:.85rem; color:#e9eaff; z-index:1; position:relative; }
+.poll-option .poll-pct { font-size:.75rem; color:#9ca3c7; margin-left:auto; }
+.poll-vote-btn { margin-top:6px; }
+
+/* ── Search results header ── */
+.search-results-header { display:flex; justify-content:space-between; align-items:center; padding:8px 12px; background:#1a2240; border-radius:10px; margin-bottom:8px; }
+.search-results-header .count { color:#9ca3c7; font-size:.85rem; }
+.close-search { background:transparent; border:none; color:#9ca3c7; cursor:pointer; font-size:1.1rem; padding:4px 8px; }
+
+/* ── File search results ── */
+.file-search-result { display:flex; align-items:center; gap:10px; padding:10px 12px; background:#141a2b; border:1px solid #1d2440; border-radius:10px; cursor:pointer; transition:background .15s; }
+.file-search-result:hover { background:#1a2240; }
+.file-icon { font-size:1.4rem; }
+.file-name { font-weight:600; color:#e9eaff; font-size:.9rem; }
+.file-meta { font-size:.75rem; color:#7c7e9a; }

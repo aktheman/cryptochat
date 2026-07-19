@@ -1770,6 +1770,232 @@ def background_tasks():
             pass
 
 # ──────────────────────────────────────────────
+# Forward Messages
+# ──────────────────────────────────────────────
+@app.route('/messages/<message_id>/forward', methods=['POST'])
+@require_login
+def forward_message(message_id):
+    me = session['username']
+    data = request.get_json(force=True, silent=True) or {}
+    target = sanitize_input(data.get('target', ''), 30).lower()
+    target_type = data.get('target_type', 'user')
+    if not target:
+        return jsonify({'success': False, 'message': 'Manglende mottaker.'}), 400
+    messages = load_json(MESSAGES_FILE, [])
+    orig = next((m for m in messages if m.get('id') == message_id), None)
+    if not orig:
+        return jsonify({'success': False, 'message': 'Melding ikke funnet.'}), 404
+    if target_type == 'user':
+        pk = pair_key(me, target)
+    else:
+        pk = f"group::{target}"
+    fwd = {
+        'id': hashlib.sha256(f"fwd:{message_id}:{target}:{datetime.utcnow().isoformat()}".encode()).hexdigest(),
+        'pair_key': pk,
+        'sender': me,
+        'recipient': target,
+        'ciphertext': orig.get('ciphertext', ''),
+        'type': orig.get('type', 'text'),
+        'timestamp': datetime.utcnow().isoformat(),
+        'read': False,
+        'self_destruct_at': None,
+        'filename': orig.get('filename'),
+        'forwarded_from': orig.get('sender'),
+        'reply_to': None,
+    }
+    messages.append(fwd)
+    save_json(MESSAGES_FILE, messages)
+    return jsonify({'success': True})
+
+# ──────────────────────────────────────────────
+# Saved Messages (self-chat / bookmarks)
+# ──────────────────────────────────────────────
+@app.route('/saved', methods=['POST'])
+@require_login
+def save_message():
+    me = session['username']
+    data = request.get_json(force=True, silent=True) or {}
+    ciphertext = sanitize_input(data.get('ciphertext', ''), 10000)
+    mtype = data.get('type', 'text')
+    filename = data.get('filename')
+    if not ciphertext:
+        return jsonify({'success': False, 'message': 'Tom melding.'}), 400
+    messages = load_json(MESSAGES_FILE, [])
+    pk = pair_key(me, me)
+    messages.append({
+        'id': hashlib.sha256(f"saved:{ciphertext}:{datetime.utcnow().isoformat()}{me}".encode()).hexdigest(),
+        'pair_key': pk,
+        'sender': me,
+        'recipient': me,
+        'ciphertext': ciphertext,
+        'type': mtype,
+        'timestamp': datetime.utcnow().isoformat(),
+        'read': True,
+        'self_destruct_at': None,
+        'filename': filename,
+    })
+    save_json(MESSAGES_FILE, messages)
+    return jsonify({'success': True})
+
+@app.route('/saved')
+@require_login
+def get_saved_messages():
+    me = session['username']
+    messages = load_json(MESSAGES_FILE, [])
+    pk = pair_key(me, me)
+    saved = [m for m in messages if m.get('pair_key') == pk]
+    return jsonify({'success': True, 'messages': saved})
+
+# ──────────────────────────────────────────────
+# Unread Counts
+# ──────────────────────────────────────────────
+@app.route('/unread')
+@require_login
+def unread_counts():
+    me = session['username']
+    messages = load_json(MESSAGES_FILE, [])
+    receipts = load_json(READ_RECEIPTS_FILE, {})
+    counts = {}
+    for m in messages:
+        if m.get('sender') == me:
+            continue
+        partner = m.get('sender') if m.get('recipient') == me else None
+        if not partner:
+            continue
+        if partner == me:
+            continue
+        if m.get('read', False):
+            continue
+        counts[partner] = counts.get(partner, 0) + 1
+    return jsonify({'success': True, 'counts': counts})
+
+# ──────────────────────────────────────────────
+# Chat Export
+# ──────────────────────────────────────────────
+@app.route('/export/<chat_type>/<chat_id>')
+@require_login
+def export_chat(chat_type, chat_id):
+    me = session['username']
+    messages = load_json(MESSAGES_FILE, [])
+    if chat_type == 'user':
+        pk = pair_key(me, chat_id)
+        filtered = [m for m in messages if m.get('pair_key') == pk]
+    elif chat_type == 'group':
+        filtered = [m for m in messages if m.get('pair_key') == f"group::{chat_id}"]
+    else:
+        return jsonify({'success': False, 'message': 'Ugyldig type.'}), 400
+    filtered.sort(key=lambda m: m.get('timestamp', ''))
+    lines = []
+    for m in filtered:
+        ts = m.get('timestamp', '')[:16].replace('T', ' ')
+        sender = m.get('forwarded_from') and f"{m['sender']} (videresendt fra {m['forwarded_from']})" or m.get('sender', '')
+        ct = m.get('ciphertext', '')
+        if m.get('type') == 'file':
+            ct = f"[Fil: {m.get('filename', '?')}]"
+        elif m.get('reply_to'):
+            ct = f"[Svar] {ct}"
+        lines.append(f"[{ts}] {sender}: {ct}")
+    export_text = '\n'.join(lines)
+    return Response(export_text, mimetype='text/plain',
+                    headers={'Content-Disposition': f'attachment; filename=export_{chat_type}_{chat_id}.txt'})
+
+# ──────────────────────────────────────────────
+# Polls
+# ──────────────────────────────────────────────
+POLLS_FILE = DATA_DIR / 'polls.json'
+
+@app.route('/polls', methods=['POST'])
+@require_login
+def create_poll():
+    me = session['username']
+    data = request.get_json(force=True, silent=True) or {}
+    question = sanitize_input(data.get('question', ''), 300)
+    options = data.get('options', [])
+    target = sanitize_input(data.get('target', ''), 30).lower()
+    target_type = data.get('target_type', 'user')
+    multi = convert_to_bool(data.get('multi', False))
+    if not question or len(options) < 2 or not target:
+        return jsonify({'success': False, 'message': 'Manglende spørsmål eller alternativer.'}), 400
+    poll_id = hashlib.sha256(f"{me}:{question}:{datetime.utcnow().isoformat()}".encode()).hexdigest()[:16]
+    if target_type == 'user':
+        pk = pair_key(me, target)
+    else:
+        pk = f"group::{target}"
+    polls = load_json(POLLS_FILE, {})
+    poll = {
+        'id': poll_id,
+        'pair_key': pk,
+        'creator': me,
+        'question': question,
+        'options': [{'text': sanitize_input(o, 100), 'votes': []} for o in options[:10]],
+        'multi': multi,
+        'created_at': datetime.utcnow().isoformat(),
+        'closed': False,
+    }
+    polls[poll_id] = poll
+    save_json(POLLS_FILE, polls)
+    messages = load_json(MESSAGES_FILE, [])
+    messages.append({
+        'id': hashlib.sha256(f"poll:{poll_id}:{datetime.utcnow().isoformat()}".encode()).hexdigest(),
+        'pair_key': pk,
+        'sender': me,
+        'recipient': target,
+        'ciphertext': f"📊 {question}",
+        'type': 'poll',
+        'poll_id': poll_id,
+        'timestamp': datetime.utcnow().isoformat(),
+        'read': False,
+        'self_destruct_at': None,
+    })
+    save_json(MESSAGES_FILE, messages)
+    return jsonify({'success': True, 'poll_id': poll_id})
+
+@app.route('/polls/<poll_id>')
+@require_login
+def get_poll(poll_id):
+    polls = load_json(POLLS_FILE, {})
+    poll = polls.get(poll_id)
+    if not poll:
+        return jsonify({'success': False, 'message': 'Avstemning ikke funnet.'}), 404
+    return jsonify({'success': True, 'poll': poll})
+
+@app.route('/polls/<poll_id>/vote', methods=['POST'])
+@require_login
+def vote_poll(poll_id):
+    me = session['username']
+    data = request.get_json(force=True, silent=True) or {}
+    indices = data.get('options', [])
+    polls = load_json(POLLS_FILE, {})
+    poll = polls.get(poll_id)
+    if not poll:
+        return jsonify({'success': False, 'message': 'Avstemning ikke funnet.'}), 404
+    if poll.get('closed'):
+        return jsonify({'success': False, 'message': 'Avstemning er lukket.'}), 400
+    for opt in poll['options']:
+        opt['votes'] = [v for v in opt['votes'] if v != me]
+    for idx in indices:
+        if isinstance(idx, int) and 0 <= idx < len(poll['options']):
+            poll['options'][idx]['votes'].append(me)
+    polls[poll_id] = poll
+    save_json(POLLS_FILE, polls)
+    return jsonify({'success': True})
+
+@app.route('/polls/<poll_id>/close', methods=['POST'])
+@require_login
+def close_poll(poll_id):
+    me = session['username']
+    polls = load_json(POLLS_FILE, {})
+    poll = polls.get(poll_id)
+    if not poll:
+        return jsonify({'success': False, 'message': 'Avstemning ikke funnet.'}), 404
+    if poll.get('creator') != me:
+        return jsonify({'success': False, 'message': 'Kun oppretter kan lukke.'}), 403
+    poll['closed'] = True
+    polls[poll_id] = poll
+    save_json(POLLS_FILE, polls)
+    return jsonify({'success': True})
+
+# ──────────────────────────────────────────────
 # PWA Push Notifications
 # ──────────────────────────────────────────────
 @app.route('/push/subscribe', methods=['POST'])

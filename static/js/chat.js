@@ -523,6 +523,10 @@
           <aside class="sidebar" role="navigation" aria-label="Kontakter">
             <div class="section">
               <div class="section-title">MELDINGER</div>
+              <div id="savedMsgItem" class="item saved-messages-item" role="option" tabindex="0" aria-label="Lagrede meldinger" style="cursor:pointer;margin-bottom:6px;">
+                <div class="avatar-wrap"><div class="avatar" style="background:linear-gradient(135deg,#cf6fef,#7a3bff);">📌</div></div>
+                <div><div class="name">Lagrede meldinger</div><div class="preview">Dine notater og bokmerker</div></div>
+              </div>
               <div id="usersList" class="list" role="listbox" aria-label="Kontakter"></div>
             </div>
             <div class="section">
@@ -544,6 +548,7 @@
                 <button id="fileSearchBtn" class="btn btn-small btn-ghost" title="Soek i filer" aria-label="Soek i filer">📎</button>
                 <button id="myKeyBtn" class="btn btn-small btn-ghost" aria-label="Vis min offentlige noekkel">Min noekkel</button>
                 <button id="verifyBtn" class="btn btn-small btn-ghost verify-btn" style="display:none" title="Sikkerhetsnummer" aria-label="Verifiser samtale">🛡️</button>
+                <button id="exportBtn" class="btn btn-small btn-ghost" title="Eksporter samtale" aria-label="Eksporter chat" style="display:none">💾</button>
               </div>
             </header>
             <div id="pinnedBar" class="pinned-bar" style="display:none" role="button" tabindex="0" aria-label="Fast melding">
@@ -580,6 +585,7 @@
                 </div>
                 <input id="messageInput" class="input-text" placeholder="Skriv en melding..." autocomplete="off" aria-label="Skriv en melding" />
                 <button id="voiceRecordBtn" class="btn btn-small btn-ghost" title="Talebeskjed" aria-label="Talebeskjed">🎙️</button>
+                <button id="pollBtn" class="btn btn-small btn-ghost" title="Opprett avstemning" aria-label="Opprett avstemning" style="display:none">📊</button>
                 <button id="sendBtn" class="btn btn-primary" disabled aria-label="Send melding">Send</button>
               </div>
               <div id="scheduleBar" class="schedule-bar" style="display:none">
@@ -635,6 +641,9 @@
       let currentTheme = localStorage.getItem('chat-theme') || window.__APP__?.theme || 'dark';
       let droppedFile = null;
       let verificationStatuses = {};
+      let unreadCounts = {};
+      let _notificationAudio = null;
+      window.__lastSeenTimes = {};
 
       async function fetchVerificationStatus(username) {
         try {
@@ -860,7 +869,9 @@
           const preview = lastMessages[name] || '';
           const verified = verificationStatuses[name] || false;
           const verifyIcon = verified ? '<span class="verify-icon" title="Verifisert">🛡️</span>' : '';
-          item.innerHTML = '<div class="avatar-wrap"><div class="avatar">' + escapeHtml((displayName || name)[0]) + '</div>' + (presence[name] ? '<div class="presence"></div>' : '') + '</div><div><div class="name">' + escapeHtml(displayName) + verifyIcon + '</div><div class="preview">' + escapeHtml(preview) + '</div></div>';
+          const badge = (unreadCounts[name] || 0) > 0 ? '<span class="badge-count">' + Math.min(unreadCounts[name], 99) + '</span>' : '';
+          const lastSeenText = presence[name] ? '' : (window.__lastSeenTimes && window.__lastSeenTimes[name] ? '<div class="last-seen">Sist sett: ' + escapeHtml(formatTime(window.__lastSeenTimes[name])) + '</div>' : '');
+          item.innerHTML = '<div class="avatar-wrap"><div class="avatar">' + escapeHtml((displayName || name)[0]) + '</div>' + (presence[name] ? '<div class="presence"></div>' : '') + '</div><div style="flex:1;min-width:0;"><div class="name">' + escapeHtml(displayName) + verifyIcon + '</div><div class="preview">' + escapeHtml(preview) + lastSeenText + '</div></div>' + badge;
           item.addEventListener('click', () => { activateItem(usersList, item); openChat(name); });
           usersList.appendChild(item);
         });
@@ -909,6 +920,67 @@
       renderUsers();
       renderGroups();
 
+      // ── Saved Messages click ──
+      document.getElementById('savedMsgItem').addEventListener('click', () => {
+        document.querySelectorAll('.item').forEach(el => el.classList.remove('active'));
+        document.getElementById('savedMsgItem').classList.add('active');
+        openSavedMessages();
+      });
+
+      async function openSavedMessages() {
+        activeChat = { type: 'saved', target: '__self__' };
+        chatTitle.textContent = '📌 Lagrede meldinger';
+        setChatMeta('');
+        messagesBox.innerHTML = '';
+        composer.style.display = 'flex';
+        clearImagePreview();
+        document.getElementById('exportBtn').style.display = 'none';
+        document.getElementById('pollBtn').style.display = 'none';
+        try {
+          const data = await loadJSON('/saved');
+          const list = data.messages || [];
+          messagesBox.innerHTML = '';
+          if (!list.length) {
+            messagesBox.innerHTML = '<div class="empty-state"><div class="empty-icon">📌</div><h3>Ingen lagrede meldinger</h3><p>Bruk "Lagre" fra en meldingskontekst for å lagre her.</p></div>';
+            return;
+          }
+          list.forEach(m => appendMessage(m));
+          scrollToBottom();
+        } catch (e) {
+          messagesBox.innerHTML = '<div class="empty-state"><div class="empty-icon">⚠️</div><p>Kunne ikke laste lagrede meldinger</p></div>';
+        }
+      }
+
+      async function saveMsgToSelf(messageId) {
+        try {
+          const msgs = await loadJSON('/messages/' + encodeURIComponent(activeChat.target));
+          const msg = (msgs.messages || []).find(m => m.id === messageId);
+          if (!msg) { toast('Melding ikke funnet'); return; }
+          await loadJSON('/saved', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ciphertext: msg.text || msg.ciphertext || '', type: msg.type || 'text' }) });
+          toast('Melding lagret', 'success');
+        } catch (e) {
+          toast('Kunne ikke lagre melding');
+        }
+      }
+
+      // ── Forward message ──
+      async function forwardMsg(messageId) {
+        const target = prompt('Videresend til (brukernavn):');
+        if (!target) return;
+        try {
+          await loadJSON('/messages/' + encodeURIComponent(messageId) + '/forward', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target: target.trim().toLowerCase(), target_type: 'user' }) });
+          toast('Melding videresendt', 'success');
+        } catch (e) {
+          toast('Kunne ikke videresende');
+        }
+      }
+
+      // ── Export chat ──
+      document.getElementById('exportBtn').addEventListener('click', () => {
+        if (!activeChat || activeChat.type === 'saved') return;
+        window.open('/export/' + activeChat.type + '/' + encodeURIComponent(activeChat.target), '_blank');
+      });
+
       async function openChat(user) {
         activeChat = { type: 'user', target: user };
         replyingTo = null;
@@ -923,6 +995,8 @@
         messagesBox.innerHTML = '';
         composer.style.display = 'flex';
         clearImagePreview();
+        document.getElementById('exportBtn').style.display = '';
+        document.getElementById('pollBtn').style.display = 'none';
         await fetchVerificationStatus(user);
         updateVerifyButton();
         await loadChat(user);
@@ -1001,6 +1075,8 @@
         }
         setChatMeta(e2eeHtml);
         updateVerifyButton();
+        document.getElementById('exportBtn').style.display = '';
+        document.getElementById('pollBtn').style.display = '';
         await loadGroup(groupId);
         loadPinnedMessages('group', groupId);
         await checkTypingIndicator();
@@ -1346,6 +1422,12 @@
           actionsHtml = '<div class="msg-actions">'
             + '<button class="msg-action-btn edit-btn" title="Rediger">✏️</button>'
             + '<button class="msg-action-btn delete-btn" title="Slett">🗑️</button>'
+            + '<button class="msg-action-btn fwd-btn" title="Videresend">↪</button>'
+            + '</div>';
+        } else if (!isMe && !message.deleted && message.id) {
+          actionsHtml = '<div class="msg-actions">'
+            + '<button class="msg-action-btn save-msg-btn" title="Lagre">📌</button>'
+            + '<button class="msg-action-btn fwd-btn" title="Videresend">↪</button>'
             + '</div>';
         }
 
@@ -1353,12 +1435,18 @@
 
         const replyHtml = message.reply_preview ? '<div class="reply-ref">&#8617; ' + escapeHtml(message.reply_preview) + '</div>' : '';
         const replyBtnHtml = (!isMe && !message.deleted && message.id) ? '<button class="reply-msg-btn" title="Svar">&#8617;</button>' : '';
+        const fwdTag = message.forwarded_from ? '<div class="forwarded-tag">↪ Videresendt fra ' + escapeHtml(message.forwarded_from) + '</div>' : '';
+
+        const pollHtml = (message.type === 'poll' && message.poll_id) ? '<div class="poll-placeholder" data-poll-id="' + escapeHtml(message.poll_id) + '">Laster avstemning...</div>' : '';
+        const msgTextHtml = (message.type === 'poll' && message.poll_id) ? '' : '<div class="msg-text">' + (message.deleted ? '' : escapeHtml(renderedText)) + '</div>';
 
         item.innerHTML = (
           '<div class="meta"><span class="sender">' + escapeHtml(senderDisplay) + '</span>' + replyBtnHtml + '<span class="time">' + escapeHtml(formatTime(message.timestamp)) + '</span></div>'
+          + fwdTag
           + replyHtml
           + fileHtml
-          + '<div class="msg-text">' + (message.deleted ? '' : escapeHtml(renderedText)) + '</div>'
+          + pollHtml
+          + msgTextHtml
           + tagHtml
           + '<div class="meta">' + e2eeIndicator + (isMe ? '<span class="read">' + (message.read ? '<span class="read-receipt read">✓✓</span>' : '<span class="read-receipt unread">✓</span>') + '</span>' : '') + '</div>'
           + reactionsHtml
@@ -1390,6 +1478,22 @@
           });
         }
 
+        const fwdBtn = item.querySelector('.fwd-btn');
+        if (fwdBtn) {
+          fwdBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            forwardMsg(message.id);
+          });
+        }
+
+        const saveMsgBtn = item.querySelector('.save-msg-btn');
+        if (saveMsgBtn) {
+          saveMsgBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            saveMsgToSelf(message.id);
+          });
+        }
+
         item.querySelectorAll('.reaction-badge').forEach(badge => {
           badge.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -1397,6 +1501,21 @@
             if (emoji && message.id) toggleReaction(message.id, emoji);
           });
         });
+
+        if (message.type === 'poll' && message.poll_id) {
+          loadPoll(message.poll_id).then(poll => {
+            const ph = item.querySelector('.poll-placeholder');
+            if (ph && poll) {
+              ph.outerHTML = renderPollCard(poll);
+              item.querySelectorAll('.poll-option').forEach(opt => {
+                opt.addEventListener('click', (e) => {
+                  e.stopPropagation();
+                  votePoll(message.poll_id, [parseInt(opt.dataset.idx)]);
+                });
+              });
+            }
+          });
+        }
 
         messagesBox.appendChild(item);
         if (!userScrolledUp) messagesBox.scrollTop = messagesBox.scrollHeight;
@@ -1961,6 +2080,76 @@
         document.getElementById('scheduleBar').style.display = 'none';
       });
 
+      // ── Polls ──
+      document.getElementById('pollBtn')?.addEventListener('click', () => {
+        if (!activeChat || (activeChat.type !== 'group' && activeChat.type !== 'user')) { toast('Velg en samtale foerst'); return; }
+        const question = prompt('Spørsmål:');
+        if (!question) return;
+        const optionsStr = prompt('Alternativer (kommadelt):');
+        if (!optionsStr) return;
+        const options = optionsStr.split(',').map(s => s.trim()).filter(Boolean);
+        if (options.length < 2) return toast('Minst 2 alternativer');
+        createPoll(question, options);
+      });
+
+      async function createPoll(question, options) {
+        try {
+          const data = await loadJSON('/polls', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              question, options,
+              target: activeChat.target,
+              target_type: activeChat.type === 'group' ? 'group' : 'user',
+            })
+          });
+          toast('Avstemning opprettet', 'success');
+          if (activeChat.type === 'user') await loadChat(activeChat.target); else await loadGroup(activeChat.target);
+        } catch (e) {
+          toast('Kunne ikke opprette avstemning');
+        }
+      }
+
+      async function loadPoll(pollId) {
+        try {
+          const data = await loadJSON('/polls/' + encodeURIComponent(pollId));
+          return data.poll || null;
+        } catch (e) { return null; }
+      }
+
+      async function votePoll(pollId, indices) {
+        try {
+          await loadJSON('/polls/' + encodeURIComponent(pollId) + '/vote', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ options: indices })
+          });
+          if (activeChat?.type === 'user') await loadChat(activeChat.target); else if (activeChat?.type === 'group') await loadGroup(activeChat.target);
+        } catch (e) {
+          toast('Kunne ikke stemme');
+        }
+      }
+
+      function renderPollCard(poll) {
+        if (!poll) return '';
+        const totalVotes = poll.options.reduce((s, o) => s + o.votes.length, 0);
+        const myVote = window.__APP__?.username;
+        let html = '<div class="poll-card" data-poll-id="' + escapeHtml(poll.id) + '">'
+          + '<div class="poll-question">📊 ' + escapeHtml(poll.question) + '</div>';
+        poll.options.forEach((opt, idx) => {
+          const pct = totalVotes > 0 ? Math.round(opt.votes.length / totalVotes * 100) : 0;
+          const voted = opt.votes.includes(myVote);
+          html += '<div class="poll-option' + (voted ? ' voted' : '') + '" data-idx="' + idx + '">'
+            + '<div class="poll-bar" style="width:' + pct + '%"></div>'
+            + '<span class="poll-label">' + escapeHtml(opt.text) + '</span>'
+            + '<span class="poll-pct">' + pct + '% (' + opt.votes.length + ')</span>'
+            + '</div>';
+        });
+        html += '<div class="poll-total" style="font-size:.72rem;color:var(--c-text-muted);margin-top:4px;">' + totalVotes + ' stemmer' + (poll.closed ? ' · Lukket' : '') + '</div>'
+          + '</div>';
+        return html;
+      }
+
       // Add schedule toggle to send button area
       document.getElementById('sendBtn')?.addEventListener('contextmenu', (e) => { e.preventDefault(); showScheduleBar(); });
 
@@ -2192,6 +2381,7 @@
 
       function showMessageNotification(message) {
         try {
+          playNotificationSound();
           if (Notification.permission !== 'granted') return;
           if (message.sender === (window.__APP__?.username || '')) return;
           const senderName = getDisplayName(message.sender || '');
@@ -2488,6 +2678,7 @@
         loadJSON('/groups').then(data => { groups.length = 0; groups.push(...(data.groups || [])); renderGroups(); }).catch(() => {});
         updatePresence().catch(() => {});
         checkIncomingCalls().catch(() => {});
+        loadUnreadCounts().catch(() => {});
       }, 2500);
 
       window.addEventListener('beforeunload', () => { if (currentCall) hangUp(); });
@@ -2500,6 +2691,7 @@
         }).then(data => {
           if (!data.presence) return;
           data.presence.forEach(entry => {
+            if (!entry.online && entry.lastSeen) window.__lastSeenTimes[entry.username] = entry.lastSeen;
             const items = usersList.querySelectorAll('.item');
             items.forEach(item => {
               if (item.dataset.user === entry.username) {
@@ -2508,6 +2700,33 @@
             });
           });
         });
+      }
+
+      function loadUnreadCounts() {
+        return loadJSON('/unread').then(data => {
+          const prev = { ...unreadCounts };
+          unreadCounts = data.counts || {};
+          if (activeChat?.type === 'user' && unreadCounts[activeChat.target]) {
+            delete unreadCounts[activeChat.target];
+          }
+          const changed = JSON.stringify(prev) !== JSON.stringify(unreadCounts);
+          if (changed) renderUsers();
+          for (const [user, count] of Object.entries(unreadCounts)) {
+            if (count > (prev[user] || 0) && user !== (window.__APP__?.username || '')) {
+              playNotificationSound();
+              if (Notification.permission === 'granted') {
+                new Notification('CryptoChat', { body: count + ' nye meldinger fra ' + user, icon: '/static/img/icon-192.png' });
+              }
+            }
+          }
+        }).catch(() => {});
+      }
+
+      function playNotificationSound() {
+        if (!_notificationAudio) {
+          _notificationAudio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVggoKOaTczXn+DkGw2NF5/go5sNjRe' + 'f4OQbTY0X3+CkG02NF9/gpBtNjRff4KQbTY0X3+CkG02NF9/gpBtNjRff4KQbTY0');
+        }
+        try { _notificationAudio.currentTime = 0; _notificationAudio.play().catch(() => {}); } catch(e) {}
       }
 
       document.body.classList.toggle('theme-light', (window.__APP__?.theme || 'dark') === 'light');
