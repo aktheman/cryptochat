@@ -1695,7 +1695,6 @@
       }
 
       function finishAppend(message, chatId, isMe, renderedText) {
-
         if (message.deleted) renderedText = '🗑️ [Melding slettet]';
 
         const item = document.createElement('div');
@@ -1763,6 +1762,12 @@
         }
 
         const senderDisplay = getDisplayName(message.sender || '');
+        const msgDate = message.timestamp ? new Date(message.timestamp) : null;
+        const dateKey = msgDate ? msgDate.toLocaleDateString('no-NO') : '';
+        const prevItem = chatId ? messagesBox.children[messagesBox.children.length - 1] : null;
+        const prevDate = prevItem?.dataset?.dateKey;
+        const showDateSeparator = !!chatId && !!dateKey && prevDate !== dateKey;
+        const shortTime = msgDate ? new Intl.DateTimeFormat('no-NO', { hour:'2-digit', minute:'2-digit' }).format(msgDate) : '';
 
         const replyHtml = message.reply_preview ? '<div class="reply-ref">&#8617; ' + escapeHtml(message.reply_preview) + '</div>' : '';
         const replyBtnHtml = (!isMe && !message.deleted && message.id) ? '<button class="reply-msg-btn" title="Svar">&#8617;</button>' : '';
@@ -1771,8 +1776,16 @@
         const pollHtml = (message.type === 'poll' && message.poll_id) ? '<div class="poll-placeholder" data-poll-id="' + escapeHtml(message.poll_id) + '">Laster avstemning...</div>' : '';
         const msgTextHtml = (message.type === 'poll' && message.poll_id) ? '' : '<div class="msg-text">' + (message.deleted ? '' : escapeHtml(renderedText)) + '</div>';
 
+        if (showDateSeparator) {
+          item.dataset.dateKey = dateKey;
+          const sep = document.createElement('div');
+          sep.className = 'date-separator';
+          sep.innerHTML = '<span>' + escapeHtml(dateKey) + '</span>';
+          messagesBox.appendChild(sep);
+        }
+
         item.innerHTML = (
-          '<div class="meta"><span class="sender">' + escapeHtml(senderDisplay) + '</span>' + replyBtnHtml + '<span class="time">' + escapeHtml(formatTime(message.timestamp)) + '</span></div>'
+          '<div class="meta"><span class="sender">' + escapeHtml(senderDisplay) + '</span>' + replyBtnHtml + '<span class="time">' + escapeHtml(shortTime) + '</span></div>'
           + fwdTag
           + replyHtml
           + fileHtml

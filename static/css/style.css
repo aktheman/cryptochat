@@ -68,10 +68,9 @@ body.theme-light .toast { background:#ffffff; color:#111827; border-color:#e5e7e
 .loading { opacity:0.7; }
 
 .msg { max-width:75%; padding:10px 14px; border-radius:14px; word-wrap:break-word; display:flex; flex-direction:column; animation:fadeIn .35s ease both; scroll-margin-top:12px; transition:outline .15s, background .15s; }
-@keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
-.sticky-scroll { scroll-behavior:smooth; }
-.msg.sent { align-self:flex-end; background:#1c1030; border:1px solid #7a3bff; color:#f3f1ff; }
-.msg.received { align-self:flex-start; background:#16203a; border:1px solid #2d3a6a; color:#e9eaff; }
+.msg { max-width:75%; padding:10px 14px; border-radius:14px; word-wrap:break-word; display:flex; flex-direction:column; animation:fadeIn .35s ease both; scroll-margin-top:12px; transition:outline .15s, background .15s; }
+.msg.sent { align-self:flex-end; background:#1c1030; border:1px solid #7a3bff; color:#f3f1ff; border-radius:16px 16px 4px 16px; }
+.msg.received { align-self:flex-start; background:#16203a; border:1px solid #2d3a6a; color:#e9eaff; border-radius:16px 16px 16px 4px; }
 .msg.touching { background:rgba(122,59,255,.12); }
 .meta { display:flex; gap:8px; font-size:.75rem; color:#a8adc8; margin-top:6px; }
 .sender { color:#ff8fab; font-weight:600; }
@@ -163,13 +162,16 @@ body.theme-light .toast { background:#ffffff; color:#111827; border-color:#e5e7e
 .typing-dots span:nth-child(3) { animation-delay:.4s; }
 @keyframes typingBounce { 0%,60%,100% { transform:translateY(0); opacity:.4; } 30% { transform:translateY(-4px); opacity:1; } }
 
+/* ── Date separator ── */
+.date-separator { text-align:center; margin:16px 0 8px; position:relative; }
+.date-separator::before { content:''; position:absolute; left:0; right:0; top:50%; height:1px; background:#1d2440; }
+.date-separator span { background:#0f1826; padding:0 12px; position:relative; font-size:.72rem; color:#9a9cb8; font-weight:500; }
+
 /* ── Reactions ── */
 .msg-actions { display:flex; gap:4px; margin-top:4px; opacity:0; transition:opacity .15s; }
 .msg:hover .msg-actions { opacity:1; }
-.react-btn { background:transparent; border:none; cursor:pointer; font-size:.85rem; padding:2px 4px; border-radius:6px; color:#a8adc8; transition:background .1s; }
-.react-btn:hover { background:#1a2240; }
-.reactions-row { display:flex; flex-wrap:wrap; gap:4px; margin-top:4px; }
-.reaction-badge { display:inline-flex; align-items:center; gap:3px; background:#1a1c30; border:1px solid #2a2d48; padding:2px 6px; border-radius:8px; font-size:.75rem; cursor:pointer; transition:background .15s, border-color .15s; }
+.msg-action-btn { background:transparent; border:none; cursor:pointer; font-size:.75rem; padding:2px 5px; border-radius:4px; color:#9a9cb8; transition:background .1s, color .1s; }
+.msg-action-btn:hover { background:#2a2d48; color:#e9eaff; }
 .reaction-badge:hover { background:#2a2d58; }
 .reaction-badge.active { border-color:#7a3bff; background:#1c1030; }
 .reaction-badge .count { color:#a8adc8; font-size:.7rem; }
