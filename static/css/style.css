@@ -168,13 +168,13 @@ body.theme-light .toast { background:#ffffff; color:#111827; border-color:#e5e7e
 .date-separator span { background:#0f1826; padding:0 12px; position:relative; font-size:.72rem; color:#9a9cb8; font-weight:500; }
 
 /* ── Reactions ── */
-.msg-actions { display:flex; gap:4px; margin-top:4px; opacity:0; transition:opacity .15s; }
-.msg:hover .msg-actions { opacity:1; }
+.msg-actions { display:flex; gap:4px; margin-top:6px; opacity:0; transition:opacity .15s; }
+.msg.sent:hover .msg-actions, .msg.received:hover .msg-actions { opacity:1; }
 .msg-action-btn { background:transparent; border:none; cursor:pointer; font-size:.75rem; padding:2px 5px; border-radius:4px; color:#9a9cb8; transition:background .1s, color .1s; }
 .msg-action-btn:hover { background:#2a2d48; color:#e9eaff; }
-.reaction-badge:hover { background:#2a2d58; }
-.reaction-badge.active { border-color:#7a3bff; background:#1c1030; }
-.reaction-badge .count { color:#a8adc8; font-size:.7rem; }
+.reaction-badge { display:inline-flex; align-items:center; gap:3px; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.1); padding:2px 7px; border-radius:10px; font-size:.73rem; cursor:pointer; transition:background .15s; }
+.reaction-badge:hover { background:rgba(255,255,255,.14); }
+.reaction-badge.reacted { background:rgba(122,59,255,.2); border-color:var(--c-accent); }
 .reaction-picker { position:absolute; bottom:100%; right:0; background:#111322; border:1px solid #2a2d48; border-radius:10px; padding:6px; display:flex; gap:2px; z-index:100; box-shadow:0 4px 20px rgba(0,0,0,.4); animation:fadeIn .15s ease; }
 .reaction-picker button { background:transparent; border:none; font-size:1.2rem; padding:4px 6px; border-radius:6px; cursor:pointer; transition:background .1s; }
 .reaction-picker button:hover { background:#1a2240; }

@@ -2668,6 +2668,13 @@ def manifest_json():
         'theme_color': '#cf6fef',
         'orientation': 'portrait-primary',
         'categories': ['social', 'communication'],
+        'shortcuts': [
+            {
+                'name': 'Åpne samtaler',
+                'url': '/chat'
+            }
+        ],
+        'prefer_related_applications': False,
         'icons': [
             {'src': '/static/img/icon-192.png', 'sizes': '192x192', 'type': 'image/png', 'purpose': 'any maskable'},
             {'src': '/static/img/icon-512.png', 'sizes': '512x512', 'type': 'image/png', 'purpose': 'any maskable'}
@@ -2676,24 +2683,74 @@ def manifest_json():
 
 @app.route('/sw.js')
 def service_worker():
-    sw = """const CACHE='cryptochat-v2';const ASSETS=['/','/static/css/style.css','/static/js/chat.js','/static/js/crypto.js','/manifest.json'];
-self.addEventListener('install',(e)=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)));self.skipWaiting();});
-self.addEventListener('activate',(e)=>{e.waitUntil(self.clients.claim());});
-self.addEventListener('fetch',(event)=>{event.respondWith(fetch(event.request).catch(()=>caches.match(event.request)));});
-self.addEventListener('push',(event)=>{
-  const data=event.data?event.data.json():{};
-  const title=data.title||'CryptoChat';
-  const options={body:data.body||'',icon:'/static/img/icon-192.png',badge:'/static/img/icon-192.png',data:data.url||'/'};
-  event.waitUntil(self.registration.showNotification(title,options));
+    sw = r"""
+const CACHE = 'cryptochat-v3';
+const ASSETS = [
+  '/',
+  '/chat',
+  '/static/css/style.css',
+  '/static/js/chat.js',
+  '/static/js/crypto.js',
+  '/manifest.json',
+  '/offline.html'
+];
+const API = [
+  '/users/all',
+  '/groups',
+  '/channels',
+  '/folders',
+  '/saved',
+  '/auth/register',
+  '/auth/login',
+  '/presence/batch',
+  '/keys/'
+];
+const CACHE_API = 'cryptochat-api-v1';
+
+self.addEventListener('install', (e) => {
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
 });
-self.addEventListener('notificationclick',(event)=>{
+self.addEventListener('activate', (e) => {
+  e.waitUntil(self.clients.claim());
+});
+self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+  if (API.some(p => url.pathname.startsWith(p))) {
+    event.respondWith(
+      fetch(event.request)
+        .then((res) => {
+          if (res.ok) {
+            const clone = res.clone();
+            caches.open(CACHE_API).then(c => c.put(event.request, clone));
+          }
+          return res;
+        })
+        .catch(() => caches.match('/offline.html'))
+    );
+  } else {
+    event.respondWith(
+      caches.match(event.request).then(c => c || fetch(event.request).then(r => {
+        if (r.ok) caches.open(CACHE).then(c => c.put(event.request, r.clone()));
+        return r;
+      }).catch(() => caches.match('/offline.html')))
+    );
+  }
+});
+self.addEventListener('push', (event) => {
+  const data = event.data ? event.data.json() : {};
+  const title = data.title || 'CryptoChat';
+  const options = { body: data.body || '', icon: '/static/img/icon-192.png', badge: '/static/img/icon-192.png', data: data.url || '/', renotify: true };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  event.waitUntil(clients.matchAll({type:'window'}).then(c=>{
-    const url=event.notification.data||'/';
-    for(const client of c){if(client.url.includes(url)&&'focus' in client)return client.focus();}
+  event.waitUntil(clients.matchAll({ type: 'window' }).then(c => {
+    const url = event.notification.data || '/chat';
+    for (const client of c) { if (client.url.includes(url) && 'focus' in client) return client.focus(); }
     return clients.openWindow(url);
   }));
-});"""
+});
+"""
     return Response(sw, mimetype='application/javascript')
 
 @app.route('/offline.html')
