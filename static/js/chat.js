@@ -3152,7 +3152,7 @@
       }
 
       // Patch appendMessage to handle location and video types
-      const _origFinishAppend = finishAppend;
+      const _origFinishAppend2 = finishAppend;
       finishAppend = function(message, chatId, isMe, renderedText) {
         if (message.type === 'location' && !message.deleted) {
           try {
@@ -3170,7 +3170,7 @@
             return;
           } catch (e) {}
         }
-        _origFinishAppend(message, chatId, isMe, renderedText);
+        _origFinishAppend2(message, chatId, isMe, renderedText);
       };
 
     } catch (e) {
