@@ -307,6 +307,7 @@
     .quick-actions-menu { animation: fadeIn .15s ease; }
     @keyframes fadeIn { from { opacity:0; transform:scale(.95); } to { opacity:1; transform:scale(1); } }
     .msg { transition: transform .15s ease, opacity .15s ease; }
+    .touching { transition: background .05s; }
   `;
   document.head.appendChild(_featureCSS);
 
@@ -530,6 +531,11 @@
 
       const app = document.getElementById('app');
       if (!app) throw new Error('Missing #app');
+
+      const offlineLink = document.createElement('link');
+      offlineLink.rel = 'stylesheet';
+      offlineLink.href = '/static/css/style.css?v=13';
+      document.head.appendChild(offlineLink);
 
       app.innerHTML = `
         <header class="header">
@@ -915,6 +921,9 @@
         document.body.classList.toggle('chat-open', !!open);
         const backBtn = document.getElementById('mobileBackBtn');
         if (backBtn) backBtn.style.display = open ? '' : 'none';
+        if (!open) {
+          document.querySelectorAll('.item').forEach(el => el.classList.remove('active'));
+        }
       }
 
       function closeChat() {
@@ -932,6 +941,10 @@
         document.getElementById('verifyBtn').style.display = 'none';
         document.querySelectorAll('.item').forEach(el => el.classList.remove('active'));
       }
+
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && activeChat) closeChat();
+      });
 
       function renderUsers() {
         usersList.innerHTML = '';
@@ -1593,6 +1606,7 @@
             const text = msgEl.querySelector('.msg-text');
             if (text) { navigator.clipboard.writeText(text.textContent); toast('Kopiert', 'success'); }
           }},
+          { icon: '😀', label: 'Reager', action: () => { showEmojiPicker(msgEl, msgId); }},
           { icon: '📌', label: 'Fest', action: async () => {
             if (!activeChat) return;
             try {
@@ -1883,29 +1897,48 @@
             if (activeChat.type === 'user') form.append('recipient', activeChat.target); else form.append('groupId', activeChat.target);
             await fetch('/upload', { method: 'POST', body: form });
           } else {
-            const url = activeChat.type === 'group' ? '/groups/' + encodeURIComponent(activeChat.target) + '/send' : '/send';
-            const body = { ciphertext: text };
-            if (activeChat.type === 'user') {
-              const ciphertext = await encryptForPeer(text, activeChat.peerPublicKey);
-              body.ciphertext = ciphertext;
-              body.recipient = activeChat.target;
-            } else if (activeChat.type === 'group' && activeChat.groupE2EEKey) {
-              const iv = window.crypto.getRandomValues(new Uint8Array(12));
-              const enc = await window.crypto.subtle.encrypt({ name: 'AES-GCM', iv }, activeChat.groupE2EEKey, new TextEncoder().encode(text));
-              body.ciphertext = arrayBufferToBase64(iv) + '.' + arrayBufferToBase64(enc);
-              body.e2ee = true;
+            if (activeChat.type === 'channel') {
+              const url = '/channels/' + encodeURIComponent(activeChat.target) + '/send';
+              const body = { ciphertext: text, type: 'text' };
+              if (replyingTo) body.reply_to = replyingTo.id;
+              await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+              const messagesBox = document.getElementById('messages');
+              if (messagesBox) {
+                const item = document.createElement('div');
+                item.className = 'msg sent';
+                item.innerHTML = '<div class="meta"><span class="sender">' + escapeHtml(window.__APP__?.username || '') + '</span><span class="time">' + escapeHtml(formatTime(new Date().toISOString())) + '</span></div>'
+                  + '<div class="text">' + escapeHtml(text) + '</div>';
+                messagesBox.appendChild(item);
+                messagesBox.scrollTop = messagesBox.scrollHeight;
+              }
+            } else if (activeChat.type === 'user' || activeChat.type === 'group') {
+              const url = activeChat.type === 'group' ? '/groups/' + encodeURIComponent(activeChat.target) + '/send' : '/send';
+              const body = { ciphertext: text };
+              if (activeChat.type === 'user') {
+                const ciphertext = await encryptForPeer(text, activeChat.peerPublicKey);
+                body.ciphertext = ciphertext;
+                body.recipient = activeChat.target;
+              } else if (activeChat.type === 'group' && activeChat.groupE2EEKey) {
+                const iv = window.crypto.getRandomValues(new Uint8Array(12));
+                const enc = await window.crypto.subtle.encrypt({ name: 'AES-GCM', iv }, activeChat.groupE2EEKey, new TextEncoder().encode(text));
+                body.ciphertext = arrayBufferToBase64(iv) + '.' + arrayBufferToBase64(enc);
+                body.e2ee = true;
+              }
+              if (replyingTo) body.reply_to = replyingTo.id;
+              if (window._disappearMinutes && activeChat.type === 'user') body.self_destruct_minutes = window._disappearMinutes;
+              await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
             }
-            if (replyingTo) body.reply_to = replyingTo.id;
-            if (window._disappearMinutes && activeChat.type === 'user') body.self_destruct_minutes = window._disappearMinutes;
-            await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
           }
+
           input.value = '';
           clearImagePreview();
           replyingTo = null;
           const replyBar = document.getElementById('replyBar');
           if (replyBar) replyBar.style.display = 'none';
           if (fileInput) fileInput.value = '';
-          if (activeChat.type === 'user') await loadChat(activeChat.target); else await loadGroup(activeChat.target);
+          if (activeChat.type === 'user') await loadChat(activeChat.target);
+          else if (activeChat.type === 'group') await loadGroup(activeChat.target);
+          else if (activeChat.type === 'channel') await loadChannel(activeChat.target);
         } catch (e) {
           toast('Kunne ikke sende: ' + e.message);
         } finally {

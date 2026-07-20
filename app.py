@@ -3528,3 +3528,35 @@ def uploaded_file(filename):
 
 if __name__ == '__main__':
     app.run(debug=os.environ.get('FLASK_DEBUG', 'false').lower() in ('true', '1'), host='0.0.0.0', port=5000)
+
+# Attach data files to app so tests/tools can clear or relocate them deterministically
+app.users_file = USERS_FILE
+app.messages_file = MESSAGES_FILE
+app.keys_file = KEYS_FILE
+app.groups_file = GROUPS_FILE
+app.notifications_file = NOTIFICATIONS_FILE
+app.presence_file = USER_PRESENCE_FILE
+app.read_receipts_file = READ_RECEIPTS_FILE
+app.sessions_file = SESSIONS_FILE
+app.reactions_file = REACTIONS_FILE
+app.typing_file = TYPING_FILE
+app.verification_file = VERIFICATION_FILE
+app.calls_file = CALLS_FILE
+app.pins_file = PINS_FILE
+app.scheduled_file = SCHEDULED_FILE
+app.drafts_file = DATA_DIR / 'drafts.json'
+app.push_subscriptions_file = PUSH_SUBSCRIPTIONS_FILE
+app.link_previews_file = LINK_PREVIEWS_FILE
+app.pinned_chats_file = PINNED_CHATS_FILE
+app.folders_file = FOLDERS_FILE
+app.channels_file = CHANNELS_FILE
+app.invite_links_file = INVITE_LINKS_FILE
+app.muted_chats_file = MUTED_CHATS_FILE
+app.contacts_file = CONTACTS_FILE
+app.stories_file = STORIES_FILE
+app.blocked_file = BLOCKED_FILE
+app.deleted_for_me_file = DATA_DIR / 'deleted_for_me.json'
+app.live_location_file = LIVE_LOCATION_FILE
+app.wallpapers_file = DATA_DIR / 'wallpapers.json'
+app.slowmode_file = SLOWMODE_FILE
+app.polls_file = DATA_DIR / 'polls.json'

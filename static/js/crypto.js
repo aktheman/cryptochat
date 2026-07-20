@@ -15,7 +15,7 @@ window.__CRYPTO__ = (() => {
   function base64ToArrayBuffer(base64) {
     const binary = atob(base64);
     const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    for (let i = 0; i < bytes.length; i++) bytes[i] = binary.charCodeAt(i);
     return bytes.buffer;
   }
 
@@ -28,7 +28,12 @@ window.__CRYPTO__ = (() => {
   }
 
   function decodePem(pem) {
-    const b64 = pem.replace(PEM_HEADER, '').replace(PEM_FOOTER, '').replace(/\s/g, '');
+    const b64 = pem
+      .replace(PEM_HEADER, '')
+      .replace(PEM_FOOTER, '')
+      .replace(PUBLIC_HEADER, '')
+      .replace(PUBLIC_FOOTER, '')
+      .replace(/\s/g, '');
     return base64ToArrayBuffer(b64);
   }
 

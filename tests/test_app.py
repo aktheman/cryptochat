@@ -34,6 +34,27 @@ def clean_data():
     conn.commit()
     conn.close()
     RATE_LIMIT_STORE.clear()
+    dict_files = {
+        'users.json', 'keys.json', 'notifications.json', 'presence.json',
+        'read_receipts.json', 'sessions.json', 'reactions.json', 'typing.json',
+        'verification.json', 'calls.json', 'pins.json', 'push_subscriptions.json',
+        'link_previews.json', 'pinned_chats.json', 'invite_links.json',
+        'muted_chats.json', 'contacts.json', 'stories.json', 'blocked_users.json',
+        'deleted_for_me.json', 'live_locations.json', 'wallpapers.json',
+        'slowmode.json', 'drafts.json', 'polls.json',
+    }
+    for path in [
+        app.users_file, app.messages_file, app.keys_file, app.groups_file,
+        app.notifications_file, app.presence_file, app.read_receipts_file,
+        app.sessions_file, app.reactions_file, app.typing_file, app.verification_file,
+        app.calls_file, app.pins_file, app.scheduled_file, app.drafts_file,
+        app.push_subscriptions_file, app.link_previews_file, app.pinned_chats_file,
+        app.folders_file, app.channels_file, app.invite_links_file,
+        app.muted_chats_file, app.contacts_file, app.stories_file,
+        app.blocked_file, app.deleted_for_me_file, app.live_location_file,
+        app.wallpapers_file, app.slowmode_file, app.polls_file,
+    ]:
+        path.write_text('{}' if path.name in dict_files else '[]', encoding='utf-8')
     yield
     invalidate_cache()
     conn = _get_conn()
