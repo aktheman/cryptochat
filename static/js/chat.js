@@ -296,6 +296,17 @@
     .skip-link:focus { top:0; }
     .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); border:0; }
     .kbd { display:inline-block; padding:1px 5px; background:var(--c-surface-2); border:1px solid var(--c-border-item); border-radius:4px; font-size:.7rem; font-family:monospace; color:var(--c-text-meta); }
+    .folder-tabs { display:flex; gap:0; padding:0 0 8px; overflow-x:auto; border-bottom:1px solid var(--c-border); margin-bottom:8px; }
+    .folder-tab { padding:6px 14px; border:none; background:transparent; color:var(--c-text-muted); font-size:.8rem; font-weight:600; cursor:pointer; white-space:nowrap; border-bottom:2px solid transparent; transition:all .2s; }
+    .folder-tab.active { color:var(--c-brand); border-bottom-color:var(--c-brand); }
+    .folder-tab:hover { color:var(--c-text); }
+    .voice-msg-player { display:flex; align-items:center; gap:8px; padding:8px; background:var(--c-surface-2); border-radius:10px; }
+    .voice-play-btn { background:var(--c-accent); color:#fff; border:none; border-radius:50%; width:32px; height:32px; cursor:pointer; font-size:.8rem; flex-shrink:0; }
+    .voice-waveform { flex:1; height:40px; border-radius:4px; }
+    .voice-duration { font-size:.75rem; color:var(--c-text-muted); min-width:30px; }
+    .quick-actions-menu { animation: fadeIn .15s ease; }
+    @keyframes fadeIn { from { opacity:0; transform:scale(.95); } to { opacity:1; transform:scale(1); } }
+    .msg { transition: transform .15s ease, opacity .15s ease; }
   `;
   document.head.appendChild(_featureCSS);
 
@@ -511,6 +522,7 @@
       const usersData = await safeJson(usersRes);
       const groupsData = await safeJson(groupsRes);
       const users = usersData.users || [];
+      window.__allUsers = users || [];
       const groups = groupsData.groups || [];
 
       const app = document.getElementById('app');
@@ -538,6 +550,7 @@
         </header>
         <div class="app-row">
           <aside class="sidebar" role="navigation" aria-label="Kontakter">
+            <div id="folderTabs" class="folder-tabs" role="tablist" style="display:flex;gap:0;padding:0 0 8px;overflow-x:auto;border-bottom:1px solid var(--c-border);margin-bottom:8px;"></div>
             <div class="section">
               <div class="section-title">MELDINGER</div>
               <div id="savedMsgItem" class="item saved-messages-item" role="option" tabindex="0" aria-label="Lagrede meldinger" style="cursor:pointer;margin-bottom:6px;">
@@ -551,6 +564,10 @@
               <div id="groupsList" class="list" role="listbox" aria-label="Grupper"></div>
               <button id="createGroupBtn" class="btn btn-small btn-ghost" aria-label="Opprett ny gruppe">+ Ny gruppe</button>
             </div>
+            <div class="section">
+              <div class="section-title">KANALER</div>
+              <div id="channelsList" class="list" role="listbox" aria-label="Kanaler"></div>
+            </div>
           </aside>
           <main class="chat-main" role="main">
             <header class="chat-header" role="banner">
@@ -561,12 +578,15 @@
               <div class="chat-actions">
                 <input id="searchPartner" class="input-text" placeholder="Kontakt for soek" autocomplete="off" aria-label="Soek paa kontakt" />
                 <input id="searchInput" class="input-text" placeholder="Soek i meldinger..." autocomplete="off" aria-label="Soek i meldinger" />
+                <input id="searchDateFrom" type="date" class="input-text" style="width:130px;font-size:.8rem;" aria-label="Fra dato" />
+                <input id="searchDateTo" type="date" class="input-text" style="width:130px;font-size:.8rem;" aria-label="Til dato" />
                 <button id="searchBtn" class="btn btn-small btn-ghost" aria-label="Soek">Soek</button>
                 <button id="fileSearchBtn" class="btn btn-small btn-ghost" title="Soek i filer" aria-label="Soek i filer">📎</button>
                 <button id="myKeyBtn" class="btn btn-small btn-ghost" aria-label="Vis min offentlige noekkel">Min noekkel</button>
                 <button id="verifyBtn" class="btn btn-small btn-ghost verify-btn" style="display:none" title="Sikkerhetsnummer" aria-label="Verifiser samtale">🛡️</button>
                 <button id="exportBtn" class="btn btn-small btn-ghost" title="Eksporter samtale" aria-label="Eksporter chat" style="display:none">💾</button>
                 <button id="wallpaperBtn" class="btn btn-small btn-ghost" title="Bakgrunn" aria-label="Velg bakgrunn" style="display:none">🖼️</button>
+                <button id="muteBtn" class="btn btn-small btn-ghost" title="DempVarsler" style="display:none">🔔</button>
                 <button id="groupAdminBtn" class="btn btn-small btn-ghost" title="Gruppeinnstillinger" aria-label="Gruppeinnstillinger" style="display:none">⚙️</button>
               </div>
             </header>
@@ -671,6 +691,10 @@
       let unreadCounts = {};
       let _notificationAudio = null;
       window.__lastSeenTimes = {};
+      let currentFolder = 'all';
+      let pinnedChats = [];
+      let mutedChats = [];
+      let channels = [];
 
       async function fetchVerificationStatus(username) {
         try {
@@ -886,19 +910,28 @@
       function renderUsers() {
         usersList.innerHTML = '';
         const list = Array.isArray(users) ? users : [];
-        list.forEach(u => {
+        const sorted = list.slice().sort((a, b) => {
+          const aName = typeof a === 'string' ? a : (a && a.username) || '';
+          const bName = typeof b === 'string' ? b : (b && b.username) || '';
+          const aPinned = isPinnedChat(aName, 'user') ? 1 : 0;
+          const bPinned = isPinnedChat(bName, 'user') ? 1 : 0;
+          if (bPinned !== aPinned) return bPinned - aPinned;
+          return 0;
+        });
+        sorted.forEach(u => {
           const name = typeof u === 'string' ? u : (u && u.username) || JSON.stringify(u);
           const displayName = (typeof u === 'object' && u && u.display_name) ? u.display_name : getDisplayName(name);
           if (typeof u === 'object' && u && u.username) userProfiles[u.username] = u;
           const item = document.createElement('div');
-          item.className = 'item';
+          item.className = 'item' + (isMutedChat(name) ? ' muted' : '');
           item.dataset.user = name;
           const preview = lastMessages[name] || '';
           const verified = verificationStatuses[name] || false;
           const verifyIcon = verified ? '<span class="verify-icon" title="Verifisert">🛡️</span>' : '';
           const badge = (unreadCounts[name] || 0) > 0 ? '<span class="badge-count">' + Math.min(unreadCounts[name], 99) + '</span>' : '';
           const lastSeenText = presence[name] ? '' : (window.__lastSeenTimes && window.__lastSeenTimes[name] ? '<div class="last-seen">Sist sett: ' + escapeHtml(formatTime(window.__lastSeenTimes[name])) + '</div>' : '');
-          item.innerHTML = '<div class="avatar-wrap"><div class="avatar">' + escapeHtml((displayName || name)[0]) + '</div>' + (presence[name] ? '<div class="presence"></div>' : '') + '</div><div style="flex:1;min-width:0;"><div class="name">' + escapeHtml(displayName) + verifyIcon + '</div><div class="preview">' + escapeHtml(preview) + lastSeenText + '</div></div>' + badge;
+          const pinIcon = isPinnedChat(name, 'user') ? '<span class="pin-indicator" style="font-size:.65rem;margin-left:4px;" title="Festet">📌</span>' : '';
+          item.innerHTML = '<div class="avatar-wrap"><div class="avatar" style="background:' + avatarGradient(name) + ';">' + avatarLetter(name) + '</div>' + (presence[name] ? '<div class="presence"></div>' : '') + '</div><div style="flex:1;min-width:0;"><div class="name">' + escapeHtml(displayName) + verifyIcon + pinIcon + '</div><div class="preview">' + escapeHtml(preview) + lastSeenText + '</div></div>' + badge;
           item.addEventListener('click', () => { activateItem(usersList, item); openChat(name); });
           usersList.appendChild(item);
         });
@@ -911,7 +944,7 @@
           item.className = 'item';
           item.dataset.groupId = g.id;
           const preview = groupLastMessages[g.id] || '';
-          item.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;"><div style="min-width:0;flex:1;"><div class="name">' + escapeHtml(g.name) + '</div><div class="preview">' + escapeHtml(preview || ((g.members || []).length + ' medlemmer')) + '</div></div><button class="btn btn-small btn-ghost delete-group" data-id="' + escapeHtml(g.id) + '">Slett</button></div>';
+          item.innerHTML = '<div class="avatar-wrap"><div class="avatar" style="background:' + avatarGradient(g.name) + ';">' + avatarLetter(g.name) + '</div></div><div style="flex:1;min-width:0;"><div class="name">' + escapeHtml(g.name) + '</div><div class="preview">' + escapeHtml(preview || ((g.members || []).length + ' medlemmer')) + '</div></div><button class="btn btn-small btn-ghost delete-group" data-id="' + escapeHtml(g.id) + '">Slett</button>';
           item.addEventListener('click', (e) => { if (e.target.closest('.delete-group')) return; activateItem(groupsList, item); openGroup(g.id); });
           const del = item.querySelector('.delete-group');
           if (del) del.addEventListener('click', async () => { await deleteGroup(g.id); });
@@ -942,6 +975,116 @@
         const siblings = listContainer.querySelectorAll('.item');
         siblings.forEach(el => el.classList.remove('active'));
         item.classList.add('active');
+      }
+
+      function avatarGradient(name) {
+        let hash = 0;
+        for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+        const h1 = Math.abs(hash) % 360;
+        const h2 = (h1 + 40) % 360;
+        return 'linear-gradient(135deg, hsl(' + h1 + ',70%,55%), hsl(' + h2 + ',70%,55%))';
+      }
+
+      function avatarLetter(name) {
+        return (name || '?')[0].toUpperCase();
+      }
+
+      async function loadFolders() {
+        try {
+          const data = await loadJSON('/folders');
+          const tabs = document.getElementById('folderTabs');
+          if (!tabs) return;
+          const folders = data.folders || [{id:'all',name:'Alle'}];
+          tabs.innerHTML = '';
+          folders.forEach(f => {
+            const btn = document.createElement('button');
+            btn.className = 'folder-tab' + (f.id === currentFolder ? ' active' : '');
+            btn.textContent = f.name;
+            btn.dataset.folder = f.id;
+            btn.addEventListener('click', () => {
+              currentFolder = f.id;
+              document.querySelectorAll('.folder-tab').forEach(t => t.classList.toggle('active', t.dataset.folder === f.id));
+              renderUsers();
+              renderGroups();
+              renderChannels();
+            });
+            tabs.appendChild(btn);
+          });
+        } catch(e) {}
+      }
+
+      async function loadPinnedChats() {
+        try {
+          const data = await loadJSON('/pinned-chats');
+          pinnedChats = data.pinned || [];
+        } catch(e) { pinnedChats = []; }
+      }
+
+      async function loadMutedChats() {
+        try {
+          const data = await loadJSON('/settings/mute');
+          mutedChats = data.muted || [];
+        } catch(e) { mutedChats = []; }
+      }
+
+      function isPinnedChat(id, type) {
+        return pinnedChats.some(p => p.id === id && p.type === type);
+      }
+
+      function isMutedChat(id) {
+        return mutedChats.includes(id);
+      }
+
+      async function loadChannels() {
+        try {
+          const data = await loadJSON('/channels');
+          channels = data.channels || [];
+        } catch(e) { channels = []; }
+      }
+
+      function renderChannels() {
+        const list = document.getElementById('channelsList');
+        if (!list) return;
+        list.innerHTML = '';
+        channels.forEach(ch => {
+          const div = document.createElement('div');
+          div.className = 'item' + (activeChat?.type === 'channel' && activeChat?.target === ch.id ? ' active' : '');
+          div.innerHTML = '<div class="avatar-wrap"><div class="avatar" style="background:linear-gradient(135deg,#ff6b35,#cf6fef);">📢</div></div>'
+            + '<div><div class="name">' + escapeHtml(ch.name) + '</div><div class="preview">' + (ch.description || '').slice(0,40) + '</div></div>';
+          div.addEventListener('click', () => openChannel(ch.id));
+          list.appendChild(div);
+        });
+      }
+
+      async function openChannel(channelId) {
+        activeChat = { type: 'channel', target: channelId };
+        const ch = channels.find(c => c.id === channelId);
+        document.getElementById('chatTitle').textContent = '📢 ' + (ch?.name || '');
+        document.getElementById('chatMeta').textContent = (ch?.subscribers?.length || 0) + ' abonnenter';
+        document.getElementById('wallpaperBtn').style.display = 'none';
+        document.getElementById('groupAdminBtn').style.display = 'none';
+        document.getElementById('pollBtn').style.display = 'none';
+        document.getElementById('exportBtn').style.display = '';
+        document.getElementById('verifyBtn').style.display = 'none';
+        document.getElementById('muteBtn').style.display = 'none';
+        const messagesBox = document.getElementById('messages');
+        try {
+          const data = await loadJSON('/channels/' + encodeURIComponent(channelId) + '/messages');
+          messagesBox.innerHTML = '';
+          (data.messages || []).forEach(m => {
+            const item = document.createElement('div');
+            item.className = 'msg received';
+            item.innerHTML = '<div class="meta"><span class="sender">' + escapeHtml(m.sender) + '</span><span class="time">' + formatTime(m.timestamp) + '</span></div>'
+              + '<div class="text">' + escapeHtml(m.ciphertext || '') + '</div>';
+            messagesBox.appendChild(item);
+          });
+          messagesBox.scrollTop = messagesBox.scrollHeight;
+        } catch(e) {
+          messagesBox.innerHTML = '<div class="empty-state"><div class="empty-icon">📢</div><p>Kunne ikke laste kanal</p></div>';
+        }
+        renderUsers();
+        renderGroups();
+        renderChannels();
       }
 
       renderUsers();
@@ -1041,6 +1184,12 @@
         const key = await getPeerPublicKeyPem(user);
         activeChat.peerPublicKey = key;
         setChatMeta(key ? '<span class="e2ee">🔒 Ende-til-ende-kryptert</span>' : '');
+        const presenceData = await loadJSON('/presence/' + encodeURIComponent(user)).catch(() => ({}));
+        if (presenceData.online) {
+          document.getElementById('chatMeta').textContent = 'online';
+        } else if (presenceData.lastSeen) {
+          document.getElementById('chatMeta').textContent = 'sist sett ' + formatTime(presenceData.lastSeen);
+        }
         messagesBox.innerHTML = '';
         composer.style.display = 'flex';
         clearImagePreview();
@@ -1380,6 +1529,76 @@
         return inverted;
       }
 
+      function startReply(msgId) {
+        const msgEl = messagesBox.querySelector('[data-msg-id="' + msgId + '"]');
+        if (!msgEl || msgEl.classList.contains('deleted-msg')) return;
+        const sender = msgEl.querySelector('.sender')?.textContent || '';
+        const textEl = msgEl.querySelector('.msg-text');
+        const text = textEl ? textEl.textContent : '';
+        replyingTo = { id: msgId, sender, text };
+        document.getElementById('replyBar').style.display = 'flex';
+        document.getElementById('replyBarName').textContent = sender;
+        document.getElementById('replyBarPreview').textContent = text.substring(0, 60);
+        document.getElementById('messageInput').focus();
+      }
+
+      function showQuickActions(msgEl, x, y) {
+        document.querySelectorAll('.quick-actions-menu').forEach(el => el.remove());
+        const msgId = msgEl.dataset.msgId;
+        const menu = document.createElement('div');
+        menu.className = 'quick-actions-menu';
+        menu.style.cssText = 'position:fixed;left:' + x + 'px;top:' + y + 'px;background:var(--c-surface);border:1px solid var(--c-border);border-radius:12px;padding:6px;z-index:99999;box-shadow:0 4px 16px rgba(0,0,0,.4);min-width:160px;';
+
+        const actions = [
+          { icon: '↩', label: 'Svar', action: () => { startReply(msgId); } },
+          { icon: '↪', label: 'Videresend', action: () => { forwardMsg(msgId); } },
+          { icon: '📋', label: 'Kopier', action: () => {
+            const text = msgEl.querySelector('.msg-text');
+            if (text) { navigator.clipboard.writeText(text.textContent); toast('Kopiert', 'success'); }
+          }},
+          { icon: '📌', label: 'Fest', action: async () => {
+            if (!activeChat) return;
+            try {
+              await loadJSON('/pins/' + activeChat.type + '/' + activeChat.target + '/' + msgId, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+              toast('Melding festet', 'success');
+            } catch(e) { toast('Kunne ikke feste'); }
+          }},
+          { icon: '⭐', label: 'Lagre', action: async () => {
+            try {
+              await loadJSON('/saved', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messageId: msgId }) });
+              toast('Lagret', 'success');
+            } catch(e) { toast('Kunne ikke lagre'); }
+          }},
+          { icon: '🗑', label: 'Slett', action: async () => {
+            if (!activeChat || !confirm('Slette melding?')) return;
+            try {
+              await fetch('/messages/' + encodeURIComponent(msgId), { method: 'DELETE' });
+              msgEl.remove();
+              toast('Slettet', 'success');
+            } catch(e) { toast('Kunne ikke slette'); }
+          }},
+        ];
+
+        actions.forEach(a => {
+          const btn = document.createElement('div');
+          btn.style.cssText = 'padding:8px 12px;cursor:pointer;font-size:.85rem;color:var(--c-text);border-radius:8px;display:flex;align-items:center;gap:8px;';
+          btn.innerHTML = '<span>' + a.icon + '</span><span>' + a.label + '</span>';
+          btn.addEventListener('mouseenter', () => btn.style.background = 'var(--c-surface-hover)');
+          btn.addEventListener('mouseleave', () => btn.style.background = '');
+          btn.addEventListener('click', (e) => { e.stopPropagation(); menu.remove(); a.action(); });
+          menu.appendChild(btn);
+        });
+
+        document.body.appendChild(menu);
+
+        setTimeout(() => {
+          const close = (e) => {
+            if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('click', close); }
+          };
+          document.addEventListener('click', close);
+        }, 10);
+      }
+
       function renderReactionBadges(reactions) {
         const inverted = invertReactions(reactions);
         const entries = Object.entries(inverted);
@@ -1433,12 +1652,18 @@
         item.addEventListener('contextmenu', (e) => {
           e.preventDefault();
           if (message.deleted) return;
-          replyingTo = { id: message.id, sender: message.sender, text: message.text || '' };
-          document.getElementById('replyBar').style.display = 'flex';
-          document.getElementById('replyBarName').textContent = message.sender;
-          document.getElementById('replyBarPreview').textContent = (message.text || '').substring(0, 60);
-          document.getElementById('messageInput').focus();
+          showQuickActions(item, e.clientX, e.clientY);
         });
+
+        let _longPressTimer;
+        item.addEventListener('touchstart', (e) => {
+          _longPressTimer = setTimeout(() => {
+            const touch = e.touches[0];
+            showQuickActions(item, touch.clientX, touch.clientY);
+          }, 500);
+        });
+        item.addEventListener('touchend', () => clearTimeout(_longPressTimer));
+        item.addEventListener('touchmove', () => clearTimeout(_longPressTimer));
 
         let fileHtml = '';
         if (message.type === 'file' && !message.deleted) {
@@ -1449,7 +1674,7 @@
             const audioExts = ['.webm', '.mp3', '.ogg', '.wav', '.opus', '.m4a'];
             const isVoice = message.filename && audioExts.some(ext => message.filename.toLowerCase().endsWith(ext));
             if (isVoice) {
-              fileHtml = '<div class="voice-msg"><audio controls preload="none" src="/uploads/' + encodeURIComponent(message.filename) + '"></audio></div>';
+              fileHtml = '<div class="voice-msg-player" data-src="/uploads/' + encodeURIComponent(message.filename) + '"><button class="voice-play-btn">▶</button><canvas class="voice-waveform" width="200" height="40"></canvas><span class="voice-duration">0:00</span></div>';
             } else {
               fileHtml = '<div class="badge">📎 ' + escapeHtml(message.filename || 'fil') + '</div>';
             }
@@ -1684,13 +1909,19 @@
         if (!el) return;
         try {
           const data = await loadJSON('/typing/' + encodeURIComponent(activeChat.target));
-          if (data.typers && data.typers.length > 0) {
-            const names = data.typers.map(u => getDisplayName(u)).join(', ');
-            el.textContent = names + ' skriver...';
-            el.style.display = '';
-          } else {
+          const typers = data.typers || [];
+          if (typers.length === 0) {
             el.textContent = '';
             el.style.display = 'none';
+          } else if (typers.length === 1) {
+            el.textContent = typers[0] + ' skriver...';
+            el.style.display = '';
+          } else if (typers.length === 2) {
+            el.textContent = typers[0] + ' og ' + typers[1] + ' skriver...';
+            el.style.display = '';
+          } else {
+            el.textContent = typers[0] + ' og ' + (typers.length - 1) + ' flere skriver...';
+            el.style.display = '';
           }
         } catch (e) {
           el.style.display = 'none';
@@ -1824,61 +2055,103 @@
       }
       setupDragDrop();
 
+      function highlightSearch(text, query) {
+        if (!query) return text;
+        const re = new RegExp('(' + query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+        return text.replace(re, '<mark style="background:var(--c-accent);color:#fff;border-radius:2px;padding:0 2px;">$1</mark>');
+      }
+
       document.getElementById('searchBtn').addEventListener('click', async () => {
-        const query = document.getElementById('searchInput').value.trim();
+        const q = document.getElementById('searchInput').value.trim();
         const partner = document.getElementById('searchPartner').value.trim();
-        if (!query) { toast('Skriv inn søketekst'); return; }
+        const dateFrom = document.getElementById('searchDateFrom').value;
+        const dateTo = document.getElementById('searchDateTo').value;
+        if (!q && !partner && !dateFrom) { toast('Skriv inn søketekst'); return; }
+        let url = '/search/v2?q=' + encodeURIComponent(q);
+        if (partner) url += '&partner=' + encodeURIComponent(partner);
+        if (dateFrom) url += '&from=' + encodeURIComponent(dateFrom);
+        if (dateTo) url += '&to=' + encodeURIComponent(dateTo + 'T23:59:59');
         messagesBox.innerHTML = '<div class="skeleton-loader"><div class="skeleton-msg skeleton-sent"></div><div class="skeleton-msg skeleton-received"></div></div>';
         try {
-          let allResults = [];
-          if (partner) {
-            const data = await loadJSON('/search?q=' + encodeURIComponent(query) + '&partner=' + encodeURIComponent(partner));
-            allResults = (data.messages || []).map(m => ({ ...m, _partner: partner }));
-          } else {
-            const usersData = await loadJSON('/users');
-            const userList = usersData.users || [];
-            const searches = userList.map(u => {
-              const name = typeof u === 'string' ? u : u.username;
-              return loadJSON('/search?q=' + encodeURIComponent(query) + '&partner=' + encodeURIComponent(name)).then(d => (d.messages || []).map(m => ({ ...m, _partner: name }))).catch(() => []);
-            });
-            const results = await Promise.all(searches);
-            allResults = results.flat();
-          }
-          allResults.sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
+          const data = await loadJSON(url);
+          const results = data.results || data.messages || [];
           messagesBox.innerHTML = '';
-          if (!allResults.length) {
-            messagesBox.innerHTML = '<div class="empty-state"><div class="empty-icon">🔍</div><p>Ingen treff for "' + escapeHtml(query) + '"</p></div>';
+          if (!results.length) {
+            messagesBox.innerHTML = '<div class="empty-state"><div class="empty-icon">🔍</div><p>Ingen treff for "' + escapeHtml(q) + '"</p></div>';
             return;
           }
           const header = document.createElement('div');
           header.className = 'search-results-header';
-          header.innerHTML = '<span class="count">' + allResults.length + ' treff</span><button class="close-search" id="closeSearchResults">✕</button>';
+          header.innerHTML = '<span class="count">' + results.length + ' treff</span><button class="close-search" id="closeSearchResults">✕</button>';
           messagesBox.appendChild(header);
           document.getElementById('closeSearchResults').addEventListener('click', () => {
             if (activeChat?.type === 'user') openChat(activeChat.target);
             else if (activeChat?.type === 'group') openGroup(activeChat.target);
             else messagesBox.innerHTML = '<div class="empty-state"><div class="empty-icon">💬</div><h3>Ingen samtale valgt</h3><p>Velg en kontakt eller gruppe.</p></div>';
           });
-          allResults.forEach(m => {
+          results.slice(0, 50).forEach(r => {
             const item = document.createElement('div');
-            item.className = 'msg ' + (m.sender === (window.__APP__?.username || '') ? 'sent' : 'received');
-            const senderDisplay = getDisplayName(m.sender || '');
-            item.innerHTML = '<div class="meta"><span class="sender">' + escapeHtml(senderDisplay) + '</span><span class="time">' + escapeHtml(formatTime(m.timestamp)) + '</span></div>'
-              + '<div class="msg-text">' + escapeHtml(m.text || m.filename || '') + '</div>';
+            item.className = 'msg ' + (r.sender === (window.__APP__?.username || '') ? 'sent' : 'received');
+            const chatName = r.group_id || r.channel_id || r.recipient || r.sender || '';
+            const senderDisplay = getDisplayName(r.sender || '');
+            item.innerHTML = '<div class="meta"><span class="sender">' + escapeHtml(senderDisplay) + ' → ' + escapeHtml(chatName) + '</span><span class="time">' + escapeHtml(formatTime(r.timestamp)) + '</span></div>'
+              + '<div class="msg-text">' + highlightSearch(escapeHtml((r.text || r.filename || '').slice(0, 200)), q) + '</div>';
             item.style.cursor = 'pointer';
             item.addEventListener('click', () => {
-              openChat(m._partner);
+              if (r.group_id) openGroup(r.group_id);
+              else if (r.channel_id) openChannel(r.channel_id);
+              else openChat(r.sender === (window.__APP__?.username || '') ? r.recipient : r.sender);
             });
             messagesBox.appendChild(item);
           });
-          toast(allResults.length + ' treff', 'success');
+          toast(results.length + ' treff', 'success');
         } catch (e) {
-          messagesBox.innerHTML = '<div class="empty-state"><div class="empty-icon">⚠️</div><p>Søk feilet</p></div>';
-          toast('Søk feilet');
+          messagesBox.innerHTML = '<div class="empty-state"><div class="empty-icon">⚠️</div><p>Søk feilet – prøver gammel søk...</p></div>';
+          try {
+            let allResults = [];
+            if (partner) {
+              const d2 = await loadJSON('/search?q=' + encodeURIComponent(q) + '&partner=' + encodeURIComponent(partner));
+              allResults = (d2.messages || []).map(m => ({ ...m, _partner: partner }));
+            } else if (q) {
+              const usersData = await loadJSON('/users');
+              const userList = usersData.users || [];
+              const searches = userList.map(u => {
+                const name = typeof u === 'string' ? u : u.username;
+                return loadJSON('/search?q=' + encodeURIComponent(q) + '&partner=' + encodeURIComponent(name)).then(d => (d.messages || []).map(m => ({ ...m, _partner: name }))).catch(() => []);
+              });
+              const res = await Promise.all(searches);
+              allResults = res.flat();
+            }
+            allResults.sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
+            messagesBox.innerHTML = '';
+            if (allResults.length) {
+              const hdr = document.createElement('div');
+              hdr.className = 'search-results-header';
+              hdr.innerHTML = '<span class="count">' + allResults.length + ' treff</span><button class="close-search" id="closeSearchResults">✕</button>';
+              messagesBox.appendChild(hdr);
+              document.getElementById('closeSearchResults').addEventListener('click', () => {
+                if (activeChat?.type === 'user') openChat(activeChat.target);
+                else if (activeChat?.type === 'group') openGroup(activeChat.target);
+              });
+              allResults.forEach(m => {
+                const item = document.createElement('div');
+                item.className = 'msg ' + (m.sender === (window.__APP__?.username || '') ? 'sent' : 'received');
+                const sd = getDisplayName(m.sender || '');
+                item.innerHTML = '<div class="meta"><span class="sender">' + escapeHtml(sd) + '</span><span class="time">' + escapeHtml(formatTime(m.timestamp)) + '</span></div>'
+                  + '<div class="msg-text">' + escapeHtml(m.text || m.filename || '') + '</div>';
+                item.style.cursor = 'pointer';
+                item.addEventListener('click', () => { openChat(m._partner); });
+                messagesBox.appendChild(item);
+              });
+              toast(allResults.length + ' treff (fallback)', 'success');
+            } else {
+              messagesBox.innerHTML = '<div class="empty-state"><div class="empty-icon">🔍</div><p>Ingen treff for "' + escapeHtml(q) + '"</p></div>';
+            }
+          } catch (e2) { toast('Søk feilet'); }
         }
       });
 
-      ['searchInput','searchPartner'].forEach(id => {
+      ['searchInput','searchPartner','searchDateFrom','searchDateTo'].forEach(id => {
         const el = document.getElementById(id);
         if (!el) return;
         el.addEventListener('keydown', (e) => { if (e.key === 'Enter') document.getElementById('searchBtn').click(); });
@@ -3261,6 +3534,113 @@
         }
       });
 
+      // ── Voice Message Waveform Players ──
+      function formatDuration(sec) {
+        const m = Math.floor(sec / 60);
+        const s = Math.floor(sec % 60);
+        return m + ':' + (s < 10 ? '0' : '') + s;
+      }
+
+      function initVoicePlayers() {
+        document.querySelectorAll('.voice-msg-player').forEach(player => {
+          if (player._initialized) return;
+          player._initialized = true;
+          const src = player.dataset.src;
+          if (!src) return;
+          const canvas = player.querySelector('.voice-waveform');
+          const playBtn = player.querySelector('.voice-play-btn');
+          const durationEl = player.querySelector('.voice-duration');
+          let audio = null;
+          let playing = false;
+
+          if (canvas) {
+            const ctx = canvas.getContext('2d');
+            const bars = 40;
+            const barW = canvas.width / bars;
+            for (let i = 0; i < bars; i++) {
+              const h = Math.random() * 0.7 + 0.3;
+              ctx.fillStyle = 'rgba(122,59,255,0.5)';
+              ctx.fillRect(i * barW + 1, canvas.height * (1 - h) / 2, barW - 2, canvas.height * h);
+            }
+          }
+
+          if (playBtn) {
+            playBtn.addEventListener('click', async () => {
+              if (playing && audio) {
+                audio.pause();
+                playBtn.textContent = '▶';
+                playing = false;
+                return;
+              }
+              if (!audio) {
+                audio = new Audio(src);
+                audio.addEventListener('loadedmetadata', () => {
+                  if (durationEl) durationEl.textContent = formatDuration(audio.duration);
+                });
+                audio.addEventListener('ended', () => {
+                  playBtn.textContent = '▶';
+                  playing = false;
+                });
+              }
+              await audio.play();
+              playBtn.textContent = '⏸';
+              playing = true;
+            });
+          }
+        });
+      }
+
+      // ── @Mentions in Composer ──
+      function showMentionDropdown(query, startPos) {
+        hideMentionDropdown();
+        const input = document.getElementById('messageInput');
+        if (!input) return;
+        const users = window.__allUsers || [];
+        const matches = users.filter(u => u.toLowerCase().startsWith(query.toLowerCase()) && u !== (window.__APP__?.username || '')).slice(0, 8);
+        if (!matches.length) return;
+        const dropdown = document.createElement('div');
+        dropdown.id = 'mentionDropdown';
+        dropdown.style.cssText = 'position:absolute;bottom:100%;left:0;right:0;background:var(--c-surface);border:1px solid var(--c-border);border-radius:10px;max-height:200px;overflow:auto;z-index:300;box-shadow:0 4px 12px rgba(0,0,0,.3);';
+        matches.forEach(user => {
+          const item = document.createElement('div');
+          item.style.cssText = 'padding:8px 12px;cursor:pointer;font-size:.9rem;color:var(--c-text);';
+          item.textContent = '@' + user;
+          item.addEventListener('mouseenter', () => item.style.background = 'var(--c-surface-hover)');
+          item.addEventListener('mouseleave', () => item.style.background = '');
+          item.addEventListener('click', () => {
+            const val = input.value;
+            const before = val.substring(0, startPos);
+            const after = val.substring(input.selectionStart);
+            input.value = before + '@' + user + ' ' + after;
+            hideMentionDropdown();
+            input.focus();
+          });
+          dropdown.appendChild(item);
+        });
+        input.parentElement.style.position = 'relative';
+        input.parentElement.appendChild(dropdown);
+      }
+
+      function hideMentionDropdown() {
+        const existing = document.getElementById('mentionDropdown');
+        if (existing) existing.remove();
+      }
+
+      const mentionInput = document.getElementById('messageInput');
+      if (mentionInput) {
+        mentionInput.addEventListener('input', (e) => {
+          const val = e.target.value;
+          const cursorPos = e.target.selectionStart;
+          const beforeCursor = val.substring(0, cursorPos);
+          const atMatch = beforeCursor.match(/@(\w*)$/);
+          if (atMatch) {
+            showMentionDropdown(atMatch[1], cursorPos - atMatch[0].length);
+          } else {
+            hideMentionDropdown();
+          }
+        });
+      }
+
       // ── Hook into openChat/openGroup for new features ──
       const _origOpenChat = openChat;
       openChat = async function(user) {
@@ -3268,11 +3648,14 @@
         document.getElementById('wallpaperBtn').style.display = '';
         document.getElementById('groupAdminBtn').style.display = 'none';
         document.getElementById('pollBtn').style.display = 'none';
+        document.getElementById('muteBtn').style.display = '';
+        document.getElementById('muteBtn').textContent = isMutedChat(user) ? '🔕' : '🔔';
         silentMode = false;
         if (silentToggle) { silentToggle.classList.remove('active'); silentToggle.textContent = '🔇'; }
         await loadAndApplyWallpaper();
         const draft = await loadDraft(user);
         if (draft) { const inp = document.getElementById('messageInput'); if (inp) inp.value = draft; }
+        initVoicePlayers();
       };
 
       const _origOpenGroup = openGroup;
@@ -3280,7 +3663,10 @@
         await _origOpenGroup(groupId);
         document.getElementById('wallpaperBtn').style.display = '';
         document.getElementById('groupAdminBtn').style.display = '';
+        document.getElementById('muteBtn').style.display = '';
+        document.getElementById('muteBtn').textContent = isMutedChat(groupId) ? '🔕' : '🔔';
         await loadAndApplyWallpaper();
+        initVoicePlayers();
       };
 
       const _origOpenSaved = openSavedMessages;
@@ -3288,7 +3674,31 @@
         await _origOpenSaved();
         document.getElementById('wallpaperBtn').style.display = 'none';
         document.getElementById('groupAdminBtn').style.display = 'none';
+        document.getElementById('muteBtn').style.display = 'none';
       };
+
+      document.getElementById('muteBtn')?.addEventListener('click', async () => {
+        if (!activeChat || !activeChat.target) return;
+        const chatId = activeChat.target;
+        const currentlyMuted = isMutedChat(chatId);
+        try {
+          await fetch('/settings/mute', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ chatId, mute: !currentlyMuted })
+          });
+          if (currentlyMuted) {
+            mutedChats = mutedChats.filter(id => id !== chatId);
+          } else {
+            mutedChats.push(chatId);
+          }
+          document.getElementById('muteBtn').textContent = currentlyMuted ? '🔔' : '🔕';
+          toast(currentlyMuted ? 'Varsler aktivert' : 'Varsler dempet', 'success');
+          renderUsers();
+        } catch (e) {
+          toast('Kunne ikke endre varslingsinnstillinger');
+        }
+      });
 
       // Patch sendMessage to include silent flag
       const _origSendMsg = sendMessage;
@@ -3342,6 +3752,42 @@
         }
         _origFinishAppend2(message, chatId, isMe, renderedText);
       };
+
+      function initSwipeToReply() {
+        let startX = 0, currentMsg = null;
+        messagesBox.addEventListener('touchstart', (e) => {
+          const msg = e.target.closest('.msg');
+          if (!msg) return;
+          startX = e.touches[0].clientX;
+          currentMsg = msg;
+        });
+        messagesBox.addEventListener('touchmove', (e) => {
+          if (!currentMsg) return;
+          const dx = e.touches[0].clientX - startX;
+          if (dx > 30 && dx < 150) {
+            currentMsg.style.transform = 'translateX(' + Math.min(dx - 30, 80) + 'px)';
+            currentMsg.style.opacity = Math.max(0.5, 1 - dx / 300);
+          }
+        });
+        messagesBox.addEventListener('touchend', (e) => {
+          if (!currentMsg) return;
+          const dx = e.changedTouches[0].clientX - startX;
+          currentMsg.style.transform = '';
+          currentMsg.style.opacity = '';
+          if (dx > 80) {
+            const msgId = currentMsg.dataset.msgId;
+            if (msgId) startReply(msgId);
+          }
+          currentMsg = null;
+        });
+      }
+      initSwipeToReply();
+
+      await loadFolders();
+      await loadPinnedChats();
+      await loadMutedChats();
+      await loadChannels();
+      renderChannels();
 
     } catch (e) {
       document.getElementById('app').innerHTML = '<pre style="color:#ff8888;background:#0f1424;padding:16px;">' + escapeHtml(e.stack || e.message) + '</pre>';

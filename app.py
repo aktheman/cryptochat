@@ -101,6 +101,11 @@ PINS_FILE = DATA_DIR / 'pins.json'
 SCHEDULED_FILE = DATA_DIR / 'scheduled.json'
 PUSH_SUBSCRIPTIONS_FILE = DATA_DIR / 'push_subscriptions.json'
 LINK_PREVIEWS_FILE = DATA_DIR / 'link_previews.json'
+PINNED_CHATS_FILE = DATA_DIR / 'pinned_chats.json'
+FOLDERS_FILE = DATA_DIR / 'folders.json'
+CHANNELS_FILE = DATA_DIR / 'channels.json'
+INVITE_LINKS_FILE = DATA_DIR / 'invite_links.json'
+MUTED_CHATS_FILE = DATA_DIR / 'muted_chats.json'
 
 # ──────────────────────────────────────────────
 # Helpers
@@ -2063,6 +2068,62 @@ STICKER_PACKS = {
             {'id': 'a3', 'emoji': '🦊', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="55" r="40" fill="%23ff9800"/%3E%3Cpolygon points="15,25 25,5 40,30" fill="%23ff9800"/%3E%3Cpolygon points="85,25 75,5 60,30" fill="%23ff9800"/%3E%3Ccircle cx="38" cy="48" r="5" fill="%23333"/%3E%3Ccircle cx="62" cy="48" r="5" fill="%23333"/%3E%3Cellipse cx="50" cy="62" rx="6" ry="4" fill="%23333"/%3E%3Cpath d="M30 70 Q50 85 70 70" fill="%23fff3e0"/%3E%3C/svg%3E'},
             {'id': 'a4', 'emoji': '🐼', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="50" r="45" fill="%23fff"/%3E%3Cellipse cx="30" cy="40" rx="12" ry="10" fill="%23333"/%3E%3Cellipse cx="70" cy="40" rx="12" ry="10" fill="%23333"/%3E%3Ccircle cx="38" cy="42" r="3" fill="%23fff"/%3E%3Ccircle cx="62" cy="42" r="3" fill="%23fff"/%3E%3Cellipse cx="50" cy="58" rx="6" ry="4" fill="%23333"/%3E%3C/svg%3E'},
         ]
+    },
+    'reactions': {
+        'name': 'Reaksjoner',
+        'stickers': [
+            {'id': 'r1', 'emoji': '✅', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="50" r="45" fill="%2322c55e"/%3E%3Cpath d="M30 50 L45 65 L72 35" stroke="%23fff" stroke-width="7" fill="none" stroke-linecap="round" stroke-linejoin="round"/%3E%3C/svg%3E'},
+            {'id': 'r2', 'emoji': '❌', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="50" r="45" fill="%23e53935"/%3E%3Cpath d="M32 32 L68 68" stroke="%23fff" stroke-width="7" stroke-linecap="round"/%3E%3Cpath d="M68 32 L32 68" stroke="%23fff" stroke-width="7" stroke-linecap="round"/%3E%3C/svg%3E'},
+            {'id': 'r3', 'emoji': '👍', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="50" r="45" fill="%23fdd835"/%3E%3Cpath d="M50 75 L50 50" stroke="%23333" stroke-width="8" stroke-linecap="round"/%3E%3Ccircle cx="50" cy="38" r="8" fill="%23333"/%3E%3Cpath d="M35 55 L50 50 L65 55" stroke="%23333" stroke-width="4" fill="none" stroke-linecap="round"/%3E%3C/svg%3E'},
+            {'id': 'r4', 'emoji': '👎', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="50" r="45" fill="%2390a4ae"/%3E%3Cpath d="M50 25 L50 50" stroke="%23333" stroke-width="8" stroke-linecap="round"/%3E%3Ccircle cx="50" cy="62" r="8" fill="%23333"/%3E%3Cpath d="M35 45 L50 50 L65 45" stroke="%23333" stroke-width="4" fill="none" stroke-linecap="round"/%3E%3C/svg%3E'},
+            {'id': 'r5', 'emoji': '😍', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="50" r="45" fill="%23fdd835"/%3E%3Ctext x="30" y="48" font-size="20" fill="%23e53935"%3E%E2%9D%A4%3C/text%3E%3Ctext x="55" y="48" font-size="20" fill="%23e53935"%3E%E2%9D%A4%3C/text%3E%3Cpath d="M35 60 Q50 75 65 60" stroke="%23333" stroke-width="3" fill="none"/%3E%3C/svg%3E'},
+            {'id': 'r6', 'emoji': '😢', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="50" r="45" fill="%23fdd835"/%3E%3Ccircle cx="35" cy="42" r="5" fill="%23333"/%3E%3Ccircle cx="65" cy="42" r="5" fill="%23333"/%3E%3Cpath d="M30 55 Q50 70 70 55" stroke="%23333" stroke-width="3" fill="none"/%3E%3Cpath d="M30 48 Q28 60 32 65" stroke="%232196f3" stroke-width="3" fill="none"/%3E%3C/svg%3E'},
+            {'id': 'r7', 'emoji': '🤦', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="55" r="40" fill="%23fdd835"/%3E%3Crect x="25" y="35" width="50" height="30" rx="5" fill="%238d6e63"/%3E%3Ccircle cx="50" cy="25" r="8" fill="%23333"/%3E%3Cpath d="M35 75 Q50 85 65 75" stroke="%23333" stroke-width="3" fill="none"/%3E%3C/svg%3E'},
+            {'id': 'r8', 'emoji': '🤷', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="50" r="45" fill="%23fdd835"/%3E%3Ccircle cx="38" cy="40" r="4" fill="%23333"/%3E%3Ccircle cx="62" cy="40" r="4" fill="%23333"/%3E%3Cpath d="M42 62 Q50 68 58 62" stroke="%23333" stroke-width="3" fill="none"/%3E%3Cpath d="M20 35 L30 25" stroke="%23333" stroke-width="3" stroke-linecap="round"/%3E%3Cpath d="M80 35 L70 25" stroke="%23333" stroke-width="3" stroke-linecap="round"/%3E%3C/svg%3E'},
+            {'id': 'r9', 'emoji': '🤔', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="50" r="45" fill="%23fdd835"/%3E%3Ccircle cx="38" cy="38" r="5" fill="%23333"/%3E%3Ccircle cx="62" cy="35" r="5" fill="%23333"/%3E%3Cpath d="M40 65 Q50 70 60 62" stroke="%23333" stroke-width="3" fill="none"/%3E%3Ccircle cx="75" cy="15" r="4" fill="%23333"/%3E%3Cpath d="M68 20 L62 28" stroke="%23333" stroke-width="3" stroke-linecap="round"/%3E%3C/svg%3E'},
+            {'id': 'r10', 'emoji': '🤯', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="55" r="40" fill="%23fdd835"/%3E%3Ccircle cx="38" cy="48" r="6" fill="%23fff"/%3E%3Ccircle cx="62" cy="48" r="6" fill="%23fff"/%3E%3Ccircle cx="38" cy="48" r="3" fill="%23333"/%3E%3Ccircle cx="62" cy="48" r="3" fill="%23333"/%3E%3Cpath d="M40 68 Q50 78 60 68" stroke="%23333" stroke-width="3" fill="none"/%3E%3Cpath d="M20 25 L15 10" stroke="%23ff9800" stroke-width="3" stroke-linecap="round"/%3E%3Cpath d="M50 15 L50 5" stroke="%23ff9800" stroke-width="3" stroke-linecap="round"/%3E%3Cpath d="M80 25 L85 10" stroke="%23ff9800" stroke-width="3" stroke-linecap="round"/%3E%3C/svg%3E'},
+            {'id': 'r11', 'emoji': '🥳', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="50" r="45" fill="%23fdd835"/%3E%3Ccircle cx="35" cy="42" r="5" fill="%23333"/%3E%3Ccircle cx="65" cy="42" r="5" fill="%23333"/%3E%3Cpath d="M35 60 Q50 78 65 60" stroke="%23333" stroke-width="3" fill="%23ff9800"/%3E%3Cpolygon points="50,5 55,18 45,18" fill="%237a3bff"/%3E%3Ccircle cx="20" cy="30" r="3" fill="%23e53935"/%3E%3Ccircle cx="80" cy="35" r="3" fill="%2322c55e"/%3E%3Ccircle cx="15" cy="60" r="2" fill="%232196f3"/%3E%3Ccircle cx="85" cy="55" r="2" fill="%23ff9800"/%3E%3C/svg%3E'},
+            {'id': 'r12', 'emoji': '✨', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="50" r="45" fill="%23fdd835"/%3E%3Cpath d="M50 15 L55 35 L75 40 L55 45 L50 65 L45 45 L25 40 L45 35Z" fill="%23fff"/%3E%3Ccircle cx="30" cy="70" r="3" fill="%23fff"/%3E%3Ccircle cx="72" cy="72" r="2" fill="%23fff"/%3E%3C/svg%3E'},
+        ]
+    },
+    'food': {
+        'name': 'Mat',
+        'stickers': [
+            {'id': 'f1', 'emoji': '🍕', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Cpath d="M50 10 L10 90 L90 90Z" fill="%23fdd835" stroke="%23e6a800" stroke-width="2"/%3E%3Ccircle cx="40" cy="55" r="5" fill="%23e53935"/%3E%3Ccircle cx="60" cy="65" r="5" fill="%23e53935"/%3E%3Ccircle cx="50" cy="75" r="4" fill="%234caf50"/%3E%3C/svg%3E'},
+            {'id': 'f2', 'emoji': '🍔', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Cellipse cx="50" cy="30" rx="38" ry="18" fill="%238d6e63"/%3E%3Crect x="15" y="45" width="70" height="12" rx="4" fill="%234caf50"/%3E%3Crect x="13" y="55" width="74" height="14" rx="4" fill="%23e53935"/%3E%3Cellipse cx="50" cy="80" rx="38" ry="14" fill="%23fdd835"/%3E%3C/svg%3E'},
+            {'id': 'f3', 'emoji': '🌮', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Cpath d="M10 70 Q50 10 90 70" fill="%23fdd835" stroke="%23e6a800" stroke-width="2"/%3E%3Cpath d="M25 60 Q50 30 75 60" fill="%234caf50"/%3E%3Ccircle cx="40" cy="52" r="4" fill="%23e53935"/%3E%3Ccircle cx="58" cy="48" r="3" fill="%23ff9800"/%3E%3C/svg%3E'},
+            {'id': 'f4', 'emoji': '🍣', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Cellipse cx="50" cy="60" rx="40" ry="18" fill="%23fff" stroke="%23ddd" stroke-width="2"/%3E%3Cellipse cx="50" cy="55" rx="28" ry="14" fill="%23e53935"/%3E%3Crect x="35" y="42" width="30" height="6" rx="3" fill="%23333"/%3E%3C/svg%3E'},
+            {'id': 'f5', 'emoji': '☕', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Crect x="20" y="35" width="50" height="50" rx="8" fill="%238d6e63"/%3E%3Cpath d="M70 45 Q90 45 90 60 Q90 75 70 75" stroke="%238d6e63" stroke-width="4" fill="none"/%3E%3Cpath d="M30 35 Q30 20 40 18" stroke="%23999" stroke-width="2" fill="none"/%3E%3Cpath d="M45 35 Q45 22 50 20" stroke="%23999" stroke-width="2" fill="none"/%3E%3C/svg%3E'},
+            {'id': 'f6', 'emoji': '🍺', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Crect x="20" y="25" width="45" height="60" rx="6" fill="%23fdd835"/%3E%3Crect x="65" y="35" width="15" height="35" rx="5" fill="%23fdd835" stroke="%23e6a800" stroke-width="2"/%3E%3Cellipse cx="42" cy="30" rx="20" ry="8" fill="%23fff" opacity=".6"/%3E%3C/svg%3E'},
+            {'id': 'f7', 'emoji': '🎂', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Crect x="15" y="50" width="70" height="35" rx="6" fill="%23e91e63"/%3E%3Crect x="15" y="40" width="70" height="18" rx="6" fill="%23fff3e0"/%3E%3Crect x="45" y="20" width="10" height="25" rx="3" fill="%23fdd835"/%3E%3Ccircle cx="50" cy="18" r="5" fill="%23ff5722"/%3E%3C/svg%3E'},
+            {'id': 'f8', 'emoji': '🍦', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Cpath d="M35 50 L50 95 L65 50" fill="%23fdd835"/%3E%3Ccircle cx="50" cy="40" r="22" fill="%23e91e63"/%3E%3Ccircle cx="38" cy="45" r="4" fill="%23fff" opacity=".5"/%3E%3Ccircle cx="55" cy="35" r="3" fill="%23fff" opacity=".5"/%3E%3C/svg%3E'},
+        ]
+    },
+    'objects': {
+        'name': 'Objekter',
+        'stickers': [
+            {'id': 'o1', 'emoji': '🚀', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Cpath d="M50 10 C50 10 30 35 30 60 L70 60 C70 35 50 10 50 10Z" fill="%23fff" stroke="%23ddd" stroke-width="2"/%3E%3Ccircle cx="50" cy="42" r="8" fill="%232196f3"/%3E%3Cpath d="M30 60 L20 75 L30 70" fill="%23e53935"/%3E%3Cpath d="M70 60 L80 75 L70 70" fill="%23e53935"/%3E%3Cpath d="M40 65 L50 90 L60 65" fill="%23ff9800"/%3E%3C/svg%3E'},
+            {'id': 'o2', 'emoji': '⚡', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Cpolygon points="55,5 25,50 45,50 38,95 75,42 52,42" fill="%23fdd835" stroke="%23e6a800" stroke-width="2"/%3E%3C/svg%3E'},
+            {'id': 'o3', 'emoji': '⭐', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Cpolygon points="50,8 61,38 95,38 68,58 78,90 50,70 22,90 32,58 5,38 39,38" fill="%23fdd835" stroke="%23e6a800" stroke-width="2"/%3E%3C/svg%3E'},
+            {'id': 'o4', 'emoji': '👑', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Cpath d="M15 70 L10 30 L30 50 L50 20 L70 50 L90 30 L85 70Z" fill="%23fdd835" stroke="%23e6a800" stroke-width="2"/%3E%3Crect x="15" y="70" width="70" height="12" rx="3" fill="%23fdd835" stroke="%23e6a800" stroke-width="2"/%3E%3Ccircle cx="50" cy="76" r="4" fill="%23e53935"/%3E%3C/svg%3E'},
+            {'id': 'o5', 'emoji': '❤️', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Cpath d="M50 88 C25 65 5 50 5 30 C5 15 18 5 30 5 C40 5 48 12 50 18 C52 12 60 5 70 5 C82 5 95 15 95 30 C95 50 75 65 50 88Z" fill="%23e53935"/%3E%3C/svg%3E'},
+            {'id': 'o6', 'emoji': '💎', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Cpolygon points="50,8 75,35 50,92 25,35" fill="%232196f3" stroke="%231565c0" stroke-width="2"/%3E%3Cpolygon points="25,35 75,35" fill="%2342a5f5" stroke="%231565c0" stroke-width="1"/%3E%3Cpolygon points="25,35 35,55 50,92" fill="%231e88e5" stroke="none"/%3E%3C/svg%3E'},
+            {'id': 'o7', 'emoji': '💣', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="58" r="32" fill="%23333"/%3E%3Crect x="47" y="18" width="6" height="15" rx="2" fill="%23795548"/%3E%3Cpath d="M53 18 Q65 10 60 22" stroke="%23ff9800" stroke-width="3" fill="none"/%3E%3Ccircle cx="62" cy="18" r="4" fill="%23ff9800"/%3E%3Ccircle cx="42" cy="50" r="3" fill="%23fff" opacity=".3"/%3E%3C/svg%3E'},
+            {'id': 'o8', 'emoji': '🔮', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="45" r="35" fill="%237a3bff"/%3E%3Ccircle cx="42" cy="38" r="10" fill="%239c6fff" opacity=".6"/%3E%3Ccircle cx="55" cy="35" r="5" fill="%23fff" opacity=".3"/%3E%3Crect x="35" y="78" width="30" height="8" rx="4" fill="%23795548"/%3E%3Crect x="30" y="82" width="40" height="10" rx="5" fill="%23795548"/%3E%3C/svg%3E'},
+        ]
+    },
+    'nature': {
+        'name': 'Natur',
+        'stickers': [
+            {'id': 'n1', 'emoji': '☀️', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="50" r="25" fill="%23fdd835"/%3E%3Cg stroke="%23fdd835" stroke-width="4" stroke-linecap="round"%3E%3Cline x1="50" y1="8" x2="50" y2="18"/%3E%3Cline x1="50" y1="82" x2="50" y2="92"/%3E%3Cline x1="8" y1="50" x2="18" y2="50"/%3E%3Cline x1="82" y1="50" x2="92" y2="50"/%3E%3Cline x1="20" y1="20" x2="27" y2="27"/%3E%3Cline x1="73" y1="73" x2="80" y2="80"/%3E%3Cline x1="80" y1="20" x2="73" y2="27"/%3E%3Cline x1="27" y1="73" x2="20" y2="80"/%3E%3C/g%3E%3C/svg%3E'},
+            {'id': 'n2', 'emoji': '🌙', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="50" r="40" fill="%23fdd835"/%3E%3Ccircle cx="35" cy="35" r="35" fill="%230f1826"/%3E%3Ccircle cx="70" cy="70" r="4" fill="%23fdd835" opacity=".6"/%3E%3Ccircle cx="80" cy="55" r="2" fill="%23fdd835" opacity=".4"/%3E%3C/svg%3E'},
+            {'id': 'n3', 'emoji': '☁️', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Cellipse cx="50" cy="55" rx="35" ry="20" fill="%23e0e0e0"/%3E%3Ccircle cx="35" cy="48" r="18" fill="%23e0e0e0"/%3E%3Ccircle cx="58" cy="42" r="22" fill="%23e0e0e0"/%3E%3C/svg%3E'},
+            {'id': 'n4', 'emoji': '🌧️', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Cellipse cx="50" cy="38" rx="30" ry="18" fill="%2390a4ae"/%3E%3Ccircle cx="35" cy="32" r="15" fill="%2390a4ae"/%3E%3Ccircle cx="58" cy="28" r="18" fill="%2390a4ae"/%3E%3Cline x1="30" y1="60" x2="25" y2="78" stroke="%232196f3" stroke-width="3" stroke-linecap="round"/%3E%3Cline x1="48" y1="60" x2="43" y2="82" stroke="%232196f3" stroke-width="3" stroke-linecap="round"/%3E%3Cline x1="65" y1="58" x2="60" y2="75" stroke="%232196f3" stroke-width="3" stroke-linecap="round"/%3E%3C/svg%3E'},
+            {'id': 'n5', 'emoji': '❄️', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Cline x1="50" y1="10" x2="50" y2="90" stroke="%232196f3" stroke-width="4"/%3E%3Cline x1="10" y1="50" x2="90" y2="50" stroke="%232196f3" stroke-width="4"/%3E%3Cline x1="22" y1="22" x2="78" y2="78" stroke="%232196f3" stroke-width="3"/%3E%3Cline x1="78" y1="22" x2="22" y2="78" stroke="%232196f3" stroke-width="3"/%3E%3Ccircle cx="50" cy="50" r="6" fill="%232196f3"/%3E%3C/svg%3E'},
+            {'id': 'n6', 'emoji': '🌸', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Ccircle cx="50" cy="50" r="8" fill="%23fdd835"/%3E%3Cellipse cx="50" cy="30" rx="10" ry="14" fill="%23f48fb1"/%3E%3Cellipse cx="50" cy="70" rx="10" ry="14" fill="%23f48fb1"/%3E%3Cellipse cx="30" cy="50" rx="14" ry="10" fill="%23f48fb1"/%3E%3Cellipse cx="70" cy="50" rx="14" ry="10" fill="%23f48fb1"/%3E%3C/svg%3E'},
+            {'id': 'n7', 'emoji': '🌳', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Crect x="43" y="65" width="14" height="25" rx="3" fill="%23795548"/%3E%3Ccircle cx="50" cy="40" r="30" fill="%234caf50"/%3E%3Ccircle cx="35" cy="50" r="15" fill="%23388e3c"/%3E%3Ccircle cx="65" cy="50" r="15" fill="%23388e3c"/%3E%3C/svg%3E'},
+            {'id': 'n8', 'emoji': '🏔️', 'url': 'data:image/svg+xml,' + '%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Cpolygon points="50,10 90,90 10,90" fill="%23607d8b"/%3E%3Cpolygon points="50,10 65,40 35,40" fill="%23fff"/%3E%3Cpolygon points="30,90 55,45 70,60 90,90" fill="%2378909c"/%3E%3Cpolygon points="55,45 62,52 48,52" fill="%23fff"/%3E%3C/svg%3E'},
+        ]
     }
 }
 
@@ -2600,6 +2661,372 @@ self.addEventListener('notificationclick',(event)=>{
 @app.route('/offline.html')
 def offline_page():
     return render_template('offline.html')
+
+# ──────────────────────────────────────────────
+# Pinned Chats (per-user sidebar pinning)
+# ──────────────────────────────────────────────
+@app.route('/pinned-chats', methods=['GET'])
+@require_login
+def get_pinned_chats():
+    me = session['username']
+    pins = load_json(PINNED_CHATS_FILE, {})
+    return jsonify({'success': True, 'pinned': pins.get(me, [])})
+
+@app.route('/pinned-chats', methods=['POST'])
+@require_login
+def toggle_pinned_chat():
+    me = session['username']
+    data = request.get_json(force=True, silent=True) or {}
+    chat_id = data.get('chatId', '')
+    chat_type = data.get('chatType', 'user')
+    if not chat_id:
+        return jsonify({'success': False, 'message': 'Manglende chatId.'}), 400
+    pins = load_json(PINNED_CHATS_FILE, {})
+    user_pins = pins.setdefault(me, [])
+    entry = {'id': chat_id, 'type': chat_type}
+    existing = next((p for p in user_pins if p['id'] == chat_id and p['type'] == chat_type), None)
+    if existing:
+        user_pins.remove(existing)
+        pinned = False
+    else:
+        user_pins.append(entry)
+        pinned = True
+    save_json(PINNED_CHATS_FILE, pins)
+    return jsonify({'success': True, 'pinned': pinned})
+
+# ──────────────────────────────────────────────
+# Chat Folders (Telegram-style tabs)
+# ──────────────────────────────────────────────
+@app.route('/folders', methods=['GET'])
+@require_login
+def get_folders():
+    me = session['username']
+    all_folders = load_json(FOLDERS_FILE, {})
+    user_folders = all_folders.get(me, [
+        {'id': 'all', 'name': 'Alle', 'filters': []},
+    ])
+    return jsonify({'success': True, 'folders': user_folders})
+
+@app.route('/folders', methods=['POST'])
+@require_login
+def save_folders():
+    me = session['username']
+    data = request.get_json(force=True, silent=True) or {}
+    folders = data.get('folders', [])
+    if not isinstance(folders, list):
+        return jsonify({'success': False, 'message': 'Ugyldig format.'}), 400
+    all_folders = load_json(FOLDERS_FILE, {})
+    all_folders[me] = folders
+    save_json(FOLDERS_FILE, all_folders)
+    return jsonify({'success': True})
+
+# ──────────────────────────────────────────────
+# Channels / Broadcast
+# ──────────────────────────────────────────────
+@app.route('/channels', methods=['GET'])
+@require_login
+def list_channels():
+    me = session['username']
+    channels = load_json(CHANNELS_FILE, [])
+    visible = [c for c in channels if me in c.get('subscribers', []) or me == c.get('created_by')]
+    return jsonify({'success': True, 'channels': visible})
+
+@app.route('/channels', methods=['POST'])
+@require_login
+def create_channel():
+    me = session['username']
+    data = request.get_json(force=True, silent=True) or {}
+    name = sanitize_input(data.get('name', ''), 50).strip()
+    description = sanitize_input(data.get('description', ''), 500)
+    if not name:
+        return jsonify({'success': False, 'message': 'Navn er påkrevd.'}), 400
+    channels = load_json(CHANNELS_FILE, [])
+    ch_id = hashlib.sha256(f"{name}{me}{datetime.utcnow().isoformat()}".encode()).hexdigest()[:16]
+    channel = {
+        'id': ch_id,
+        'name': name,
+        'description': description,
+        'created_by': me,
+        'created': now_iso(),
+        'subscribers': [me],
+        'admins': [me],
+        'type': 'channel',
+    }
+    channels.append(channel)
+    save_json(CHANNELS_FILE, channels)
+    return jsonify({'success': True, 'channel': channel})
+
+@app.route('/channels/<channel_id>/send', methods=['POST'])
+@require_login
+def send_channel_message(channel_id):
+    me = session['username']
+    data = request.get_json(force=True, silent=True) or {}
+    ciphertext = sanitize_input(data.get('ciphertext', ''), 10000)
+    mtype = data.get('type', 'text')
+    filename = data.get('filename')
+    if not ciphertext:
+        return jsonify({'success': False, 'message': 'Manglende innhold.'}), 400
+    channels = load_json(CHANNELS_FILE, [])
+    ch = next((c for c in channels if c['id'] == channel_id), None)
+    if not ch:
+        return jsonify({'success': False, 'message': 'Kanal ikke funnet.'}), 404
+    if me != ch.get('created_by') and me not in ch.get('admins', []):
+        return jsonify({'success': False, 'message': 'Kun administratorer kan sende.'}), 403
+    messages = load_json(MESSAGES_FILE, [])
+    messages.append({
+        'id': hashlib.sha256(f"{ciphertext}{channel_id}{datetime.utcnow().isoformat()}{me}".encode()).hexdigest(),
+        'channel_id': channel_id,
+        'sender': me,
+        'ciphertext': ciphertext,
+        'type': mtype,
+        'timestamp': datetime.utcnow().isoformat(),
+        'filename': filename,
+    })
+    save_json(MESSAGES_FILE, messages)
+    return jsonify({'success': True})
+
+@app.route('/channels/<channel_id>/messages')
+@require_login
+def get_channel_messages(channel_id):
+    me = session['username']
+    channels = load_json(CHANNELS_FILE, [])
+    ch = next((c for c in channels if c['id'] == channel_id), None)
+    if not ch:
+        return jsonify({'success': False, 'message': 'Kanal ikke funnet.'}), 404
+    if me not in ch.get('subscribers', []) and me not in ch.get('admins', []):
+        return jsonify({'success': False, 'message': 'Ikke abonnent.'}), 403
+    messages = load_json(MESSAGES_FILE, [])
+    filtered = [m for m in messages if m.get('channel_id') == channel_id]
+    filtered.sort(key=lambda x: x['timestamp'], reverse=True)
+    return jsonify({'success': True, 'messages': filtered[:100]})
+
+@app.route('/channels/<channel_id>/subscribe', methods=['POST'])
+@require_login
+def subscribe_channel(channel_id):
+    me = session['username']
+    channels = load_json(CHANNELS_FILE, [])
+    ch = next((c for c in channels if c['id'] == channel_id), None)
+    if not ch:
+        return jsonify({'success': False, 'message': 'Kanal ikke funnet.'}), 404
+    ch.setdefault('subscribers', [])
+    if me not in ch['subscribers']:
+        ch['subscribers'].append(me)
+        save_json(CHANNELS_FILE, channels)
+    return jsonify({'success': True})
+
+@app.route('/channels/<channel_id>/unsubscribe', methods=['POST'])
+@require_login
+def unsubscribe_channel(channel_id):
+    me = session['username']
+    channels = load_json(CHANNELS_FILE, [])
+    ch = next((c for c in channels if c['id'] == channel_id), None)
+    if not ch:
+        return jsonify({'success': False, 'message': 'Kanal ikke funnet.'}), 404
+    ch['subscribers'] = [s for s in ch.get('subscribers', []) if s != me]
+    save_json(CHANNELS_FILE, channels)
+    return jsonify({'success': True})
+
+# ──────────────────────────────────────────────
+# Group Invite Links
+# ──────────────────────────────────────────────
+@app.route('/groups/<group_id>/invite-link', methods=['GET'])
+@require_login
+def get_invite_link(group_id):
+    me = session['username']
+    groups = load_json(GROUPS_FILE, [])
+    group = next((g for g in groups if g['id'] == group_id), None)
+    if not group:
+        return jsonify({'success': False, 'message': 'Gruppe ikke funnet.'}), 404
+    if me not in group.get('members', []):
+        return jsonify({'success': False, 'message': 'Ikke medlem.'}), 403
+    links = load_json(INVITE_LINKS_FILE, {})
+    link_data = links.get(group_id)
+    if not link_data:
+        token = secrets.token_urlsafe(16)
+        link_data = {'token': token, 'group_id': group_id, 'created': now_iso(), 'created_by': me}
+        links[group_id] = link_data
+        save_json(INVITE_LINKS_FILE, links)
+    return jsonify({'success': True, 'link': link_data['token'], 'groupId': group_id, 'groupName': group['name']})
+
+@app.route('/invite/<token>')
+def resolve_invite(token):
+    links = load_json(INVITE_LINKS_FILE, {})
+    link_data = next((v for v in links.values() if v.get('token') == token), None)
+    if not link_data:
+        return jsonify({'success': False, 'message': 'Ugyldig lenke.'}), 404
+    groups = load_json(GROUPS_FILE, [])
+    group = next((g for g in groups if g['id'] == link_data['group_id']), None)
+    if not group:
+        return jsonify({'success': False, 'message': 'Gruppe slettet.'}), 404
+    return jsonify({'success': True, 'groupId': group['id'], 'groupName': group['name'], 'members': len(group.get('members', []))})
+
+@app.route('/invite/<token>/join', methods=['POST'])
+@require_login
+def join_via_invite(token):
+    me = session['username']
+    links = load_json(INVITE_LINKS_FILE, {})
+    link_data = next((v for v in links.values() if v.get('token') == token), None)
+    if not link_data:
+        return jsonify({'success': False, 'message': 'Ugyldig lenke.'}), 404
+    groups = load_json(GROUPS_FILE, [])
+    group = next((g for g in groups if g['id'] == link_data['group_id']), None)
+    if not group:
+        return jsonify({'success': False, 'message': 'Gruppe slettet.'}), 404
+    if me in group.get('members', []):
+        return jsonify({'success': True, 'message': 'Allerede medlem.', 'groupId': group['id']})
+    group.setdefault('members', []).append(me)
+    save_json(GROUPS_FILE, groups)
+    return jsonify({'success': True, 'message': 'Bli med!', 'groupId': group['id']})
+
+# ──────────────────────────────────────────────
+# Per-Chat Notification Mute
+# ──────────────────────────────────────────────
+@app.route('/settings/mute', methods=['POST'])
+@require_login
+def toggle_mute_chat():
+    me = session['username']
+    data = request.get_json(force=True, silent=True) or {}
+    chat_id = data.get('chatId', '')
+    muted = data.get('muted', True)
+    if not chat_id:
+        return jsonify({'success': False, 'message': 'Manglende chatId.'}), 400
+    mutes = load_json(MUTED_CHATS_FILE, {})
+    user_mutes = mutes.setdefault(me, [])
+    if muted and chat_id not in user_mutes:
+        user_mutes.append(chat_id)
+    elif not muted:
+        user_mutes = [c for c in user_mutes if c != chat_id]
+    mutes[me] = user_mutes
+    save_json(MUTED_CHATS_FILE, mutes)
+    return jsonify({'success': True, 'muted': muted})
+
+@app.route('/settings/mute')
+@require_login
+def get_muted_chats():
+    me = session['username']
+    mutes = load_json(MUTED_CHATS_FILE, {})
+    return jsonify({'success': True, 'muted': mutes.get(me, [])})
+
+# ──────────────────────────────────────────────
+# Enhanced Search (date range + groups + mentions)
+# ──────────────────────────────────────────────
+@app.route('/search/v2')
+@require_login
+def search_v2():
+    me = session['username']
+    q = (request.args.get('q') or '').strip()
+    partner = (request.args.get('partner') or '').strip().lower()
+    group_id = (request.args.get('group') or '').strip()
+    date_from = (request.args.get('from') or '').strip()
+    date_to = (request.args.get('to') or '').strip()
+    sender = (request.args.get('sender') or '').strip().lower()
+    msg_type = (request.args.get('type') or '').strip()
+    if not q and not sender and not group_id:
+        return jsonify({'success': True, 'results': []})
+    messages = load_json(MESSAGES_FILE, [])
+    results = []
+    for m in messages:
+        is_group = bool(m.get('group_id'))
+        is_dm = bool(m.get('pair_key'))
+        if group_id:
+            if m.get('group_id') != group_id:
+                continue
+        elif partner:
+            if not is_dm:
+                continue
+            pk = pair_key(me, partner)
+            if m.get('pair_key') != pk:
+                continue
+        else:
+            if is_dm:
+                pk = m.get('pair_key', '')
+                if me not in pk.split('::'):
+                    continue
+            elif is_group:
+                continue
+        if sender and m.get('sender', '').lower() != sender:
+            continue
+        if msg_type and m.get('type', 'text') != msg_type:
+            continue
+        ts = m.get('timestamp', '')
+        if date_from and ts < date_from:
+            continue
+        if date_to and ts > date_to:
+            continue
+        text = ''
+        try:
+            if is_dm:
+                sk = derive_symmetric_key(me, m.get('sender', '') if m.get('recipient') == me else m.get('recipient', ''))
+                text = decrypt_symmetric(m['ciphertext'], sk) if m.get('type') == 'text' else m.get('filename', '')
+            elif is_group:
+                is_e2ee = convert_to_bool(m.get('e2ee'), False)
+                if not is_e2ee:
+                    gk = get_or_create_group_key(m['group_id'])
+                    text = decrypt_symmetric(m['ciphertext'], gk) if m.get('type') == 'text' else m.get('filename', '')
+                else:
+                    text = m.get('ciphertext', '')
+            else:
+                text = m.get('ciphertext', '')
+        except Exception:
+            text = ''
+        if q and q.lower() not in text.lower():
+            continue
+        if len(results) >= 200:
+            break
+        results.append({
+            'id': m.get('id'),
+            'sender': m.get('sender'),
+            'recipient': m.get('recipient'),
+            'group_id': m.get('group_id'),
+            'channel_id': m.get('channel_id'),
+            'text': text[:200] if text else '',
+            'type': m.get('type', 'text'),
+            'timestamp': m.get('timestamp'),
+        })
+    results.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+    return jsonify({'success': True, 'results': results[:100]})
+
+# ──────────────────────────────────────────────
+# Admin Dashboard Enhanced
+# ──────────────────────────────────────────────
+@app.route('/admin/dashboard')
+@require_login
+def admin_dashboard_data():
+    me = session['username']
+    users = load_json(USERS_FILE, {})
+    messages = load_json(MESSAGES_FILE, [])
+    groups = load_json(GROUPS_FILE, [])
+    channels = load_json(CHANNELS_FILE, [])
+    sessions = load_json(SESSIONS_FILE, {})
+    total_sessions = sum(len(s) for s in sessions.values() if isinstance(s, dict))
+    active_sessions = 0
+    for s in sessions.values():
+        if isinstance(s, dict):
+            active_sessions += sum(1 for v in s.values() if isinstance(v, dict) and v.get('active'))
+    return jsonify({
+        'success': True,
+        'stats': {
+            'total_users': len(users),
+            'total_messages': len(messages),
+            'total_groups': len(groups),
+            'total_channels': len(channels),
+            'total_sessions': total_sessions,
+            'active_sessions': active_sessions,
+            'admin_count': sum(1 for u in users.values() if u.get('is_admin')),
+            'banned_count': sum(1 for u in users.values() if u.get('banned')),
+            'two_fa_count': sum(1 for u in users.values() if u.get('twofa_enabled')),
+        },
+        'recent_messages': [{
+            'sender': m.get('sender'),
+            'recipient': m.get('recipient'),
+            'group_id': m.get('group_id'),
+            'channel_id': m.get('channel_id'),
+            'type': m.get('type'),
+            'timestamp': m.get('timestamp'),
+        } for m in messages[-100:]],
+        'groups': [{'id': g['id'], 'name': g['name'], 'members': len(g.get('members', [])), 'created_by': g.get('created_by')} for g in groups],
+        'channels': [{'id': c['id'], 'name': c['name'], 'subscribers': len(c.get('subscribers', [])), 'created_by': c.get('created_by')} for c in channels],
+    })
 
 @app.route('/health')
 def health_check():
