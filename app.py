@@ -51,6 +51,23 @@ def set_security_headers(response):
     response.headers['X-XSS-Protection'] = '1; mode=block'
     response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
     response.headers['Permissions-Policy'] = 'camera=(self), microphone=(self), geolocation=()'
+    response.headers['Cross-Origin-Embedder-Policy'] = 'require-corp'
+    response.headers['Cross-Origin-Opener-Policy'] = 'same-origin'
+    response.headers['Cross-Origin-Resource-Policy'] = 'same-origin'
+    response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    response.headers['Content-Security-Policy'] = (
+        "default-src 'self'; "
+        "script-src 'self' 'wasm-unsafe-eval'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "font-src 'self' data:; "
+        "img-src 'self' data: blob: https:; "
+        "media-src 'self' blob: data:; "
+        "connect-src 'self' wss: https: blob:; "
+        "frame-ancestors 'none'; "
+        "base-uri 'none'; "
+        "form-action 'self'; "
+        "upgrade-insecure-requests"
+    )
     if request.path.startswith('/static/'):
         response.headers['Cache-Control'] = 'public, max-age=604800'
     else:
@@ -461,6 +478,7 @@ def login():
     return jsonify({'success': True})
 
 @app.route('/auth/logout', methods=['POST'])
+@rate_limit(max_requests=30, window_seconds=60)
 def logout():
     username = session.get('username')
     session_id = session.get('session_token')
@@ -470,6 +488,7 @@ def logout():
     return jsonify({'success': True})
 
 @app.route('/auth/logout-all', methods=['POST'])
+@rate_limit(max_requests=10, window_seconds=300)
 def logout_all():
     username = session.get('username')
     if username:
@@ -488,6 +507,7 @@ def list_sessions():
     return jsonify({'success': True, 'sessions': sessions_list})
 
 @app.route('/sessions/<session_id>/revoke', methods=['POST'])
+@rate_limit(max_requests=20, window_seconds=120)
 @require_login
 def revoke_session(session_id):
     username = session['username']
@@ -497,6 +517,7 @@ def revoke_session(session_id):
     return jsonify({'success': True})
 
 @app.route('/auth/2fa/enable', methods=['POST'])
+@rate_limit(max_requests=5, window_seconds=600)
 def enable_2fa():
     username = session.get('username')
     if not username:
@@ -511,6 +532,7 @@ def enable_2fa():
     return jsonify({'success': True, 'secret': secret, 'uri': uri})
 
 @app.route('/auth/2fa/disable', methods=['POST'])
+@rate_limit(max_requests=5, window_seconds=600)
 def disable_2fa():
     username = session.get('username')
     if not username:
@@ -525,6 +547,7 @@ def disable_2fa():
 # Presence
 # ──────────────────────────────────────────────
 @app.route('/presence/batch', methods=['POST'])
+@rate_limit(max_requests=60, window_seconds=60)
 def presence_batch():
     data = request.get_json(force=True, silent=True) or {}
     users = data.get('users', [])
@@ -542,6 +565,7 @@ def presence_batch():
 # Public key identity
 # ──────────────────────────────────────────────
 @app.route('/key/publish', methods=['POST'])
+@rate_limit(max_requests=20, window_seconds=120)
 def publish_public_key():
     if 'username' not in session:
         return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
@@ -568,6 +592,7 @@ def get_theme():
     return jsonify({'success': True, 'theme': theme})
 
 @app.route('/theme', methods=['POST'])
+@rate_limit(max_requests=20, window_seconds=120)
 def set_theme():
     username = session.get('username')
     if not username:
@@ -580,6 +605,7 @@ def set_theme():
     return jsonify({'success': True})
 
 @app.route('/settings/notifications', methods=['POST'])
+@rate_limit(max_requests=30, window_seconds=120)
 def settings_notifications():
     username = session.get('username')
     if not username:
@@ -617,7 +643,8 @@ def get_user_key_endpoint(username):
     if not user:
         return jsonify({'success': False, 'message': 'Bruker ikke funnet.'}), 404
     resp = jsonify({'success': True, 'username': username, 'publicKey': user.get('identity_public_key')})
-    resp.headers['Access-Control-Allow-Origin'] = '*'
+    resp.headers['Access-Control-Allow-Origin'] = request.headers.get('Origin') or ''
+    resp.headers['Vary'] = 'Origin'
     return resp
 
 # ──────────────────────────────────────────────
@@ -676,6 +703,7 @@ def get_messages(other_user):
     return jsonify({'success': True, 'messages': filtered, 'pair_key': pk, 'total': total, 'has_more': (offset + limit) < total})
 
 @app.route('/send', methods=['POST'])
+@rate_limit(max_requests=30, window_seconds=60)
 def send_message():
     if 'username' not in session:
         return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
@@ -714,6 +742,7 @@ def send_message():
     return jsonify({'success': True, 'message': 'Melding sendt.'})
 
 @app.route('/upload', methods=['POST'])
+@rate_limit(max_requests=20, window_seconds=120)
 def upload_file():
     if 'username' not in session:
         return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
@@ -827,6 +856,7 @@ def search_files():
     return jsonify({'success': True, 'files': results})
 
 @app.route('/read_receipts/<partner>', methods=['POST'])
+@rate_limit(max_requests=60, window_seconds=60)
 def mark_read(partner):
     if 'username' not in session:
         return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
@@ -862,6 +892,7 @@ def get_notifications():
 # Group E2EE key distribution
 # ──────────────────────────────────────────────
 @app.route('/groups/<group_id>/keys', methods=['POST'])
+@rate_limit(max_requests=20, window_seconds=120)
 @require_login
 def upload_group_keys(group_id):
     me = session['username']
@@ -913,6 +944,7 @@ def list_groups():
     return jsonify({'success': True, 'groups': my_groups})
 
 @app.route('/groups', methods=['POST'])
+@rate_limit(max_requests=10, window_seconds=300)
 def create_group():
     if 'username' not in session:
         return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
@@ -996,6 +1028,7 @@ def get_group_messages(group_id):
     return jsonify({'success': True, 'messages': filtered})
 
 @app.route('/groups/<group_id>', methods=['DELETE'])
+@rate_limit(max_requests=10, window_seconds=300)
 def delete_group(group_id):
     if 'username' not in session:
         return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
@@ -1010,6 +1043,7 @@ def delete_group(group_id):
     return jsonify({'success': True, 'message': 'Gruppen er slettet.'})
 
 @app.route('/groups/<group_id>/send', methods=['POST'])
+@rate_limit(max_requests=30, window_seconds=120)
 def send_group_message(group_id):
     if 'username' not in session:
         return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
@@ -1056,6 +1090,7 @@ def send_group_message(group_id):
 # Typing indicators
 # ──────────────────────────────────────────────
 @app.route('/typing', methods=['POST'])
+@rate_limit(max_requests=60, window_seconds=60)
 def set_typing():
     username = session.get('username')
     if not username:
@@ -1094,6 +1129,7 @@ def get_typing(target):
 # Reactions
 # ──────────────────────────────────────────────
 @app.route('/reactions', methods=['POST'])
+@rate_limit(max_requests=60, window_seconds=60)
 def add_reaction():
     username = session.get('username')
     if not username:
@@ -1133,6 +1169,7 @@ def get_reactions(message_id):
 # Edit / Delete messages
 # ──────────────────────────────────────────────
 @app.route('/messages/<message_id>/edit', methods=['PUT'])
+@rate_limit(max_requests=30, window_seconds=60)
 def edit_message(message_id):
     username = session.get('username')
     if not username:
@@ -1152,6 +1189,7 @@ def edit_message(message_id):
     return jsonify({'success': False, 'message': 'Melding ikke funnet.'}), 404
 
 @app.route('/messages/<message_id>', methods=['DELETE'])
+@rate_limit(max_requests=30, window_seconds=60)
 def delete_message(message_id):
     username = session.get('username')
     if not username:
@@ -1185,6 +1223,7 @@ def get_profile():
     })
 
 @app.route('/profile', methods=['POST'])
+@rate_limit(max_requests=20, window_seconds=120)
 def update_profile():
     username = session.get('username')
     if not username:
@@ -1225,6 +1264,7 @@ def list_users_with_profiles():
 # WebRTC Calls (signaling via polling)
 # ──────────────────────────────────────────────
 @app.route('/calls/init', methods=['POST'])
+@rate_limit(max_requests=20, window_seconds=120)
 def init_call():
     username = session.get('username')
     if not username:
@@ -1305,6 +1345,7 @@ def get_offer(call_id):
     return jsonify({'success': True, 'sdp': call.get('offer_sdp'), 'caller': call.get('caller'), 'type': call.get('type', 'video')})
 
 @app.route('/calls/accept', methods=['POST'])
+@rate_limit(max_requests=20, window_seconds=120)
 def accept_call():
     username = session.get('username')
     if not username:
@@ -1365,6 +1406,7 @@ def get_ice(call_id):
     return jsonify({'success': True, 'candidates': candidates})
 
 @app.route('/calls/hangup', methods=['POST'])
+@rate_limit(max_requests=60, window_seconds=60)
 def hangup_call():
     username = session.get('username')
     if not username:
@@ -1448,6 +1490,7 @@ def admin_list_users():
     return jsonify({'success': True, 'users': result})
 
 @app.route('/admin/users/<username>/toggle-admin', methods=['POST'])
+@rate_limit(max_requests=10, window_seconds=300)
 @require_admin
 def admin_toggle_admin(username):
     admin_user = session.get('username')
@@ -1461,6 +1504,7 @@ def admin_toggle_admin(username):
     return jsonify({'success': True, 'is_admin': users[username]['is_admin']})
 
 @app.route('/admin/users/<username>/ban', methods=['POST'])
+@rate_limit(max_requests=10, window_seconds=300)
 @require_admin
 def admin_ban_user(username):
     admin_user = session.get('username')
@@ -1475,6 +1519,7 @@ def admin_ban_user(username):
     return jsonify({'success': True})
 
 @app.route('/admin/users/<username>/unban', methods=['POST'])
+@rate_limit(max_requests=10, window_seconds=300)
 @require_admin
 def admin_unban_user(username):
     users = load_json(USERS_FILE, {})
@@ -1485,6 +1530,7 @@ def admin_unban_user(username):
     return jsonify({'success': True})
 
 @app.route('/admin/users/<username>/delete', methods=['POST'])
+@rate_limit(max_requests=10, window_seconds=300)
 @require_admin
 def admin_delete_user(username):
     admin_user = session.get('username')
@@ -1533,6 +1579,7 @@ def export_key():
     return jsonify({'success': True, 'key': key})
 
 @app.route('/key/import', methods=['POST'])
+@rate_limit(max_requests=10, window_seconds=600)
 def import_key():
     username = session.get('username')
     if not username:
@@ -1600,6 +1647,7 @@ def get_safety_number(username):
     })
 
 @app.route('/verify/<username>', methods=['POST'])
+@rate_limit(max_requests=10, window_seconds=120)
 @require_login
 def verify_user(username):
     me = session['username']
@@ -1616,6 +1664,7 @@ def verify_user(username):
     return jsonify({'success': True, 'verified': True})
 
 @app.route('/verify/<username>', methods=['DELETE'])
+@rate_limit(max_requests=10, window_seconds=120)
 @require_login
 def unverify_user(username):
     me = session['username']
@@ -1640,6 +1689,7 @@ def verify_status(username):
     })
 
 @app.route('/verify/batch', methods=['POST'])
+@rate_limit(max_requests=10, window_seconds=300)
 @require_login
 def verify_batch():
     me = session['username']
@@ -1690,6 +1740,7 @@ def pin_message(chat_type, chat_id, message_id):
 
 @app.route('/pins/<chat_type>/<chat_id>/<message_id>', methods=['DELETE'])
 @require_login
+@rate_limit(max_requests=60, window_seconds=60)
 def unpin_message(chat_type, chat_id, message_id):
     pins = load_json(PINS_FILE, {})
     key = f"{chat_type}::{chat_id}"
@@ -1704,6 +1755,7 @@ def unpin_message(chat_type, chat_id, message_id):
 # Scheduled Messages
 # ──────────────────────────────────────────────
 @app.route('/schedule', methods=['POST'])
+@rate_limit(max_requests=20, window_seconds=300)
 @require_login
 def schedule_message():
     me = session['username']
@@ -1826,6 +1878,7 @@ def touch_session():
 # Forward Messages
 # ──────────────────────────────────────────────
 @app.route('/messages/<message_id>/forward', methods=['POST'])
+@rate_limit(max_requests=30, window_seconds=120)
 @require_login
 def forward_message(message_id):
     me = session['username']
@@ -1864,6 +1917,7 @@ def forward_message(message_id):
 # Saved Messages (self-chat / bookmarks)
 # ──────────────────────────────────────────────
 @app.route('/saved', methods=['POST'])
+@rate_limit(max_requests=30, window_seconds=60)
 @require_login
 def save_message():
     me = session['username']
@@ -1958,6 +2012,7 @@ def export_chat(chat_type, chat_id):
 POLLS_FILE = DATA_DIR / 'polls.json'
 
 @app.route('/polls', methods=['POST'])
+@rate_limit(max_requests=20, window_seconds=120)
 @require_login
 def create_poll():
     me = session['username']
@@ -2013,6 +2068,7 @@ def get_poll(poll_id):
     return jsonify({'success': True, 'poll': poll})
 
 @app.route('/polls/<poll_id>/vote', methods=['POST'])
+@rate_limit(max_requests=60, window_seconds=60)
 @require_login
 def vote_poll(poll_id):
     me = session['username']
@@ -2034,6 +2090,7 @@ def vote_poll(poll_id):
     return jsonify({'success': True})
 
 @app.route('/polls/<poll_id>/close', methods=['POST'])
+@rate_limit(max_requests=20, window_seconds=300)
 @require_login
 def close_poll(poll_id):
     me = session['username']
@@ -2172,6 +2229,7 @@ def search_gifs():
 # Location Sharing
 # ──────────────────────────────────────────────
 @app.route('/send/location', methods=['POST'])
+@rate_limit(max_requests=30, window_seconds=120)
 @require_login
 def send_location():
     me = session['username']
@@ -2211,6 +2269,7 @@ def send_location():
 SLOWMODE_FILE = DATA_DIR / 'slowmode.json'
 
 @app.route('/groups/<group_id>/slowmode', methods=['POST'])
+@rate_limit(max_requests=20, window_seconds=120)
 @require_login
 def set_slowmode(group_id):
     me = session['username']
@@ -2318,6 +2377,7 @@ def get_group_members(group_id):
     return jsonify({'success': True, 'members': members, 'total': len(members)})
 
 @app.route('/groups/<group_id>/members', methods=['POST'])
+@rate_limit(max_requests=20, window_seconds=120)
 @require_login
 def add_group_member(group_id):
     me = session['username']
@@ -2343,6 +2403,7 @@ def add_group_member(group_id):
     return jsonify({'success': True, 'message': f'{target} lagt til.'})
 
 @app.route('/groups/<group_id>/members/<username>', methods=['DELETE'])
+@rate_limit(max_requests=20, window_seconds=120)
 @require_login
 def remove_group_member(group_id, username):
     me = session['username']
@@ -2370,6 +2431,7 @@ def remove_group_member(group_id, username):
     return jsonify({'success': True, 'message': f'{username} fjernet.'})
 
 @app.route('/groups/<group_id>/leave', methods=['POST'])
+@rate_limit(max_requests=20, window_seconds=120)
 @require_login
 def leave_group(group_id):
     me = session['username']
@@ -2396,6 +2458,7 @@ def leave_group(group_id):
 # Group E2EE Key Rotation
 # ──────────────────────────────────────────────
 @app.route('/groups/<group_id>/keys/rotate', methods=['POST'])
+@rate_limit(max_requests=10, window_seconds=300)
 @require_login
 def rotate_group_key(group_id):
     me = session['username']
@@ -2420,6 +2483,7 @@ def rotate_group_key(group_id):
 # Multi-Device Key Sync
 # ──────────────────────────────────────────────
 @app.route('/sync/keys', methods=['POST'])
+@rate_limit(max_requests=20, window_seconds=120)
 @require_login
 def sync_upload_key():
     me = session['username']
@@ -2449,6 +2513,7 @@ def sync_get_keys():
     return jsonify({'success': True, 'syncedKeys': synced, 'ownPublicKey': own_public})
 
 @app.route('/sync/keys/<device_id>', methods=['DELETE'])
+@rate_limit(max_requests=20, window_seconds=120)
 @require_login
 def sync_remove_key(device_id):
     me = session['username']
@@ -2484,6 +2549,7 @@ def rotate_secret_key():
 DRAFTS_FILE = DATA_DIR / 'drafts.json'
 
 @app.route('/drafts', methods=['POST'])
+@rate_limit(max_requests=60, window_seconds=60)
 @require_login
 def save_draft():
     me = session['username']
@@ -2525,6 +2591,7 @@ def get_wallpaper_presets():
     return jsonify({'success': True, 'presets': WALLPAPER_PRESETS})
 
 @app.route('/wallpaper/<chat_type>/<chat_id>', methods=['POST'])
+@rate_limit(max_requests=20, window_seconds=120)
 @require_login
 def set_wallpaper(chat_type, chat_id):
     me = session['username']
@@ -2556,6 +2623,7 @@ def get_wallpaper(chat_type, chat_id):
 # PWA Push Notifications
 # ──────────────────────────────────────────────
 @app.route('/push/subscribe', methods=['POST'])
+@rate_limit(max_requests=10, window_seconds=300)
 @require_login
 def push_subscribe():
     me = session['username']
@@ -2572,6 +2640,7 @@ def push_subscribe():
     return jsonify({'success': True})
 
 @app.route('/push/unsubscribe', methods=['POST'])
+@rate_limit(max_requests=10, window_seconds=300)
 @require_login
 def push_unsubscribe():
     me = session['username']
@@ -2628,6 +2697,7 @@ def get_link_preview():
 # Key Rotation
 # ──────────────────────────────────────────────
 @app.route('/key/rotate', methods=['POST'])
+@rate_limit(max_requests=5, window_seconds=600)
 @require_login
 def rotate_key():
     me = session['username']
@@ -2768,6 +2838,7 @@ def get_pinned_chats():
     return jsonify({'success': True, 'pinned': pins.get(me, [])})
 
 @app.route('/pinned-chats', methods=['POST'])
+@rate_limit(max_requests=30, window_seconds=120)
 @require_login
 def toggle_pinned_chat():
     me = session['username']
@@ -2803,6 +2874,7 @@ def get_folders():
     return jsonify({'success': True, 'folders': user_folders})
 
 @app.route('/folders', methods=['POST'])
+@rate_limit(max_requests=20, window_seconds=120)
 @require_login
 def save_folders():
     me = session['username']
@@ -2827,6 +2899,7 @@ def list_channels():
     return jsonify({'success': True, 'channels': visible})
 
 @app.route('/channels', methods=['POST'])
+@rate_limit(max_requests=10, window_seconds=300)
 @require_login
 def create_channel():
     me = session['username']
@@ -2852,6 +2925,7 @@ def create_channel():
     return jsonify({'success': True, 'channel': channel})
 
 @app.route('/channels/<channel_id>/send', methods=['POST'])
+@rate_limit(max_requests=30, window_seconds=120)
 @require_login
 def send_channel_message(channel_id):
     me = session['username']
@@ -2896,6 +2970,7 @@ def get_channel_messages(channel_id):
     return jsonify({'success': True, 'messages': filtered[:100]})
 
 @app.route('/channels/<channel_id>/subscribe', methods=['POST'])
+@rate_limit(max_requests=20, window_seconds=120)
 @require_login
 def subscribe_channel(channel_id):
     me = session['username']
@@ -2910,6 +2985,7 @@ def subscribe_channel(channel_id):
     return jsonify({'success': True})
 
 @app.route('/channels/<channel_id>/unsubscribe', methods=['POST'])
+@rate_limit(max_requests=20, window_seconds=120)
 @require_login
 def unsubscribe_channel(channel_id):
     me = session['username']
@@ -2956,6 +3032,7 @@ def resolve_invite(token):
     return jsonify({'success': True, 'groupId': group['id'], 'groupName': group['name'], 'members': len(group.get('members', []))})
 
 @app.route('/invite/<token>/join', methods=['POST'])
+@rate_limit(max_requests=10, window_seconds=60)
 @require_login
 def join_via_invite(token):
     me = session['username']
@@ -2977,6 +3054,7 @@ def join_via_invite(token):
 # Per-Chat Notification Mute
 # ──────────────────────────────────────────────
 @app.route('/settings/mute', methods=['POST'])
+@rate_limit(max_requests=20, window_seconds=120)
 @require_login
 def toggle_mute_chat():
     me = session['username']
@@ -3127,6 +3205,7 @@ def admin_dashboard_data():
 # Message Translation
 # ──────────────────────────────────────────────
 @app.route('/translate', methods=['POST'])
+@rate_limit(max_requests=30, window_seconds=60)
 @require_login
 def translate_message():
     data = request.get_json(force=True, silent=True) or {}
@@ -3200,6 +3279,7 @@ def get_contacts():
     return jsonify({'success': True, 'contacts': enriched})
 
 @app.route('/contacts', methods=['POST'])
+@rate_limit(max_requests=20, window_seconds=120)
 @require_login
 def add_contact():
     me = session['username']
@@ -3221,6 +3301,7 @@ def add_contact():
     return jsonify({'success': True})
 
 @app.route('/contacts/<username>', methods=['DELETE'])
+@rate_limit(max_requests=20, window_seconds=120)
 @require_login
 def remove_contact(username):
     me = session['username']
@@ -3231,6 +3312,7 @@ def remove_contact(username):
     return jsonify({'success': True})
 
 @app.route('/contacts/<username>', methods=['PUT'])
+@rate_limit(max_requests=20, window_seconds=120)
 @require_login
 def update_contact(username):
     me = session['username']
@@ -3248,6 +3330,7 @@ def update_contact(username):
     return jsonify({'success': True})
 
 @app.route('/contacts/sync', methods=['POST'])
+@rate_limit(max_requests=20, window_seconds=120)
 @require_login
 def sync_contacts():
     me = session['username']
@@ -3270,6 +3353,7 @@ def sync_contacts():
 LIVE_LOCATION_FILE = DATA_DIR / 'live_locations.json'
 
 @app.route('/location/live', methods=['POST'])
+@rate_limit(max_requests=30, window_seconds=120)
 @require_login
 def start_live_location():
     me = session['username']
@@ -3304,6 +3388,7 @@ def start_live_location():
     return jsonify({'success': True, 'shareId': share_id})
 
 @app.route('/location/live/<share_id>', methods=['PUT'])
+@rate_limit(max_requests=60, window_seconds=60)
 @require_login
 def update_live_location(share_id):
     me = session['username']
@@ -3331,6 +3416,7 @@ def get_live_location(share_id):
     return jsonify({'success': True, 'location': entry})
 
 @app.route('/location/live/<share_id>', methods=['DELETE'])
+@rate_limit(max_requests=20, window_seconds=120)
 @require_login
 def stop_live_location(share_id):
     me = session['username']
@@ -3377,6 +3463,7 @@ def get_stories():
     return jsonify({'success': True, 'stories': visible})
 
 @app.route('/stories', methods=['POST'])
+@rate_limit(max_requests=20, window_seconds=120)
 @require_login
 def create_story():
     me = session['username']
@@ -3414,6 +3501,7 @@ def create_story():
     return jsonify({'success': True, 'story': story})
 
 @app.route('/stories/<story_id>/view', methods=['POST'])
+@rate_limit(max_requests=60, window_seconds=60)
 @require_login
 def view_story(story_id):
     me = session['username']
@@ -3429,6 +3517,7 @@ def view_story(story_id):
     return jsonify({'success': False, 'message': 'Story ikke funnet.'}), 404
 
 @app.route('/stories/<story_id>', methods=['DELETE'])
+@rate_limit(max_requests=20, window_seconds=120)
 @require_login
 def delete_story(story_id):
     me = session['username']
@@ -3451,6 +3540,7 @@ def get_blocked():
     return jsonify({'success': True, 'blocked': blocked.get(me, [])})
 
 @app.route('/block/<username>', methods=['POST'])
+@rate_limit(max_requests=20, window_seconds=120)
 @require_login
 def block_user(username):
     me = session['username']
@@ -3464,6 +3554,7 @@ def block_user(username):
     return jsonify({'success': True})
 
 @app.route('/block/<username>', methods=['DELETE'])
+@rate_limit(max_requests=20, window_seconds=120)
 @require_login
 def unblock_user(username):
     me = session['username']
@@ -3479,6 +3570,7 @@ def unblock_user(username):
 DELETED_FOR_ME_FILE = DATA_DIR / 'deleted_for_me.json'
 
 @app.route('/messages/<message_id>/me', methods=['DELETE'])
+@rate_limit(max_requests=30, window_seconds=60)
 @require_login
 def delete_for_me(message_id):
     me = session['username']
