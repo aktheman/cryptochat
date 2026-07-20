@@ -140,7 +140,10 @@ def parse_iso(dt):
     if not dt:
         return None
     try:
-        return datetime.fromisoformat(dt.replace('Z', '+00:00'))
+        value = datetime.fromisoformat(dt.replace('Z', '+00:00'))
+        if value.tzinfo:
+            value = value.replace(tzinfo=None)
+        return value
     except Exception:
         return None
 

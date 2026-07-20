@@ -13,4 +13,4 @@ COPY . .
 RUN mkdir -p data
 EXPOSE 5000
 ENTRYPOINT ["tini", "--"]
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "4", "--timeout", "120", "--access-logfile", "-", "app:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--timeout", "120", "--access-logfile", "-", "app:app"]
