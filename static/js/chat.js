@@ -534,6 +534,7 @@
       app.innerHTML = `
         <header class="header">
           <div class="header-left">
+            <button id="mobileBackBtn" class="btn btn-small btn-ghost" style="display:none" aria-label="Tilbake">←</button>
             <h1 class="brand">CryptoChat</h1>
             <button id="logoutBtn" class="btn btn-small btn-ghost">Logg ut</button>
           </div>
@@ -910,6 +911,28 @@
         chatMeta.innerHTML = (e2eeHtml || '') + ' <span id="typingIndicator" class="typing-indicator"></span>';
       }
 
+      function setMobileChat(open) {
+        document.body.classList.toggle('chat-open', !!open);
+        const backBtn = document.getElementById('mobileBackBtn');
+        if (backBtn) backBtn.style.display = open ? '' : 'none';
+      }
+
+      function closeChat() {
+        setMobileChat(false);
+        activeChat = null;
+        chatTitle.textContent = 'Velg en samtale';
+        setChatMeta('');
+        messagesBox.innerHTML = '<div class="empty-state"><div class="empty-icon">💬</div><h3>Ingen samtale valgt</h3><p>Velg en kontakt eller gruppe.</p></div>';
+        composer.style.display = 'none';
+        document.getElementById('exportBtn').style.display = 'none';
+        document.getElementById('wallpaperBtn').style.display = 'none';
+        document.getElementById('muteBtn').style.display = 'none';
+        document.getElementById('groupAdminBtn').style.display = 'none';
+        document.getElementById('pollBtn').style.display = 'none';
+        document.getElementById('verifyBtn').style.display = 'none';
+        document.querySelectorAll('.item').forEach(el => el.classList.remove('active'));
+      }
+
       function renderUsers() {
         usersList.innerHTML = '';
         const list = Array.isArray(users) ? users : [];
@@ -1103,10 +1126,11 @@
 
       async function openSavedMessages() {
         activeChat = { type: 'saved', target: '__self__' };
-        chatTitle.textContent = '📌 Lagrede meldinger';
+        chatTitle.textContent = '📌 Lagrede meddelelser';
         setChatMeta('');
         messagesBox.innerHTML = '';
         composer.style.display = 'flex';
+        setMobileChat(true);
         clearImagePreview();
         document.getElementById('exportBtn').style.display = 'none';
         document.getElementById('pollBtn').style.display = 'none';
@@ -1184,6 +1208,7 @@
         resetDateSeparators();
         const replyBar = document.getElementById('replyBar');
         if (replyBar) replyBar.style.display = 'none';
+        setMobileChat(true);
         clearTimeout(typingTimeout);
         isTyping = false;
         chatTitle.textContent = getDisplayName(user);
@@ -1248,6 +1273,7 @@
         const replyBar = document.getElementById('replyBar');
         if (replyBar) replyBar.style.display = 'none';
         clearTimeout(typingTimeout);
+        setMobileChat(true);
         isTyping = false;
         chatTitle.textContent = group ? group.name : 'Gruppe';
         messagesBox.innerHTML = '';
@@ -4390,6 +4416,9 @@
       await loadChannels();
       renderChannels();
 
+      if (document.getElementById('mobileBackBtn')) {
+        document.getElementById('mobileBackBtn').addEventListener('click', () => closeChat());
+      }
     } catch (e) {
       document.getElementById('app').innerHTML = '<pre style="color:#ff8888;background:#0f1424;padding:16px;">' + escapeHtml(e.stack || e.message) + '</pre>';
     }
