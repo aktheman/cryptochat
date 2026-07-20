@@ -4,9 +4,14 @@ import json
 import pytest
 import tempfile
 import shutil
+from pathlib import Path
 
 os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-os.environ['SECRET_KEY'] = 'test-secret-key-for-testing'
+secret_key_path = Path(__file__).resolve().parent.parent / 'tests' / 'test_secret.key'
+if secret_key_path.exists():
+    os.environ['SECRET_KEY_FILE'] = str(secret_key_path)
+else:
+    os.environ['SECRET_KEY'] = 'test-secret-key-for-testing'
 
 from app import app
 from app import RATE_LIMIT_STORE

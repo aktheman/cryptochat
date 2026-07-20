@@ -10,3 +10,5 @@ data/
 .venv/
 /uploads/*
 !uploads/.gitkeep
+tests/test_secret.key
+secrets/
