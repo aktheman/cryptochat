@@ -389,6 +389,23 @@
   }
 
   const THEME_PRESETS = {
+    light: {
+      name: 'Light', dot: '#f0f0f0',
+      vars: {
+        '--c-bg': '#f4f6f9', '--c-surface': '#ffffff', '--c-surface-2': '#f8f9fb',
+        '--c-surface-hover': '#f0f2f5', '--c-chat-bg': '#f4f6f9',
+        '--c-border': '#e5e7eb', '--c-border-item': '#d1d5db', '--c-border-focus': '#7c3aed',
+        '--c-text': '#0f172a', '--c-text-chat': '#1e293b', '--c-text-meta': '#64748b',
+        '--c-text-muted': '#94a3b8', '--c-text-name': '#1e293b', '--c-text-preview': '#64748b',
+        '--c-sender': '#e11d48', '--c-brand': '#7c3aed', '--c-accent': '#7c3aed',
+        '--c-accent2': '#a78bfa', '--c-success': '#16a34a',
+        '--c-sent-bg': '#ede9fe', '--c-sent-border': '#7c3aed', '--c-sent-text': '#1e293b',
+        '--c-received-bg': '#ffffff', '--c-received-border': '#d1d5db',
+        '--c-input-bg': '#ffffff', '--c-input-border': '#d1d5db', '--c-input-text': '#0f172a',
+        '--c-badge-bg': '#f3f4f6', '--c-badge-border': '#e5e7eb', '--c-badge-text': '#64748b',
+        '--c-btn-ghost-border': '#d1d5db',
+      }
+    },
     dark: {
       name: 'Dark', dot: '#7a3bff',
       vars: {}
@@ -975,14 +992,36 @@
 
       // ── Forward message ──
       async function forwardMsg(messageId) {
-        const target = prompt('Videresend til (brukernavn):');
-        if (!target) return;
-        try {
-          await loadJSON('/messages/' + encodeURIComponent(messageId) + '/forward', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target: target.trim().toLowerCase(), target_type: 'user' }) });
-          toast('Melding videresendt', 'success');
-        } catch (e) {
-          toast('Kunne ikke videresende');
-        }
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        let optionsHtml = '<option value="">Velg bruker...</option>';
+        const usersRes = await loadJSON('/users').catch(() => ({ users: [] }));
+        (usersRes.users || []).forEach(u => {
+          if (u !== window.__APP__?.username) optionsHtml += '<option value="user:' + escapeHtml(u) + '">' + escapeHtml(u) + '</option>';
+        });
+        groups.forEach(g => {
+          optionsHtml += '<option value="group:' + escapeHtml(g.id) + '">' + escapeHtml(g.name) + '</option>';
+        });
+        overlay.innerHTML = '<div class="modal" style="max-width:400px"><h2>Videresend melding</h2>'
+          + '<div class="field"><label>Mål</label><select id="fwdTarget" style="width:100%;padding:10px;background:var(--c-input-bg);color:var(--c-input-text);border:1px solid var(--c-input-border);border-radius:10px;">'
+          + optionsHtml + '</select></div>'
+          + '<div class="modal-actions"><button id="fwdSendBtn" class="btn btn-primary btn-small">Videresend</button>'
+          + '<button id="fwdCancelBtn" class="btn btn-ghost btn-small">Avbryt</button></div></div>';
+        document.body.appendChild(overlay);
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+        overlay.querySelector('#fwdCancelBtn').addEventListener('click', () => overlay.remove());
+        overlay.querySelector('#fwdSendBtn').addEventListener('click', async () => {
+          const val = overlay.querySelector('#fwdTarget').value;
+          if (!val) { toast('Velg et mål'); return; }
+          const [targetType, target] = val.split(':');
+          try {
+            await loadJSON('/messages/' + encodeURIComponent(messageId) + '/forward', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target, target_type: targetType }) });
+            toast('Melding videresendt', 'success');
+            overlay.remove();
+          } catch (e) {
+            toast('Kunne ikke videresende');
+          }
+        });
       }
 
       // ── Export chat ──
@@ -1887,7 +1926,7 @@
         document.querySelectorAll('.emoji-picker-popup').forEach(el => el.remove());
         const picker = document.createElement('div');
         picker.className = 'emoji-picker-popup';
-        ['👍', '❤️', '😂', '😮', '😢', '😡', '🎉', '🔥'].forEach(emoji => {
+        ['👍','❤️','😂','😮','😢','😡','🎉','🔥','👏','💯','👀','🤔','😍','🙏','💀','🫡'].forEach(emoji => {
           const btn = document.createElement('button');
           btn.className = 'emoji-pick';
           btn.textContent = emoji;
@@ -1898,6 +1937,18 @@
           });
           picker.appendChild(btn);
         });
+        const moreBtn = document.createElement('button');
+        moreBtn.className = 'emoji-pick';
+        moreBtn.textContent = '…';
+        moreBtn.style.fontSize = '1.2rem';
+        moreBtn.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          picker.remove();
+          currentReactionTarget = messageId;
+          const fullPicker = document.getElementById('fullEmojiPicker');
+          if (fullPicker) fullPicker.classList.add('open');
+        });
+        picker.appendChild(moreBtn);
         msgEl.appendChild(picker);
         setTimeout(() => {
           const close = (ev) => {
@@ -2509,6 +2560,9 @@
             document.body.style.removeProperty(prop);
           });
         }
+        if (themeName === 'light') {
+          document.body.classList.add('theme-light');
+        }
         currentTheme = themeName;
         localStorage.setItem('chat-theme', themeName);
         fetch('/theme', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ theme: themeName }) }).catch(() => {});
@@ -2600,10 +2654,26 @@
         document.querySelectorAll('.modal-overlay').forEach(el => el.remove());
         const overlay = document.createElement('div');
         overlay.className = 'modal-overlay';
-        overlay.innerHTML = '<div class="modal" style="max-width:480px"><h2>Enheter</h2><div id="sessionsList" style="max-height:400px;overflow:auto;">Laster...</div><div class="modal-actions"><button id="sessionsCloseBtn" class="btn btn-ghost">Lukk</button></div></div>';
+        overlay.innerHTML = '<div class="modal" style="max-width:480px"><h2>Enheter & Nøkler</h2>'
+          + '<div id="sessionsList" style="max-height:300px;overflow:auto;">Laster...</div>'
+          + '<hr style="border-color:var(--c-border);margin:12px 0;">'
+          + '<div id="syncedKeysList" style="max-height:200px;overflow:auto;">Laster nøkler...</div>'
+          + '<div class="modal-actions"><button id="syncKeyBtn" class="btn btn-primary btn-small">Synkroniser nøkkel</button>'
+          + '<button id="sessionsCloseBtn" class="btn btn-ghost">Lukk</button></div></div>';
         document.body.appendChild(overlay);
         overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
         overlay.querySelector('#sessionsCloseBtn').addEventListener('click', () => overlay.remove());
+
+        overlay.querySelector('#syncKeyBtn').addEventListener('click', async () => {
+          try {
+            const pubKey = localStorage.getItem('identityKeyPair') ? JSON.parse(localStorage.getItem('identityKeyPair')).publicKey : '';
+            if (!pubKey) { toast('Ingen nøkkel å synkronisere'); return; }
+            const deviceId = navigator.userAgent.slice(0, 40);
+            await loadJSON('/sync/keys', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ publicKey: pubKey, deviceId }) });
+            toast('Nøkkel synkronisert', 'success');
+            loadSyncedKeys();
+          } catch (e) { toast('Synkronisering feilet'); }
+        });
 
         async function loadSessions() {
           try {
@@ -2613,7 +2683,7 @@
               list.innerHTML = '<p style="color:var(--c-text-muted)">Ingen aktive økter</p>';
               return;
             }
-            list.innerHTML = data.sessions.map(s => '<div class="session-item">'
+            list.innerHTML = '<h3 style="font-size:.85rem;color:var(--c-text-muted);margin-bottom:6px;">Økter</h3>' + data.sessions.map(s => '<div class="session-item">'
               + '<div class="session-info"><div class="session-device">' + escapeHtml(s.device || 'Unknown')
               + (s.current ? ' <span class="session-current">(denne)</span>' : '')
               + '</div><div class="session-time">' + escapeHtml(formatTime(s.created)) + (s.ip ? ' · ' + escapeHtml(s.ip) : '') + '</div></div>'
@@ -2634,7 +2704,37 @@
             overlay.querySelector('#sessionsList').innerHTML = '<p style="color:var(--c-text-muted)">Kunne ikke laste økter</p>';
           }
         }
+
+        async function loadSyncedKeys() {
+          try {
+            const data = await loadJSON('/sync/keys');
+            const list = overlay.querySelector('#syncedKeysList');
+            const keys = data.syncedKeys || {};
+            const entries = Object.entries(keys);
+            if (!entries.length) {
+              list.innerHTML = '<h3 style="font-size:.85rem;color:var(--c-text-muted);margin-bottom:6px;">Synkroniserte nøkler</h3><p style="color:var(--c-text-muted);font-size:.8rem;">Ingen nøkler synkronisert ennå.</p>';
+              return;
+            }
+            list.innerHTML = '<h3 style="font-size:.85rem;color:var(--c-text-muted);margin-bottom:6px;">Synkroniserte nøkler (' + entries.length + ')</h3>'
+              + entries.map(([id, k]) => '<div class="session-item"><div class="session-info"><div class="session-device">' + escapeHtml(id.slice(0, 40))
+              + '</div><div class="session-time">' + escapeHtml(formatTime(k.updated)) + '</div></div>'
+              + '<button class="session-revoke sync-delete-btn" data-id="' + escapeHtml(id) + '" style="font-size:.72rem;">Fjern</button></div>').join('');
+            list.querySelectorAll('.sync-delete-btn').forEach(btn => {
+              btn.addEventListener('click', async () => {
+                try {
+                  await loadJSON('/sync/keys/' + encodeURIComponent(btn.dataset.id), { method: 'DELETE' });
+                  toast('Nøkkel fjernet', 'success');
+                  loadSyncedKeys();
+                } catch (e) { toast('Kunne ikke fjerne nøkkel'); }
+              });
+            });
+          } catch (e) {
+            overlay.querySelector('#syncedKeysList').innerHTML = '';
+          }
+        }
+
         loadSessions();
+        loadSyncedKeys();
       });
 
       document.getElementById('myKeyBtn').addEventListener('click', async () => {
@@ -3030,41 +3130,111 @@
         if (!activeChat || activeChat.type !== 'group') return;
         const group = groups.find(g => g.id === activeChat.target);
         if (!group) return;
-        const isCreator = group.creator === (window.__APP__?.username || '');
-        const isAdmin = (group.admins || []).includes(window.__APP__?.username || '');
+        const me = window.__APP__?.username || '';
+        const isCreator = group.created_by === me;
+        const isAdmin = (group.admins || []).includes(me);
         let html = '<div class="modal-overlay" id="groupAdminModal"><div class="modal" style="max-width:500px"><h2>Gruppeinnstillinger</h2>';
+        html += '<div class="field"><label>Medlemmer (' + (group.members || []).length + ')</label><div id="memberList">';
+        (group.members || []).forEach(m => {
+          const isAdm = (group.admins || []).includes(m);
+          const isMod = (group.mods || []).includes(m);
+          const role = m === group.created_by ? 'Oppretter' : isAdm ? 'Admin' : isMod ? 'Mod' : '';
+          html += '<div style="display:flex;align-items:center;gap:8px;margin:4px 0;">';
+          html += '<span style="flex:1;">' + escapeHtml(m) + (role ? ' <span class="' + (isAdm ? 'admin-badge' : 'mod-badge') + '">' + role + '</span>' : '') + '</span>';
+          if (isCreator && m !== group.created_by) {
+            html += '<select class="input-text admin-role-select" data-user="' + escapeHtml(m) + '" style="width:100px;padding:4px;font-size:.8rem;">';
+            html += '<option value="member"' + (!isAdm && !isMod ? ' selected' : '') + '>Medlem</option>';
+            html += '<option value="mod"' + (isMod ? ' selected' : '') + '>Mod</option>';
+            html += '<option value="admin"' + (isAdm ? ' selected' : '') + '>Admin</option>';
+            html += '</select>';
+            html += '<button class="btn btn-ghost btn-small remove-member-btn" data-user="' + escapeHtml(m) + '" style="color:#ef4444;border-color:#ef4444;font-size:.75rem;">Fjern</button>';
+          } else if (m === me && !isCreator) {
+            html += '<button class="btn btn-ghost btn-small leave-group-btn" style="color:#ef4444;border-color:#ef4444;font-size:.75rem;">Forlat</button>';
+          }
+          html += '</div>';
+        });
+        html += '</div></div>';
+        if (isCreator || isAdmin) {
+          html += '<div class="field"><label>Legg til medlem</label><div style="display:flex;gap:8px;">';
+          html += '<input id="addMemberInput" class="input-text" placeholder="Brukernavn" style="flex:1;">';
+          html += '<button id="addMemberBtn" class="btn btn-primary btn-small">Legg til</button></div></div>';
+        }
         if (isCreator) {
           html += '<div class="field"><label>Sakte modus</label><select id="slowmodeSelect" class="input-text">';
           [0, 10, 30, 60, 120, 300, 600].forEach(s => {
             html += '<option value="' + s + '">' + (s === 0 ? 'Av' : s + ' sek') + '</option>';
           });
           html += '</select></div>';
-        }
-        if (isCreator) {
-          html += '<div class="field"><label>Admins & Moderatorer</label><div id="adminList">';
-          (group.members || []).forEach(m => {
-            const isAdm = (group.admins || []).includes(m);
-            const isMod = (group.mods || []).includes(m);
-            const role = m === group.creator ? 'Oppretter' : isAdm ? 'Admin' : isMod ? 'Mod' : '';
-            html += '<div style="display:flex;align-items:center;gap:8px;margin:4px 0;">';
-            html += '<span style="flex:1;">' + escapeHtml(m) + (role ? ' <span class="' + (isAdm ? 'admin-badge' : 'mod-badge') + '">' + role + '</span>' : '') + '</span>';
-            if (m !== group.creator) {
-              html += '<select class="input-text admin-role-select" data-user="' + escapeHtml(m) + '" style="width:120px;padding:4px;">';
-              html += '<option value="member"' + (!isAdm && !isMod ? ' selected' : '') + '>Medlem</option>';
-              html += '<option value="mod"' + (isMod ? ' selected' : '') + '>Moderator</option>';
-              html += '<option value="admin"' + (isAdm ? ' selected' : '') + '>Admin</option>';
-              html += '</select>';
-            }
-            html += '</div>';
-          });
-          html += '</div></div>';
+          html += '<div class="field"><label>E2EE Nøkkel</label><button id="rotateKeyBtn" class="btn btn-ghost btn-small" style="border-color:var(--c-accent);">Roter nøkkel</button></div>';
         }
         html += '<div class="modal-actions"><button class="btn btn-ghost" id="groupAdminClose">Lukk</button></div></div></div>';
         document.body.insertAdjacentHTML('beforeend', html);
         const modal = document.getElementById('groupAdminModal');
         modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
         modal.querySelector('#groupAdminClose').addEventListener('click', () => modal.remove());
+        if (isCreator || isAdmin) {
+          const addBtn = modal.querySelector('#addMemberBtn');
+          const addInput = modal.querySelector('#addMemberInput');
+          if (addBtn && addInput) {
+            addBtn.addEventListener('click', async () => {
+              const username = addInput.value.trim().toLowerCase();
+              if (!username) return;
+              try {
+                await loadJSON('/groups/' + encodeURIComponent(activeChat.target) + '/members', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username }) });
+                toast(username + ' lagt til', 'success');
+                const data = await loadJSON('/groups');
+                groups.length = 0;
+                groups.push(...(data.groups || []));
+                modal.remove();
+                document.getElementById('groupAdminBtn').click();
+              } catch (e) { toast('Kunne ikke legge til: ' + e.message); }
+            });
+          }
+        }
+        modal.querySelectorAll('.remove-member-btn').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const user = btn.dataset.user;
+            if (!confirm('Fjerne ' + user + '?')) return;
+            try {
+              await loadJSON('/groups/' + encodeURIComponent(activeChat.target) + '/members/' + encodeURIComponent(user), { method: 'DELETE' });
+              toast(user + ' fjernet', 'success');
+              const data = await loadJSON('/groups');
+              groups.length = 0;
+              groups.push(...(data.groups || []));
+              modal.remove();
+              document.getElementById('groupAdminBtn').click();
+            } catch (e) { toast('Kunne ikke fjerne'); }
+          });
+        });
+        const leaveBtn = modal.querySelector('.leave-group-btn');
+        if (leaveBtn) {
+          leaveBtn.addEventListener('click', async () => {
+            if (!confirm('Forlate gruppen?')) return;
+            try {
+              await loadJSON('/groups/' + encodeURIComponent(activeChat.target) + '/leave', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+              toast('Forlatt gruppe', 'success');
+              modal.remove();
+              activeChat = null;
+              document.getElementById('app').innerHTML = '';
+              const data = await loadJSON('/groups');
+              groups.length = 0;
+              groups.push(...(data.groups || []));
+              renderGroups();
+              renderSidebar();
+            } catch (e) { toast(e.message || 'Kunne ikke forlate'); }
+          });
+        }
         if (isCreator) {
+          const rotateBtn = modal.querySelector('#rotateKeyBtn');
+          if (rotateBtn) {
+            rotateBtn.addEventListener('click', async () => {
+              if (!confirm('Roter E2EE-nøkkel? Alle medlemmer må laste nøkler på nytt.')) return;
+              try {
+                await loadJSON('/groups/' + encodeURIComponent(activeChat.target) + '/keys/rotate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+                toast('Nøkkel rotert', 'success');
+              } catch (e) { toast('Kunne ikke rotere nøkkel'); }
+            });
+          }
           const smSelect = modal.querySelector('#slowmodeSelect');
           if (smSelect) {
             try {

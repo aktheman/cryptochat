@@ -2216,6 +2216,170 @@ def remove_group_admin(group_id, username):
     return jsonify({'success': True})
 
 # ──────────────────────────────────────────────
+# Group Member Management
+# ──────────────────────────────────────────────
+@app.route('/groups/<group_id>/members', methods=['POST'])
+@require_login
+def add_group_member(group_id):
+    me = session['username']
+    data = request.get_json(force=True, silent=True) or {}
+    target = sanitize_input(data.get('username', ''), 30).lower()
+    if not target:
+        return jsonify({'success': False, 'message': 'Brukernavn er påkrevd.'}), 400
+    groups = load_json(GROUPS_FILE, [])
+    group = next((g for g in groups if g.get('id') == group_id), None)
+    if not group:
+        return jsonify({'success': False, 'message': 'Gruppe ikke funnet.'}), 404
+    if me not in group.get('members', []):
+        return jsonify({'success': False, 'message': 'Ikke medlem.'}), 403
+    if me != group.get('created_by') and me not in group.get('admins', []):
+        return jsonify({'success': False, 'message': 'Mangler tillatelse.'}), 403
+    users = load_json(USERS_FILE, {})
+    if target not in users:
+        return jsonify({'success': False, 'message': 'Bruker ikke funnet.'}), 404
+    if target in group.get('members', []):
+        return jsonify({'success': False, 'message': 'Allerede medlem.'}), 400
+    group.setdefault('members', []).append(target)
+    save_json(GROUPS_FILE, groups)
+    return jsonify({'success': True, 'message': f'{target} lagt til.'})
+
+@app.route('/groups/<group_id>/members/<username>', methods=['DELETE'])
+@require_login
+def remove_group_member(group_id, username):
+    me = session['username']
+    groups = load_json(GROUPS_FILE, [])
+    group = next((g for g in groups if g.get('id') == group_id), None)
+    if not group:
+        return jsonify({'success': False, 'message': 'Gruppe ikke funnet.'}), 404
+    is_owner = me == group.get('created_by')
+    is_admin = me in group.get('admins', [])
+    is_self = me == username
+    if not is_owner and not is_admin and not is_self:
+        return jsonify({'success': False, 'message': 'Mangler tillatelse.'}), 403
+    if username not in group.get('members', []):
+        return jsonify({'success': False, 'message': 'Ikke medlem.'}), 400
+    group['members'] = [m for m in group.get('members', []) if m != username]
+    group['admins'] = [a for a in group.get('admins', []) if a != username]
+    group['mods'] = [m for m in group.get('mods', []) if m != username]
+    save_json(GROUPS_FILE, groups)
+    keys_data = load_json(KEYS_FILE, {})
+    e2ee_key = f"e2ee::{group_id}"
+    if e2ee_key in keys_data and 'encrypted_keys' in keys_data[e2ee_key]:
+        keys_data[e2ee_key]['encrypted_keys'].pop(username, None)
+        keys_data[e2ee_key]['rekeyed'] = now_iso()
+        save_json(KEYS_FILE, keys_data)
+    return jsonify({'success': True, 'message': f'{username} fjernet.'})
+
+@app.route('/groups/<group_id>/leave', methods=['POST'])
+@require_login
+def leave_group(group_id):
+    me = session['username']
+    groups = load_json(GROUPS_FILE, [])
+    group = next((g for g in groups if g.get('id') == group_id), None)
+    if not group:
+        return jsonify({'success': False, 'message': 'Gruppe ikke funnet.'}), 404
+    if me not in group.get('members', []):
+        return jsonify({'success': False, 'message': 'Ikke medlem.'}), 400
+    if me == group.get('created_by'):
+        return jsonify({'success': False, 'message': 'Oppretter kan ikke forlate. Slett gruppen i stedet.'}), 400
+    group['members'] = [m for m in group.get('members', []) if m != me]
+    group['admins'] = [a for a in group.get('admins', []) if a != me]
+    group['mods'] = [m for m in group.get('mods', []) if m != me]
+    save_json(GROUPS_FILE, groups)
+    keys_data = load_json(KEYS_FILE, {})
+    e2ee_key = f"e2ee::{group_id}"
+    if e2ee_key in keys_data and 'encrypted_keys' in keys_data[e2ee_key]:
+        keys_data[e2ee_key]['encrypted_keys'].pop(me, None)
+        save_json(KEYS_FILE, keys_data)
+    return jsonify({'success': True, 'message': 'Forlatt gruppe.'})
+
+# ──────────────────────────────────────────────
+# Group E2EE Key Rotation
+# ──────────────────────────────────────────────
+@app.route('/groups/<group_id>/keys/rotate', methods=['POST'])
+@require_login
+def rotate_group_key(group_id):
+    me = session['username']
+    groups = load_json(GROUPS_FILE, [])
+    group = next((g for g in groups if g.get('id') == group_id), None)
+    if not group:
+        return jsonify({'success': False, 'message': 'Gruppe ikke funnet.'}), 404
+    if me != group.get('created_by') and me not in group.get('admins', []):
+        return jsonify({'success': False, 'message': 'Mangler tillatelse.'}), 403
+    keys_data = load_json(KEYS_FILE, {})
+    e2ee_key = f"e2ee::{group_id}"
+    keys_data[e2ee_key] = {
+        'encrypted_keys': {},
+        'uploaded_by': me,
+        'updated': now_iso(),
+        'rotation_id': secrets.token_hex(8),
+    }
+    save_json(KEYS_FILE, keys_data)
+    return jsonify({'success': True, 'message': 'Nøkkel rotert. Last inn nøkler på nytt.'})
+
+# ──────────────────────────────────────────────
+# Multi-Device Key Sync
+# ──────────────────────────────────────────────
+@app.route('/sync/keys', methods=['POST'])
+@require_login
+def sync_upload_key():
+    me = session['username']
+    data = request.get_json(force=True, silent=True) or {}
+    public_key = data.get('publicKey', '')
+    device_id = sanitize_input(data.get('deviceId', ''), 64)
+    if not public_key:
+        return jsonify({'success': False, 'message': 'Manglende nøkkel.'}), 400
+    users = load_json(USERS_FILE, {})
+    user = users.get(me, {})
+    synced = user.setdefault('synced_keys', {})
+    synced[device_id] = {
+        'publicKey': public_key,
+        'updated': now_iso(),
+    }
+    save_json(USERS_FILE, users)
+    return jsonify({'success': True})
+
+@app.route('/sync/keys', methods=['GET'])
+@require_login
+def sync_get_keys():
+    me = session['username']
+    users = load_json(USERS_FILE, {})
+    user = users.get(me, {})
+    synced = user.get('synced_keys', {})
+    own_public = user.get('identity_keypair', {}).get('public', '')
+    return jsonify({'success': True, 'syncedKeys': synced, 'ownPublicKey': own_public})
+
+@app.route('/sync/keys/<device_id>', methods=['DELETE'])
+@require_login
+def sync_remove_key(device_id):
+    me = session['username']
+    users = load_json(USERS_FILE, {})
+    user = users.get(me, {})
+    synced = user.get('synced_keys', {})
+    synced.pop(device_id, None)
+    save_json(USERS_FILE, users)
+    return jsonify({'success': True})
+
+# ──────────────────────────────────────────────
+# SECRET_KEY Rotation
+# ──────────────────────────────────────────────
+@app.route('/admin/rotate-secret', methods=['POST'])
+@require_login
+def rotate_secret_key():
+    me = session['username']
+    users = load_json(USERS_FILE, {})
+    user = users.get(me, {})
+    if not user.get('is_admin') and me != 'aktheman':
+        return jsonify({'success': False, 'message': 'Mangler tillatelse.'}), 403
+    new_key = secrets.token_hex(32)
+    key_path = Path('secrets/secret_key')
+    key_path.parent.mkdir(parents=True, exist_ok=True)
+    key_path.write_text(new_key)
+    key_path.chmod(0o600)
+    app.secret_key = new_key.encode()
+    return jsonify({'success': True, 'message': 'SECRET_KEY rotert. Logg inn på nytt.'})
+
+# ──────────────────────────────────────────────
 # Draft Messages
 # ──────────────────────────────────────────────
 DRAFTS_FILE = DATA_DIR / 'drafts.json'
