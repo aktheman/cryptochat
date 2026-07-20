@@ -329,11 +329,13 @@
       container.className = 'toasts';
       document.body.appendChild(container);
     }
+    const icons = { error: '❌ ', success: '✅ ', info: 'ℹ️ ' };
     const item = document.createElement('div');
     item.className = 'toast ' + type;
-    item.textContent = message;
+    item.textContent = (icons[type] || '') + message;
+    item.addEventListener('click', () => item.remove());
     container.appendChild(item);
-    setTimeout(() => item.remove(), 2500);
+    setTimeout(() => { if (item.parentElement) item.remove(); }, 2500);
   }
 
   function escapeHtml(str) {
@@ -524,6 +526,7 @@
       const users = usersData.users || [];
       window.__allUsers = users || [];
       const groups = groupsData.groups || [];
+      window.__allGroups = groups || [];
 
       const app = document.getElementById('app');
       if (!app) throw new Error('Missing #app');
@@ -1039,7 +1042,8 @@
         try {
           const data = await loadJSON('/channels');
           channels = data.channels || [];
-        } catch(e) { channels = []; }
+          window.__allChannels = channels;
+        } catch(e) { channels = []; window.__allChannels = []; }
       }
 
       function renderChannels() {
@@ -1176,11 +1180,15 @@
       async function openChat(user) {
         activeChat = { type: 'user', target: user };
         replyingTo = null;
+        userScrolledUp = false;
+        resetDateSeparators();
         const replyBar = document.getElementById('replyBar');
         if (replyBar) replyBar.style.display = 'none';
         clearTimeout(typingTimeout);
         isTyping = false;
         chatTitle.textContent = getDisplayName(user);
+        setMobileSidebar(false);
+        history.pushState({ chat: user, type: 'user' }, '', '#chat/' + user);
         const key = await getPeerPublicKeyPem(user);
         activeChat.peerPublicKey = key;
         setChatMeta(key ? '<span class="e2ee">🔒 Ende-til-ende-kryptert</span>' : '');
@@ -1549,6 +1557,9 @@
         menu.className = 'quick-actions-menu';
         menu.style.cssText = 'position:fixed;left:' + x + 'px;top:' + y + 'px;background:var(--c-surface);border:1px solid var(--c-border);border-radius:12px;padding:6px;z-index:99999;box-shadow:0 4px 16px rgba(0,0,0,.4);min-width:160px;';
 
+        const me = window.__APP__?.username || '';
+        const isOwn = msgEl.classList.contains('sent');
+
         const actions = [
           { icon: '↩', label: 'Svar', action: () => { startReply(msgId); } },
           { icon: '↪', label: 'Videresend', action: () => { forwardMsg(msgId); } },
@@ -1569,13 +1580,30 @@
               toast('Lagret', 'success');
             } catch(e) { toast('Kunne ikke lagre'); }
           }},
-          { icon: '🗑', label: 'Slett', action: async () => {
-            if (!activeChat || !confirm('Slette melding?')) return;
+          ...(isOwn ? [{ icon: '✏️', label: 'Rediger', action: () => { editMessage(msgId); } }] : []),
+          { icon: '🌐', label: 'Oversett', action: async () => {
+            const textEl = msgEl.querySelector('.msg-text');
+            if (!textEl) return;
+            const orig = textEl.textContent;
+            if (textEl.dataset.translated === 'true') {
+              textEl.textContent = textEl.dataset.origText || orig;
+              textEl.dataset.translated = 'false';
+              return;
+            }
+            toast('Oversetter...');
             try {
-              await fetch('/messages/' + encodeURIComponent(msgId), { method: 'DELETE' });
-              msgEl.remove();
-              toast('Slettet', 'success');
-            } catch(e) { toast('Kunne ikke slette'); }
+              const lang = localStorage.getItem('translateLang') || 'no';
+              const res = await loadJSON('/translate', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({text:orig, target:lang}) });
+              if (res.success) {
+                textEl.dataset.origText = orig;
+                textEl.dataset.translated = 'true';
+                textEl.innerHTML = escapeHtml(res.translated) + ' <span style="font-size:.7rem;color:var(--c-text-muted);font-style:italic;">(' + res.sourceLang + '→' + res.targetLang + ')</span>';
+              } else { toast(res.message || 'Feil'); }
+            } catch(e) { toast('Oversettelse feilet'); }
+          }},
+          { icon: '🗑', label: 'Slett', action: async () => {
+            if (!activeChat) return;
+            showDeleteChoice(msgId, msgEl);
           }},
         ];
 
@@ -1657,13 +1685,15 @@
 
         let _longPressTimer;
         item.addEventListener('touchstart', (e) => {
+          item.classList.add('touching');
           _longPressTimer = setTimeout(() => {
+            item.classList.remove('touching');
             const touch = e.touches[0];
             showQuickActions(item, touch.clientX, touch.clientY);
           }, 500);
         });
-        item.addEventListener('touchend', () => clearTimeout(_longPressTimer));
-        item.addEventListener('touchmove', () => clearTimeout(_longPressTimer));
+        item.addEventListener('touchend', () => { item.classList.remove('touching'); clearTimeout(_longPressTimer); });
+        item.addEventListener('touchmove', () => { item.classList.remove('touching'); clearTimeout(_longPressTimer); });
 
         let fileHtml = '';
         if (message.type === 'file' && !message.deleted) {
@@ -3782,6 +3812,577 @@
         });
       }
       initSwipeToReply();
+
+      // ──────────────────────────────────────────────
+      // STORIES BAR
+      // ──────────────────────────────────────────────
+      async function loadStories() {
+        try {
+          const data = await loadJSON('/stories');
+          const stories = data.stories || [];
+          renderStoriesBar(stories);
+        } catch(e) {}
+      }
+      function renderStoriesBar(stories) {
+        let bar = document.getElementById('storiesBar');
+        if (!bar) {
+          bar = document.createElement('div');
+          bar.id = 'storiesBar';
+          bar.style.cssText = 'display:flex;gap:12px;padding:10px 12px;overflow-x:auto;border-bottom:1px solid var(--c-border);scrollbar-width:none;';
+          const sidebar = document.querySelector('.sidebar');
+          if (sidebar) sidebar.insertBefore(bar, sidebar.firstChild);
+        }
+        const me = window.__APP__?.username;
+        const myStories = stories.filter(s => s.username === me);
+        const otherStories = stories.filter(s => s.username !== me);
+        let html = '';
+        html += '<div onclick="window._createStory()" style="display:flex;flex-direction:column;align-items:center;cursor:pointer;flex-shrink:0;width:56px;" title="Ny story">';
+        html += '<div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#7a3bff,#cf6fef);display:flex;align-items:center;justify-content:center;font-size:1.3rem;border:2px solid var(--c-primary);">＋</div>';
+        html += '<span style="font-size:.65rem;color:var(--c-text-muted);margin-top:2px;">Story</span></div>';
+        if (myStories.length) {
+          html += '<div onclick="window._viewStory(\'' + myStories[0].id + '\')" style="display:flex;flex-direction:column;align-items:center;cursor:pointer;flex-shrink:0;width:56px;">';
+          html += '<div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#cf6fef,#7a3bff);display:flex;align-items:center;justify-content:center;font-size:1.1rem;border:2px solid #cf6fef;">👤</div>';
+          html += '<span style="font-size:.65rem;color:var(--c-text-muted);margin-top:2px;">Din</span></div>';
+        }
+        otherStories.forEach(s => {
+          html += '<div onclick="window._viewStory(\'' + s.id + '\')" style="display:flex;flex-direction:column;align-items:center;cursor:pointer;flex-shrink:0;width:56px;">';
+          html += '<div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#1c6d4f,#1c3060);display:flex;align-items:center;justify-content:center;font-size:1.1rem;border:2px solid #7a3bff;">👤</div>';
+          html += '<span style="font-size:.65rem;color:var(--c-text-muted);margin-top:2px;">' + escapeHtml(s.username).substring(0, 6) + '</span></div>';
+        });
+        bar.innerHTML = html;
+        bar.style.display = stories.length ? 'flex' : 'none';
+      }
+      window._createStory = async function() {
+        const content = prompt('Skriv din story:');
+        if (!content) return;
+        const bgColors = ['#1c1030','#301c1c','#1c3060','#1c6d4f','#6d4f1c'];
+        const bgColor = bgColors[Math.floor(Math.random() * bgColors.length)];
+        try {
+          await loadJSON('/stories', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ content, type:'text', bgColor, textColor:'#f3f1ff' }) });
+          toast('Story publisert!');
+          await loadStories();
+        } catch(e) { toast('Kunne ikke publisere story'); }
+      };
+      window._viewStory = async function(storyId) {
+        try {
+          const data = await loadJSON('/stories');
+          const stories = data.stories || [];
+          const story = stories.find(s => s.id === storyId);
+          if (!story) return;
+          const overlay = document.createElement('div');
+          overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;z-index:999999;';
+          overlay.innerHTML = '<div style="background:' + (story.bgColor || '#1c1030') + ';color:' + (story.textColor || '#f3f1ff') + ';border-radius:16px;padding:40px;max-width:400px;width:90%;text-align:center;position:relative;">' +
+            '<button onclick="this.closest(\'div[style]\').remove()" style="position:absolute;top:8px;right:12px;background:none;border:none;color:inherit;font-size:1.3rem;cursor:pointer;">✕</button>' +
+            '<div style="font-size:.8rem;color:var(--c-text-muted);margin-bottom:12px;">' + escapeHtml(story.username) + ' · ' + formatTime(story.created) + '</div>' +
+            '<div style="font-size:1.2rem;line-height:1.5;">' + escapeHtml(story.content) + '</div>' +
+            '<div style="font-size:.75rem;color:var(--c-text-muted);margin-top:16px;">👁 ' + (story.views?.length || 0) + ' visninger</div></div>';
+          overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+          document.body.appendChild(overlay);
+          await loadJSON('/stories/' + storyId + '/view', { method:'POST', headers:{'Content-Type':'application/json'}, body:'{}' });
+        } catch(e) {}
+      };
+      await loadStories();
+
+      // ──────────────────────────────────────────────
+      // CONTACTS PANEL
+      // ──────────────────────────────────────────────
+      async function loadContactsPanel() {
+        try {
+          const data = await loadJSON('/contacts');
+          window._myContacts = data.contacts || [];
+        } catch(e) { window._myContacts = []; }
+      }
+      window._showContacts = async function() {
+        await loadContactsPanel();
+        const contacts = window._myContacts || [];
+        const overlay = document.createElement('div');
+        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:999999;';
+        let contactsHtml = contacts.map(c =>
+          '<div style="display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--c-border);border-radius:10px;background:var(--c-surface);cursor:pointer;" onclick="window._openChatFromContact(\'' + escapeHtml(c.username) + '\');this.closest(\'div[style]\').remove();">' +
+            '<div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#7a3bff,#cf6fef);display:flex;align-items:center;justify-content:center;font-size:.9rem;">👤</div>' +
+            '<div style="flex:1;"><div style="font-weight:600;color:var(--c-text);font-size:.9rem;">' + escapeHtml(c.displayName) + '</div>' +
+            '<div style="font-size:.75rem;color:var(--c-text-muted);">' + (c.phone || '') + (c.online ? ' · 🟢 online' : '') + '</div></div>' +
+            '<button onclick="event.stopPropagation();window._removeContact(\'' + escapeHtml(c.username) + '\',this)" style="background:none;border:none;color:var(--c-text-muted);cursor:pointer;font-size:.8rem;">✕</button></div>'
+        ).join('');
+        overlay.innerHTML = '<div style="background:var(--c-bg);border:1px solid var(--c-border);border-radius:16px;padding:24px;width:380px;max-width:95vw;max-height:80vh;overflow-y:auto;">' +
+          '<h3 style="color:var(--c-text);margin:0 0 16px;">📒 Kontakter</h3>' +
+          '<div style="display:flex;gap:6px;margin-bottom:16px;">' +
+            '<input id="addContactUsername" class="input-text" placeholder="Brukernavn" style="flex:1;" />' +
+            '<input id="addContactName" class="input-text" placeholder="Navn" style="flex:1;" />' +
+            '<button onclick="window._addContact()" class="btn btn-small btn-primary">+</button></div>' +
+          '<div style="display:flex;flex-direction:column;gap:6px;">' + (contactsHtml || '<div style="color:var(--c-text-muted);text-align:center;padding:20px;">Ingen kontakter ennå</div>') + '</div>' +
+          '<button onclick="this.closest(\'div[style]\').remove()" class="btn btn-ghost" style="width:100%;margin-top:16px;">Lukk</button></div>';
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+        document.body.appendChild(overlay);
+      };
+      window._addContact = async function() {
+        const username = document.getElementById('addContactUsername')?.value?.trim();
+        const name = document.getElementById('addContactName')?.value?.trim();
+        if (!username) return toast('Skriv brukernavn');
+        try {
+          const res = await loadJSON('/contacts', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username, name: name||username }) });
+          if (res.success) { toast('Kontakt lagt til!'); document.querySelector('div[style]')?.remove(); window._showContacts(); }
+          else toast(res.message);
+        } catch(e) { toast('Feil'); }
+      };
+      window._removeContact = async function(username) {
+        try { await loadJSON('/contacts/' + username, { method:'DELETE' }); toast('Fjernet'); document.querySelector('div[style]')?.remove(); window._showContacts(); } catch(e) {}
+      };
+      window._openChatFromContact = function(username) {
+        const userItem = document.querySelector('.item[data-user="' + username + '"]');
+        if (userItem) userItem.click();
+      };
+
+      // ──────────────────────────────────────────────
+      // LIVE LOCATION SHARING
+      // ──────────────────────────────────────────────
+      window._shareLiveLocation = async function() {
+        if (!activeChat) return toast('Velg en samtale først');
+        const duration = parseInt(prompt('Varighet i minutter (1-60):', '10')) || 10;
+        if (!navigator.geolocation) return toast('Posisjon ikke tilgjengelig');
+        navigator.geolocation.getCurrentPosition(async (pos) => {
+          try {
+            const res = await loadJSON('/location/live', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({
+              lat: pos.coords.latitude, lng: pos.coords.longitude,
+              target: activeChat.target, targetType: activeChat.type,
+              duration: duration * 60
+            })});
+            if (res.success) {
+              toast('Deling startet! (' + duration + ' min)');
+              const shareId = res.shareId;
+              window._liveLocInterval = setInterval(async () => {
+                navigator.geolocation.getCurrentPosition(async (p) => {
+                  await loadJSON('/location/live/' + shareId, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ lat: p.coords.latitude, lng: p.coords.longitude }) }).catch(()=>{});
+                }).catch(()=>{});
+              }, 10000);
+              setTimeout(() => { clearInterval(window._liveLocInterval); toast('Posisjonsdeling avsluttet'); }, duration * 60000);
+            }
+          } catch(e) { toast('Kunne ikke dele posisjon'); }
+        }, () => toast('Kunne ikke hente posisjon'), { enableHighAccuracy: true });
+      };
+
+      // Add contacts & live location buttons to header
+      const contactsBtn = document.createElement('button');
+      contactsBtn.className = 'btn btn-small btn-ghost';
+      contactsBtn.textContent = '📒';
+      contactsBtn.title = 'Kontakter';
+      contactsBtn.addEventListener('click', window._showContacts);
+      const headerActions = document.querySelector('.header-actions');
+      if (headerActions) headerActions.insertBefore(contactsBtn, headerActions.firstChild);
+
+      // Attach live location to existing locationBtn
+      const locBtn = document.getElementById('locationBtn');
+      if (locBtn) {
+        locBtn.addEventListener('dblclick', (e) => { e.preventDefault(); window._shareLiveLocation(); });
+        locBtn.title = '📍 Enkelt · 📍📍 Dobbelklikk for live';
+      }
+
+      // Show contacts button in header if already set up
+      await loadContactsPanel();
+
+      // Add translate language picker to settings
+      const storedLang = localStorage.getItem('translateLang') || 'no';
+      window._setTranslateLang = function(lang) { localStorage.setItem('translateLang', lang); toast('Oversettelsesspråk: ' + lang); };
+
+      // ──────────────────────────────────────────────
+      // DELETE CHOICE DIALOG
+      // ──────────────────────────────────────────────
+      function showDeleteChoice(msgId, msgEl) {
+        document.querySelectorAll('.delete-choice').forEach(el => el.remove());
+        const overlay = document.createElement('div');
+        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:999998;';
+        const dialog = document.createElement('div');
+        dialog.className = 'delete-choice';
+        dialog.innerHTML = '<h3>Slette melding</h3>'
+          + '<button class="del-everyone">🗑️ Slett for alle</button>'
+          + '<button class="del-me">👤 Slett for meg</button>'
+          + '<button class="del-cancel">Avbryt</button>';
+        dialog.querySelector('.del-everyone').addEventListener('click', async () => {
+          overlay.remove();
+          try {
+            await fetch('/messages/' + encodeURIComponent(msgId), { method: 'DELETE' });
+            if (msgEl) msgEl.remove();
+            toast('Slettet for alle', 'success');
+          } catch(e) { toast('Kunne ikke slette'); }
+        });
+        dialog.querySelector('.del-me').addEventListener('click', async () => {
+          overlay.remove();
+          try {
+            await loadJSON('/messages/' + encodeURIComponent(msgId) + '/me', { method: 'DELETE' });
+            if (msgEl) msgEl.remove();
+            toast('Slettet for deg', 'success');
+          } catch(e) { toast('Kunne ikke slette'); }
+        });
+        dialog.querySelector('.del-cancel').addEventListener('click', () => overlay.remove());
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+        overlay.appendChild(dialog);
+        document.body.appendChild(overlay);
+      }
+
+      // ──────────────────────────────────────────────
+      // DATE SEPARATORS
+      // ──────────────────────────────────────────────
+      let _lastDateSeparator = '';
+      function getDateKey(ts) {
+        if (!ts) return '';
+        try { return ts.substring(0, 10); } catch(e) { return ''; }
+      }
+      function insertDateSeparator(ts) {
+        const key = getDateKey(ts);
+        if (!key || key === _lastDateSeparator) return;
+        _lastDateSeparator = key;
+        const sep = document.createElement('div');
+        sep.className = 'date-separator';
+        const months = ['Jan','Feb','Mar','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Des'];
+        try {
+          const d = new Date(key + 'T12:00:00');
+          sep.innerHTML = '<span>' + d.getDate() + '. ' + months[d.getMonth()] + ' ' + d.getFullYear() + '</span>';
+        } catch(e) {
+          sep.innerHTML = '<span>' + key + '</span>';
+        }
+        messagesBox.appendChild(sep);
+      }
+      function resetDateSeparators() { _lastDateSeparator = ''; }
+
+      const _origFinishAppend3 = finishAppend;
+      finishAppend = function(message, chatId, isMe, renderedText) {
+        if (!isMe || !message.deleted) insertDateSeparator(message.timestamp);
+        _origFinishAppend3(message, chatId, isMe, renderedText);
+        const item = messagesBox.lastElementChild;
+        if (item && !message.deleted) {
+          const timeEl = item.querySelector('.time');
+          if (timeEl && message.timestamp) {
+            timeEl.title = new Date(message.timestamp).toLocaleString('nb-NO');
+          }
+        }
+      };
+
+      // ──────────────────────────────────────────────
+      // SCROLL TO BOTTOM BUTTON
+      // ──────────────────────────────────────────────
+      const scrollBtn = document.createElement('button');
+      scrollBtn.className = 'scroll-bottom-btn';
+      scrollBtn.innerHTML = '↓';
+      scrollBtn.title = 'Bunn';
+      document.body.appendChild(scrollBtn);
+      scrollBtn.addEventListener('click', () => {
+        messagesBox.scrollTop = messagesBox.scrollHeight;
+        userScrolledUp = false;
+        scrollBtn.classList.remove('visible');
+      });
+      messagesBox.addEventListener('scroll', () => {
+        const atBottom = messagesBox.scrollHeight - messagesBox.scrollTop - messagesBox.clientHeight < 100;
+        scrollBtn.classList.toggle('visible', !atBottom && messagesBox.scrollHeight > messagesBox.clientHeight * 1.5);
+      });
+
+      // ──────────────────────────────────────────────
+      // MEDIA VIEWER (fullscreen images)
+      // ──────────────────────────────────────────────
+      messagesBox.addEventListener('click', (e) => {
+        const img = e.target.closest('.inline-image img');
+        if (!img) return;
+        e.stopPropagation();
+        const viewer = document.createElement('div');
+        viewer.className = 'media-viewer';
+        viewer.innerHTML = '<button class="media-viewer-close">✕</button><img src="' + img.src + '" />';
+        viewer.querySelector('.media-viewer-close').addEventListener('click', () => viewer.remove());
+        viewer.addEventListener('click', (ev) => { if (ev.target === viewer) viewer.remove(); });
+        document.body.appendChild(viewer);
+      });
+
+      // ──────────────────────────────────────────────
+      // CHAT INFO PANEL
+      // ──────────────────────────────────────────────
+      async function openChatInfo() {
+        document.querySelectorAll('.chat-info-panel').forEach(el => el.remove());
+        if (!activeChat) return;
+        const panel = document.createElement('div');
+        panel.className = 'chat-info-panel';
+        panel.innerHTML = '<div style="text-align:center;padding:40px;color:var(--c-text-muted);">Laster...</div>';
+        document.body.appendChild(panel);
+        try {
+          let infoHtml = '';
+          if (activeChat.type === 'user') {
+            const username = activeChat.target;
+            const display = getDisplayName(username);
+            const bio = window._myContacts?.find(c => c.username === username)?.notes || '';
+            const lastSeen = window._myContacts?.find(c => c.username === username)?.lastSeen || '';
+            const online = window._myContacts?.find(c => c.username === username)?.online || false;
+            const blockData = await loadJSON('/blocked/check/' + username);
+            infoHtml = '<div class="info-avatar" style="background:linear-gradient(135deg,#7a3bff,#cf6fef);">👤</div>'
+              + '<div class="info-name">' + escapeHtml(display) + '</div>'
+              + '<div class="info-username">@' + escapeHtml(username) + '</div>'
+              + '<div class="info-bio">' + (bio ? escapeHtml(bio) : 'Ingen bio satt') + '</div>'
+              + '<div style="text-align:center;font-size:.8rem;color:var(--c-text-muted);">' + (online ? '🟢 Online' : (lastSeen ? 'Sist sett: ' + formatTime(lastSeen) : 'Sist sett: Ukjent')) + '</div>'
+              + '<div class="info-section">'
+              + '<button onclick="window._toggleBlock(\'' + escapeHtml(username) + '\',this)" class="btn btn-ghost" style="width:100%;' + (blockData.iBlocked ? 'color:#ff6666;' : '') + '">'
+              + (blockData.iBlocked ? '🔓 Lås opp bruker' : '🚫 Blokker bruker') + '</button></div>'
+              + '<div class="info-section"><div class="info-section-title">FELLES MEDIER</div>'
+              + '<div id="sharedMediaList" style="color:var(--c-text-muted);font-size:.82rem;">Laster...</div></div>';
+          } else if (activeChat.type === 'group') {
+            const gid = activeChat.target;
+            const membersData = await loadJSON('/groups/' + encodeURIComponent(gid) + '/members');
+            const members = membersData.members || [];
+            const inviteData = await loadJSON('/groups/' + encodeURIComponent(gid) + '/invite-link');
+            infoHtml = '<div class="info-avatar" style="background:linear-gradient(135deg,#1c6d4f,#1c3060);">👥</div>'
+              + '<div class="info-name">' + escapeHtml(activeChat.displayName || gid) + '</div>'
+              + '<div class="info-username">' + members.length + ' medlemmer</div>'
+              + '<div class="info-section">'
+              + '<div class="info-section-title">MEDLEMMER</div>'
+              + members.map(m => '<div class="member-item"><div class="member-avatar' + (m.role==='owner'?' avatar-gradient-owner':m.role==='admin'?' avatar-gradient-admin':'') + '">' + escapeHtml(m.username[0].toUpperCase()) + '</div>'
+                + '<div><div style="font-size:.85rem;color:var(--c-text);">' + escapeHtml(m.displayName || m.username) + (m.role!=='member'?' <span class="'+m.role+'-badge">' + m.role + '</span>':'') + '</div>'
+                + '<div style="font-size:.72rem;color:var(--c-text-muted);">' + (m.online ? '🟢 Online' : (m.lastSeen ? formatTime(m.lastSeen) : '')) + '</div></div></div>').join('')
+              + '</div>';
+            if (inviteData.success && inviteData.inviteLink) {
+              infoHtml += '<div class="info-section"><div class="info-section-title">INVITASJONSLINK</div>'
+                + '<div style="display:flex;gap:6px;"><input value="' + escapeHtml(inviteData.inviteLink) + '" readonly style="flex:1;padding:8px;border:1px solid var(--c-border);border-radius:8px;background:var(--c-surface);color:var(--c-text);font-size:.78rem;" />'
+                + '<button onclick="navigator.clipboard.writeText(this.previousElementSibling.value);toast(\'Kopiert!\');" class="btn btn-small btn-primary">📋</button></div></div>';
+            }
+          } else if (activeChat.type === 'channel') {
+            infoHtml = '<div class="info-avatar" style="background:linear-gradient(135deg,#6d4f1c,#1c6d4f);">📢</div>'
+              + '<div class="info-name">' + escapeHtml(activeChat.displayName || activeChat.target) + '</div>'
+              + '<div class="info-username">Kanal</div>';
+          }
+          panel.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;"><button onclick="this.closest(\'.chat-info-panel\').remove()" style="background:none;border:none;color:var(--c-text);font-size:1.2rem;cursor:pointer;">✕</button><span style="font-weight:600;color:var(--c-text);">Informasjon</span></div>' + infoHtml;
+          panel.querySelectorAll('.info-avatar, .info-name').forEach(el => {
+            el.style.cursor = 'default';
+          });
+        } catch(e) {
+          panel.innerHTML = '<div style="text-align:center;padding:40px;color:var(--c-text-muted);">Kunne ikke laste info</div>';
+        }
+      }
+      window._toggleBlock = async function(username, btn) {
+        try {
+          const data = await loadJSON('/blocked/check/' + username);
+          if (data.iBlocked) {
+            await loadJSON('/block/' + username, { method: 'DELETE' });
+            toast('Bruker låst opp');
+            btn.textContent = '🚫 Blokker bruker';
+            btn.style.color = '';
+          } else {
+            if (!confirm('Blokker ' + username + '?')) return;
+            await loadJSON('/block/' + username, { method: 'POST' });
+            toast('Bruker blokkert');
+            btn.textContent = '🔓 Lås opp bruker';
+            btn.style.color = '#ff6666';
+          }
+        } catch(e) { toast('Feil'); }
+      };
+      document.getElementById('chatTitle')?.addEventListener('click', openChatInfo);
+      document.getElementById('chatMeta')?.addEventListener('click', openChatInfo);
+
+      // ──────────────────────────────────────────────
+      // BULK MESSAGE SELECTION
+      // ──────────────────────────────────────────────
+      let bulkMode = false;
+      let selectedMessages = new Set();
+      let bulkToolbar = null;
+
+      function enterBulkMode() {
+        bulkMode = true;
+        selectedMessages.clear();
+        if (!bulkToolbar) {
+          bulkToolbar = document.createElement('div');
+          bulkToolbar.className = 'bulk-toolbar';
+          bulkToolbar.innerHTML = '<span class="bulk-count">0 valgt</span><div class="bulk-actions">'
+            + '<button class="btn btn-small btn-primary" id="bulkForwardBtn">↪ Videresend</button>'
+            + '<button class="btn btn-small btn-ghost" id="bulkDeleteBtn" style="color:#ff6666;">🗑️ Slett</button>'
+            + '<button class="btn btn-small btn-ghost" id="bulkCancelBtn">Avbryt</button></div>';
+          document.body.appendChild(bulkToolbar);
+          bulkToolbar.querySelector('#bulkCancelBtn').addEventListener('click', exitBulkMode);
+          bulkToolbar.querySelector('#bulkDeleteBtn').addEventListener('click', async () => {
+            if (!confirm('Slette ' + selectedMessages.size + ' meldinger?')) return;
+            for (const id of selectedMessages) {
+              await fetch('/messages/' + encodeURIComponent(id), { method: 'DELETE' }).catch(()=>{});
+            }
+            selectedMessages.forEach(id => {
+              const el = messagesBox.querySelector('[data-msg-id="' + id + '"]');
+              if (el) el.remove();
+            });
+            toast(selectedMessages.size + ' meldinger slettet');
+            exitBulkMode();
+          });
+          bulkToolbar.querySelector('#bulkForwardBtn').addEventListener('click', () => {
+            if (selectedMessages.size === 1) forwardMsg([...selectedMessages][0]);
+            else toast('Videresend én om gangen');
+          });
+        }
+        bulkToolbar.classList.add('visible');
+        messagesBox.querySelectorAll('.msg').forEach(msg => {
+          msg.addEventListener('click', toggleBulkSelect);
+        });
+      }
+      function exitBulkMode() {
+        bulkMode = false;
+        selectedMessages.clear();
+        if (bulkToolbar) bulkToolbar.classList.remove('visible');
+        messagesBox.querySelectorAll('.msg.selected').forEach(el => el.classList.remove('selected'));
+      }
+      function toggleBulkSelect(e) {
+        if (!bulkMode) return;
+        e.stopPropagation();
+        const msgId = this.dataset.msgId;
+        if (!msgId) return;
+        if (selectedMessages.has(msgId)) {
+          selectedMessages.delete(msgId);
+          this.classList.remove('selected');
+        } else {
+          selectedMessages.add(msgId);
+          this.classList.add('selected');
+        }
+        const count = bulkToolbar.querySelector('.bulk-count');
+        if (count) count.textContent = selectedMessages.size + ' valgt';
+        if (selectedMessages.size === 0) exitBulkMode();
+      }
+
+      // ──────────────────────────────────────────────
+      // CALL DURATION DISPLAY
+      // ──────────────────────────────────────────────
+      let _callTimerInterval = null;
+      let _callStartTime = null;
+      function startCallTimer() {
+        _callStartTime = Date.now();
+        _callTimerInterval = setInterval(() => {
+          const elapsed = Math.floor((Date.now() - _callStartTime) / 1000);
+          const min = Math.floor(elapsed / 60);
+          const sec = elapsed % 60;
+          const el = document.querySelector('.call-duration');
+          if (el) el.textContent = String(min).padStart(2,'0') + ':' + String(sec).padStart(2,'0');
+        }, 1000);
+      }
+      function stopCallTimer() {
+        if (_callTimerInterval) { clearInterval(_callTimerInterval); _callTimerInterval = null; }
+        _callStartTime = null;
+      }
+      const _origUpdateCallStatus = updateCallStatus;
+      updateCallStatus = function(status) {
+        _origUpdateCallStatus(status);
+        if (status === 'Tilkoblet' && !_callTimerInterval) {
+          startCallTimer();
+          const header = document.querySelector('.call-header');
+          if (header && !header.querySelector('.call-duration')) {
+            const dur = document.createElement('div');
+            dur.className = 'call-duration';
+            dur.textContent = '00:00';
+            header.appendChild(dur);
+          }
+        }
+        if (status === 'Samtale avsluttet' || status === 'Avbrutt') stopCallTimer();
+      };
+      const _origRemoveCallOverlay = removeCallOverlay;
+      removeCallOverlay = function() { stopCallTimer(); _origRemoveCallOverlay(); };
+
+      // ──────────────────────────────────────────────
+      // CTRL+K QUICK CHAT SWITCHER
+      // ──────────────────────────────────────────────
+      function openChatSwitcher() {
+        document.querySelectorAll('.chat-switcher, .cs-overlay').forEach(el => el.remove());
+        const overlay = document.createElement('div');
+        overlay.className = 'cs-overlay';
+        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:999998;';
+        const switcher = document.createElement('div');
+        switcher.className = 'chat-switcher';
+        switcher.innerHTML = '<input id="csInput" placeholder="Søk samtale..." autofocus />'
+          + '<div id="csResults" class="chat-switcher-results"></div>';
+        overlay.appendChild(switcher);
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+        document.body.appendChild(overlay);
+        const input = document.getElementById('csInput');
+        const results = document.getElementById('csResults');
+        function renderCSResults(query) {
+          const q = (query || '').toLowerCase();
+          let items = [];
+          const allUsers = window.__allUsers || [];
+          const allGroups = window.__allGroups || [];
+          const allChannels = window.__allChannels || [];
+          allUsers.forEach(u => {
+            if (u === window.__APP__?.username) return;
+            const dn = getDisplayName(u);
+            if (!q || u.includes(q) || dn.toLowerCase().includes(q)) {
+              items.push({ type:'user', username:u, name:dn, icon:'👤' });
+            }
+          });
+          allGroups.forEach(g => {
+            const gn = g.name || g.id;
+            if (!q || gn.toLowerCase().includes(q) || g.id.toLowerCase().includes(q)) {
+              items.push({ type:'group', id:g.id, name:gn, icon:'👥' });
+            }
+          });
+          allChannels.forEach(c => {
+            const cn = c.name || c.id;
+            if (!q || cn.toLowerCase().includes(q) || c.id.toLowerCase().includes(q)) {
+              items.push({ type:'channel', id:c.id, name:cn, icon:'📢' });
+            }
+          });
+          results.innerHTML = items.slice(0, 20).map((item, i) =>
+            '<div class="chat-switcher-item' + (i===0?' active':'') + '" data-type="' + item.type + '" data-target="' + escapeHtml(item.type==='user'?item.username:item.id) + '">'
+            + '<div class="cs-avatar">' + item.icon + '</div>'
+            + '<div><div class="cs-name">' + escapeHtml(item.name) + '</div>'
+            + '<div class="cs-sub">' + item.type + '</div></div></div>'
+          ).join('') || '<div style="padding:16px;text-align:center;color:var(--c-text-muted);">Ingen treff</div>';
+          results.querySelectorAll('.chat-switcher-item').forEach(el => {
+            el.addEventListener('click', () => {
+              overlay.remove();
+              const type = el.dataset.type;
+              const target = el.dataset.target;
+              if (type === 'user') {
+                const item = document.querySelector('.item[data-user="' + target + '"]');
+                if (item) item.click();
+              } else if (type === 'group') {
+                const item = document.querySelector('.item[data-group="' + target + '"]');
+                if (item) item.click();
+              }
+            });
+          });
+        }
+        renderCSResults('');
+        input.addEventListener('input', () => renderCSResults(input.value));
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Escape') { overlay.remove(); return; }
+          const active = results.querySelector('.chat-switcher-item.active');
+          const all = results.querySelectorAll('.chat-switcher-item');
+          if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            let next = active?.nextElementSibling;
+            if (!next) next = all[0];
+            all.forEach(el => el.classList.remove('active'));
+            if (next) next.classList.add('active');
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            let prev = active?.previousElementSibling;
+            if (!prev) prev = all[all.length - 1];
+            all.forEach(el => el.classList.remove('active'));
+            if (prev) prev.classList.add('active');
+          } else if (e.key === 'Enter') {
+            e.preventDefault();
+            if (active) active.click();
+          }
+        });
+      }
+      document.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+          e.preventDefault();
+          openChatSwitcher();
+        }
+      });
+
+      // ──────────────────────────────────────────────
+      // CHANNEL SUBSCRIBERS PANEL
+      // ──────────────────────────────────────────────
+      window._showChannelSubscribers = async function(channelId) {
+        const overlay = document.createElement('div');
+        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:999999;';
+        overlay.innerHTML = '<div style="background:var(--c-bg);border:1px solid var(--c-border);border-radius:16px;padding:24px;width:360px;max-width:95vw;max-height:70vh;overflow-y:auto;"><div style="display:flex;justify-content:space-between;margin-bottom:16px;"><h3 style="margin:0;color:var(--c-text);">📢 Abonnenter</h3><button onclick="this.closest(\'div[style]\').parentElement.remove()" style="background:none;border:none;color:var(--c-text);font-size:1.2rem;cursor:pointer;">✕</button></div><div id="channelSubList" style="color:var(--c-text-muted);text-align:center;">Laster...</div></div>';
+        document.body.appendChild(overlay);
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+        try {
+          const data = await loadJSON('/channels/' + encodeURIComponent(channelId));
+          const subs = data.channel?.subscribers || [];
+          document.getElementById('channelSubList').innerHTML = subs.length
+            ? subs.map(s => '<div style="display:flex;align-items:center;gap:8px;padding:8px;"><div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#7a3bff,#cf6fef);display:flex;align-items:center;justify-content:center;font-size:.7rem;">👤</div><span style="color:var(--c-text);font-size:.85rem;">' + escapeHtml(s) + '</span></div>').join('')
+            : '<div>Ingen abonnenter</div>';
+        } catch(e) { document.getElementById('channelSubList').textContent = 'Feil ved lasting'; }
+      };
 
       await loadFolders();
       await loadPinnedChats();

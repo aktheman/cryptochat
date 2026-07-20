@@ -106,6 +106,8 @@ FOLDERS_FILE = DATA_DIR / 'folders.json'
 CHANNELS_FILE = DATA_DIR / 'channels.json'
 INVITE_LINKS_FILE = DATA_DIR / 'invite_links.json'
 MUTED_CHATS_FILE = DATA_DIR / 'muted_chats.json'
+CONTACTS_FILE = DATA_DIR / 'contacts.json'
+STORIES_FILE = DATA_DIR / 'stories.json'
 
 # ──────────────────────────────────────────────
 # Helpers
@@ -2279,6 +2281,39 @@ def remove_group_admin(group_id, username):
 # ──────────────────────────────────────────────
 # Group Member Management
 # ──────────────────────────────────────────────
+@app.route('/groups/<group_id>/members', methods=['GET'])
+@require_login
+def get_group_members(group_id):
+    me = session['username']
+    groups = load_json(GROUPS_FILE, [])
+    group = next((g for g in groups if g.get('id') == group_id), None)
+    if not group:
+        return jsonify({'success': False, 'message': 'Gruppe ikke funnet.'}), 404
+    if me not in group.get('members', []):
+        return jsonify({'success': False, 'message': 'Ikke medlem.'}), 403
+    users = load_json(USERS_FILE, {})
+    presence = load_json(USER_PRESENCE_FILE, {})
+    members = []
+    for u in group.get('members', []):
+        ud = users.get(u, {})
+        p = presence.get(u, {})
+        is_online = False
+        if isinstance(p, dict) and p.get('lastSeen'):
+            try:
+                ls = parse_iso(p['lastSeen'])
+                if ls and (datetime.utcnow() - ls.replace(tzinfo=None)).total_seconds() < 300:
+                    is_online = True
+            except Exception:
+                pass
+        members.append({
+            'username': u,
+            'displayName': ud.get('displayName', u),
+            'role': 'owner' if u == group.get('created_by') else ('admin' if u in group.get('admins', []) else 'member'),
+            'online': is_online,
+            'lastSeen': p.get('lastSeen') if isinstance(p, dict) else None,
+        })
+    return jsonify({'success': True, 'members': members, 'total': len(members)})
+
 @app.route('/groups/<group_id>/members', methods=['POST'])
 @require_login
 def add_group_member(group_id):
@@ -3027,6 +3062,381 @@ def admin_dashboard_data():
         'groups': [{'id': g['id'], 'name': g['name'], 'members': len(g.get('members', [])), 'created_by': g.get('created_by')} for g in groups],
         'channels': [{'id': c['id'], 'name': c['name'], 'subscribers': len(c.get('subscribers', [])), 'created_by': c.get('created_by')} for c in channels],
     })
+
+# ──────────────────────────────────────────────
+# Message Translation
+# ──────────────────────────────────────────────
+@app.route('/translate', methods=['POST'])
+@require_login
+def translate_message():
+    data = request.get_json(force=True, silent=True) or {}
+    text = sanitize_input(data.get('text', ''), 5000)
+    target_lang = sanitize_input(data.get('target', 'en'), 5)
+    if not text:
+        return jsonify({'success': False, 'message': 'Ingen tekst.'}), 400
+    try:
+        import urllib.request, urllib.parse
+        url = 'https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=' + urllib.parse.quote(target_lang) + '&dt=t&q=' + urllib.parse.quote(text)
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            result = json.loads(resp.read().decode())
+            translated = ''.join(part[0] for part in result[0] if part[0])
+            detected = result[2] if len(result) > 2 else target_lang
+            return jsonify({'success': True, 'translated': translated, 'sourceLang': detected, 'targetLang': target_lang})
+    except Exception as e:
+        return jsonify({'success': False, 'message': 'Oversettelse feilet.'}), 500
+
+@app.route('/translate/languages')
+@require_login
+def list_languages():
+    return jsonify({'success': True, 'languages': [
+        {'code': 'en', 'name': 'English'}, {'code': 'no', 'name': 'Norsk'},
+        {'code': 'de', 'name': 'Deutsch'}, {'code': 'fr', 'name': 'Français'},
+        {'code': 'es', 'name': 'Español'}, {'code': 'it', 'name': 'Italiano'},
+        {'code': 'pt', 'name': 'Português'}, {'code': 'ru', 'name': 'Русский'},
+        {'code': 'zh', 'name': '中文'}, {'code': 'ja', 'name': '日本語'},
+        {'code': 'ko', 'name': '한국어'}, {'code': 'ar', 'name': 'العربية'},
+        {'code': 'hi', 'name': 'हिन्दी'}, {'code': 'tr', 'name': 'Türkçe'},
+        {'code': 'nl', 'name': 'Nederlands'}, {'code': 'sv', 'name': 'Svenska'},
+        {'code': 'pl', 'name': 'Polski'}, {'code': 'da', 'name': 'Dansk'},
+        {'code': 'fi', 'name': 'Suomi'}, {'code': 'uk', 'name': 'Українська'},
+    ]})
+
+# ──────────────────────────────────────────────
+# Contact Book
+# ──────────────────────────────────────────────
+@app.route('/contacts', methods=['GET'])
+@require_login
+def get_contacts():
+    me = session['username']
+    contacts = load_json(CONTACTS_FILE, {})
+    user_contacts = contacts.get(me, {})
+    users = load_json(USERS_FILE, {})
+    enriched = []
+    for cid, cdata in user_contacts.items():
+        u = users.get(cid, {})
+        presence = load_json(USER_PRESENCE_FILE, {})
+        p = presence.get(cid, {})
+        is_online = False
+        last_seen = None
+        if isinstance(p, dict):
+            last_seen = p.get('lastSeen')
+            if last_seen:
+                try:
+                    ls = parse_iso(last_seen)
+                    if ls and (datetime.utcnow() - ls.replace(tzinfo=None)).total_seconds() < 300:
+                        is_online = True
+                except Exception:
+                    pass
+        enriched.append({
+            'username': cid,
+            'displayName': cdata.get('name', cid),
+            'phone': cdata.get('phone', ''),
+            'notes': cdata.get('notes', ''),
+            'added': cdata.get('added'),
+            'online': is_online,
+            'lastSeen': last_seen,
+        })
+    return jsonify({'success': True, 'contacts': enriched})
+
+@app.route('/contacts', methods=['POST'])
+@require_login
+def add_contact():
+    me = session['username']
+    data = request.get_json(force=True, silent=True) or {}
+    username = sanitize_input(data.get('username', ''), 30).lower()
+    name = sanitize_input(data.get('name', ''), 50) or username
+    phone = sanitize_input(data.get('phone', ''), 20)
+    notes = sanitize_input(data.get('notes', ''), 500)
+    if not username:
+        return jsonify({'success': False, 'message': 'Brukernavn er påkrevd.'}), 400
+    users = load_json(USERS_FILE, {})
+    if username not in users:
+        return jsonify({'success': False, 'message': 'Bruker ikke funnet.'}), 404
+    contacts = load_json(CONTACTS_FILE, {})
+    contacts.setdefault(me, {})[username] = {
+        'name': name, 'phone': phone, 'notes': notes, 'added': now_iso()
+    }
+    save_json(CONTACTS_FILE, contacts)
+    return jsonify({'success': True})
+
+@app.route('/contacts/<username>', methods=['DELETE'])
+@require_login
+def remove_contact(username):
+    me = session['username']
+    contacts = load_json(CONTACTS_FILE, {})
+    user_contacts = contacts.get(me, {})
+    user_contacts.pop(username, None)
+    save_json(CONTACTS_FILE, contacts)
+    return jsonify({'success': True})
+
+@app.route('/contacts/<username>', methods=['PUT'])
+@require_login
+def update_contact(username):
+    me = session['username']
+    data = request.get_json(force=True, silent=True) or {}
+    contacts = load_json(CONTACTS_FILE, {})
+    user_contacts = contacts.get(me, {})
+    if username not in user_contacts:
+        return jsonify({'success': False, 'message': 'Kontakt ikke funnet.'}), 404
+    c = user_contacts[username]
+    if 'name' in data: c['name'] = sanitize_input(data['name'], 50)
+    if 'phone' in data: c['phone'] = sanitize_input(data['phone'], 20)
+    if 'notes' in data: c['notes'] = sanitize_input(data['notes'], 500)
+    c['updated'] = now_iso()
+    save_json(CONTACTS_FILE, contacts)
+    return jsonify({'success': True})
+
+@app.route('/contacts/sync', methods=['POST'])
+@require_login
+def sync_contacts():
+    me = session['username']
+    data = request.get_json(force=True, silent=True) or {}
+    phone_list = data.get('phones', [])
+    if not isinstance(phone_list, list):
+        return jsonify({'success': False, 'message': 'Ugyldig format.'}), 400
+    users = load_json(USERS_FILE, {})
+    matches = []
+    for u, udata in users.items():
+        if u == me:
+            continue
+        if udata.get('phone') in phone_list:
+            matches.append(u)
+    return jsonify({'success': True, 'matches': matches})
+
+# ──────────────────────────────────────────────
+# Live Location Sharing
+# ──────────────────────────────────────────────
+LIVE_LOCATION_FILE = DATA_DIR / 'live_locations.json'
+
+@app.route('/location/live', methods=['POST'])
+@require_login
+def start_live_location():
+    me = session['username']
+    data = request.get_json(force=True, silent=True) or {}
+    lat = data.get('lat')
+    lng = data.get('lng')
+    target = data.get('target', '')
+    target_type = data.get('targetType', 'user')
+    duration = min(int(data.get('duration', 600)), 3600)
+    if lat is None or lng is None:
+        return jsonify({'success': False, 'message': 'Manglende posisjon.'}), 400
+    live = load_json(LIVE_LOCATION_FILE, {})
+    share_id = secrets.token_hex(8)
+    live[share_id] = {
+        'sender': me, 'lat': lat, 'lng': lng,
+        'target': target, 'targetType': target_type,
+        'started': now_iso(), 'duration': duration,
+        'active': True,
+    }
+    save_json(LIVE_LOCATION_FILE, live)
+    messages = load_json(MESSAGES_FILE, [])
+    messages.append({
+        'id': hashlib.sha256(f"live_loc{share_id}{datetime.utcnow().isoformat()}".encode()).hexdigest(),
+        'sender': me,
+        'recipient': target if target_type == 'user' else None,
+        'group_id': target if target_type == 'group' else None,
+        'ciphertext': json.dumps({'shareId': share_id, 'lat': lat, 'lng': lng, 'duration': duration, 'live': True}),
+        'type': 'live_location',
+        'timestamp': datetime.utcnow().isoformat(),
+    })
+    save_json(MESSAGES_FILE, messages)
+    return jsonify({'success': True, 'shareId': share_id})
+
+@app.route('/location/live/<share_id>', methods=['PUT'])
+@require_login
+def update_live_location(share_id):
+    me = session['username']
+    data = request.get_json(force=True, silent=True) or {}
+    live = load_json(LIVE_LOCATION_FILE, {})
+    entry = live.get(share_id)
+    if not entry or entry['sender'] != me:
+        return jsonify({'success': False, 'message': 'Ikke funnet.'}), 404
+    entry['lat'] = data.get('lat', entry['lat'])
+    entry['lng'] = data.get('lng', entry['lng'])
+    entry['updated'] = now_iso()
+    save_json(LIVE_LOCATION_FILE, live)
+    return jsonify({'success': True})
+
+@app.route('/location/live/<share_id>', methods=['GET'])
+@require_login
+def get_live_location(share_id):
+    live = load_json(LIVE_LOCATION_FILE, {})
+    entry = live.get(share_id)
+    if not entry:
+        return jsonify({'success': False, 'message': 'Ikke funnet.'}), 404
+    started = parse_iso(entry.get('started', ''))
+    if started and (datetime.utcnow() - started.replace(tzinfo=None)).total_seconds() > entry.get('duration', 600):
+        entry['active'] = False
+    return jsonify({'success': True, 'location': entry})
+
+@app.route('/location/live/<share_id>', methods=['DELETE'])
+@require_login
+def stop_live_location(share_id):
+    me = session['username']
+    live = load_json(LIVE_LOCATION_FILE, {})
+    entry = live.get(share_id)
+    if not entry or entry['sender'] != me:
+        return jsonify({'success': False, 'message': 'Ikke funnet.'}), 404
+    entry['active'] = False
+    save_json(LIVE_LOCATION_FILE, live)
+    return jsonify({'success': True})
+
+# ──────────────────────────────────────────────
+# Stories / Status (24h ephemeral posts)
+# ──────────────────────────────────────────────
+@app.route('/stories', methods=['GET'])
+@require_login
+def get_stories():
+    me = session['username']
+    stories = load_json(STORIES_FILE, {})
+    now = datetime.utcnow()
+    all_stories = []
+    for user, user_stories in stories.items():
+        for s in user_stories:
+            try:
+                created = parse_iso(s.get('created', ''))
+                if created and (now - created.replace(tzinfo=None)).total_seconds() < 86400:
+                    all_stories.append({
+                        'id': s['id'],
+                        'username': user,
+                        'type': s.get('type', 'text'),
+                        'content': s.get('content', ''),
+                        'bgColor': s.get('bgColor', '#1c1030'),
+                        'textColor': s.get('textColor', '#f3f1ff'),
+                        'created': s.get('created'),
+                        'views': s.get('views', []),
+                    })
+            except Exception:
+                pass
+    all_stories.sort(key=lambda x: x.get('created', ''), reverse=True)
+    contacts = load_json(CONTACTS_FILE, {})
+    user_contacts = set(contacts.get(me, {}).keys())
+    user_contacts.add(me)
+    visible = [s for s in all_stories if s['username'] in user_contacts or s['username'] == me]
+    return jsonify({'success': True, 'stories': visible})
+
+@app.route('/stories', methods=['POST'])
+@require_login
+def create_story():
+    me = session['username']
+    data = request.get_json(force=True, silent=True) or {}
+    content = sanitize_input(data.get('content', ''), 2000)
+    stype = data.get('type', 'text')
+    bg_color = data.get('bgColor', '#1c1030')
+    text_color = data.get('textColor', '#f3f1ff')
+    if not content:
+        return jsonify({'success': False, 'message': 'Innhold er påkrevd.'}), 400
+    stories = load_json(STORIES_FILE, {})
+    user_stories = stories.setdefault(me, [])
+    story = {
+        'id': secrets.token_hex(8),
+        'type': stype,
+        'content': content,
+        'bgColor': bg_color,
+        'textColor': text_color,
+        'created': now_iso(),
+        'views': [],
+    }
+    user_stories.append(story)
+    expired = []
+    now = datetime.utcnow()
+    for s in user_stories:
+        try:
+            created = parse_iso(s.get('created', ''))
+            if created and (now - created.replace(tzinfo=None)).total_seconds() >= 86400:
+                expired.append(s)
+        except Exception:
+            pass
+    for s in expired:
+        user_stories.remove(s)
+    save_json(STORIES_FILE, stories)
+    return jsonify({'success': True, 'story': story})
+
+@app.route('/stories/<story_id>/view', methods=['POST'])
+@require_login
+def view_story(story_id):
+    me = session['username']
+    stories = load_json(STORIES_FILE, {})
+    for user, user_stories in stories.items():
+        for s in user_stories:
+            if s['id'] == story_id:
+                s.setdefault('views', [])
+                if me not in s['views']:
+                    s['views'].append(me)
+                save_json(STORIES_FILE, stories)
+                return jsonify({'success': True})
+    return jsonify({'success': False, 'message': 'Story ikke funnet.'}), 404
+
+@app.route('/stories/<story_id>', methods=['DELETE'])
+@require_login
+def delete_story(story_id):
+    me = session['username']
+    stories = load_json(STORIES_FILE, {})
+    user_stories = stories.get(me, [])
+    stories[me] = [s for s in user_stories if s['id'] != story_id]
+    save_json(STORIES_FILE, stories)
+    return jsonify({'success': True})
+
+# ──────────────────────────────────────────────
+# Block User
+# ──────────────────────────────────────────────
+BLOCKED_FILE = DATA_DIR / 'blocked_users.json'
+
+@app.route('/blocked', methods=['GET'])
+@require_login
+def get_blocked():
+    me = session['username']
+    blocked = load_json(BLOCKED_FILE, {})
+    return jsonify({'success': True, 'blocked': blocked.get(me, [])})
+
+@app.route('/block/<username>', methods=['POST'])
+@require_login
+def block_user(username):
+    me = session['username']
+    if username == me:
+        return jsonify({'success': False, 'message': 'Kan ikke blokkere deg selv.'}), 400
+    blocked = load_json(BLOCKED_FILE, {})
+    blocked.setdefault(me, [])
+    if username not in blocked[me]:
+        blocked[me].append(username)
+        save_json(BLOCKED_FILE, blocked)
+    return jsonify({'success': True})
+
+@app.route('/block/<username>', methods=['DELETE'])
+@require_login
+def unblock_user(username):
+    me = session['username']
+    blocked = load_json(BLOCKED_FILE, {})
+    if me in blocked:
+        blocked[me] = [u for u in blocked[me] if u != username]
+        save_json(BLOCKED_FILE, blocked)
+    return jsonify({'success': True})
+
+# ──────────────────────────────────────────────
+# Delete for Me Only
+# ──────────────────────────────────────────────
+DELETED_FOR_ME_FILE = DATA_DIR / 'deleted_for_me.json'
+
+@app.route('/messages/<message_id>/me', methods=['DELETE'])
+@require_login
+def delete_for_me(message_id):
+    me = session['username']
+    deleted = load_json(DELETED_FOR_ME_FILE, {})
+    deleted.setdefault(me, [])
+    if message_id not in deleted[me]:
+        deleted[me].append(message_id)
+        save_json(DELETED_FOR_ME_FILE, deleted)
+    return jsonify({'success': True})
+
+@app.route('/blocked/check/<username>', methods=['GET'])
+@require_login
+def check_blocked(username):
+    me = session['username']
+    blocked = load_json(BLOCKED_FILE, {})
+    i_blocked = username in blocked.get(me, [])
+    they_blocked = me in blocked.get(username, [])
+    return jsonify({'success': True, 'iBlocked': i_blocked, 'theyBlocked': they_blocked})
 
 @app.route('/health')
 def health_check():
