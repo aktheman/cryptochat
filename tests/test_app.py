@@ -64,11 +64,11 @@ def clean_data():
     RATE_LIMIT_STORE.clear()
 
 
-def _register(client, username, password='pass123'):
+def _register(client, username, password='Passw0rd!23'):
     return client.post('/auth/register', json={'username': username, 'password': password})
 
 
-def _login(client, username, password='pass123'):
+def _login(client, username, password='Passw0rd!23'):
     return client.post('/auth/login', json={'username': username, 'password': password})
 
 
@@ -128,11 +128,11 @@ class TestAuth:
     def test_login_wrong_password(self, client):
         _register(client, 'alice')
         _logout(client)
-        r = client.post('/auth/login', json={'username': 'alice', 'password': 'wrongpass'})
+        r = client.post('/auth/login', json={'username': 'alice', 'password': 'Wrongpassword1!'})
         assert r.status_code == 401
 
     def test_login_nonexistent_user(self, client):
-        r = client.post('/auth/login', json={'username': 'nobody', 'password': 'pass123'})
+        r = client.post('/auth/login', json={'username': 'nobody', 'password': 'Wrongpassword1!'})
         assert r.status_code == 401
 
     def test_logout(self, client):
@@ -552,3 +552,82 @@ class TestServiceWorker:
         r = client.get('/sw.js')
         assert r.status_code == 200
         assert 'application/javascript' in r.content_type
+
+
+class TestE2ee:
+    def test_encrypt_symmetric_roundtrip(self, client):
+        from app import encrypt_symmetric, decrypt_symmetric
+        import base64 as _b64
+        import secrets as _secrets
+        from cryptography.exceptions import InvalidTag
+        key_b64 = _b64.b64encode(_secrets.token_bytes(32)).decode()
+        plain = 'e2ee-secret-msg'
+        packed = encrypt_symmetric(plain, key_b64)
+        assert isinstance(packed, str)
+        assert decrypt_symmetric(packed, key_b64) == plain
+        with pytest.raises(InvalidTag):
+            decrypt_symmetric(packed, _b64.b64encode(_secrets.token_bytes(32)).decode())
+
+    def test_pair_key_generation_unique(self, client):
+        _register(client, 'alice')
+        _register(client, 'bob')
+        _login(client, 'alice')
+        r = client.get('/keys/bob')
+        assert r.status_code == 200
+        data = r.get_json()
+        assert 'publicKey' in data or 'public_key' in data
+
+    def test_audit_events_written(self, client):
+        from app import app as a, AUDIT_LOG_FILE
+        from db import invalidate_cache, _get_conn
+        invalidate_cache()
+        conn = _get_conn(); conn.execute('DELETE FROM kv_store'); conn.commit(); conn.close()
+        if AUDIT_LOG_FILE.exists():
+            AUDIT_LOG_FILE.unlink()
+        _register(client, 'alice')
+        r = client.post('/auth/login', json={'username': 'alice', 'password': 'Passw0rd!23'})
+        assert r.status_code == 200
+        r = client.post('/auth/logout')
+        assert r.status_code == 200
+        text = AUDIT_LOG_FILE.read_text(encoding='utf-8')
+        assert 'registered' in text
+        assert 'login_success' in text
+        assert 'logout' in text
+        _login(client, 'alice')
+        r = client.post('/send', json={'recipient': 'bob', 'ciphertext': 'hello', 'type': 'text'})
+        assert r.status_code == 200
+        text = AUDIT_LOG_FILE.read_text(encoding='utf-8')
+        assert 'message_sent' in text
+        msgs = client.get('/messages/bob').get_json()['messages']
+        msg_id = msgs[0]['id']
+        r = client.put(f'/messages/{msg_id}/edit', json={'ciphertext': 'edited'})
+        assert r.status_code == 200
+        text = AUDIT_LOG_FILE.read_text(encoding='utf-8')
+        assert 'message_edited' in text
+        r = client.delete(f'/messages/{msg_id}')
+        assert r.status_code == 200
+        text = AUDIT_LOG_FILE.read_text(encoding='utf-8')
+        assert 'message_deleted' in text
+        r = client.post('/groups', json={'name': 'team', 'members': []})
+        assert r.status_code == 200
+        text = AUDIT_LOG_FILE.read_text(encoding='utf-8')
+        assert 'group_created' in text
+        r = client.post('/key/publish', json={'publicKeyPem': 'pem'})
+        assert r.status_code == 200
+        text = AUDIT_LOG_FILE.read_text(encoding='utf-8')
+        assert 'key_published' in text
+
+
+class TestCsrf:
+    def test_csrf_blocks_unknown_origin(self, client):
+        _register(client, 'alice')
+        _login(client, 'alice')
+        app.config['CSRF_ENABLED'] = True
+        app.config['CSRF_TRUSTED_ORIGINS'] = ['http://localhost:8080']
+        try:
+            r = client.post('/send', json={'recipient': 'bob', 'ciphertext': 'hi', 'type': 'text'}, headers={'Origin': 'http://evil.example'})
+            assert r.status_code == 400
+            assert 'Ugyldig forespørselskilde' in r.get_json().get('message', '')
+        finally:
+            app.config['CSRF_ENABLED'] = False
+            app.config['CSRF_TRUSTED_ORIGINS'] = []
