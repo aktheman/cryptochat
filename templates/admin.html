@@ -46,8 +46,8 @@
   <div class="container">
     <div class="stats" id="stats"></div>
     <div class="tabs">
-      <button class="tab active" onclick="showSection('users')">Brukere</button>
-      <button class="tab" onclick="showSection('messages')">Meldinger</button>
+      <button class="tab active" onclick="showSection('users', this)">Brukere</button>
+      <button class="tab" onclick="showSection('messages', this)">Meldinger</button>
     </div>
     <div id="users" class="section active">
       <table><thead><tr><th>Brukernavn</th><th>Navn</th><th>Admin</th><th>2FA</th><th>Opprettet</th><th>Handlinger</th></tr></thead><tbody id="usersTable"></tbody></table>
@@ -65,34 +65,43 @@
       const s = d.stats;
       document.getElementById('stats').innerHTML = [
         ['Brukere', s.total_users], ['Meldinger', s.total_messages], ['Grupper', s.total_groups], ['Aktive økter', s.active_sessions], ['Admins', s.admin_users]
-      ].map(([l,v]) => '<div class="stat-card"><div class="stat-value">'+v+'</div><div class="stat-label">'+l+'</div></div>').join('');
+      ].map(([l,v]) => '<div class="stat-card"><div class="stat-value">'+escape(v)+'</div><div class="stat-label">'+escape(l)+'</div></div>').join('');
     }
     async function loadUsers() {
       const d = await api('/admin/users');
       if (!d.success) return;
       document.getElementById('usersTable').innerHTML = d.users.map(u =>
-        '<tr><td>'+escape(u.username)+'</td><td>'+escape(u.display_name||u.username)+'</td><td>'+(u.is_admin?'<span class="admin-badge">Admin</span>':'')+'</td><td>'+(u.twofa_enabled?'✅':'—')+'</td><td>'+(u.created_at||'').split('T')[0]+'</td><td class="actions"><button class="btn btn-ghost" onclick="toggleAdmin(\''+u.username+'\')">'+(u.is_admin?'Fjern admin':'Gjør til admin')+'</button><button class="btn btn-warning" onclick="banUser(\''+u.username+'\')">Utesteng</button><button class="btn btn-danger" onclick="deleteUser(\''+u.username+'\')">Slett</button></td></tr>'
+        '<tr><td>'+escape(u.username)+'</td><td>'+escape(u.display_name||u.username)+'</td><td>'+(u.is_admin?'<span class="admin-badge">Admin</span>':'')+'</td><td>'+(u.twofa_enabled?'✅':'—')+'</td><td>'+(u.created_at||'').split('T')[0]+'</td><td class="actions"><button class="btn btn-ghost" data-action="toggle-admin" data-user="'+escape(u.username)+'">'+(u.is_admin?'Fjern admin':'Gjør til admin')+'</button><button class="btn btn-warning" data-action="ban" data-user="'+escape(u.username)+'">Utesteng</button><button class="btn btn-danger" data-action="delete" data-user="'+escape(u.username)+'">Slett</button></td></tr>'
       ).join('');
+      document.getElementById('usersTable').querySelectorAll('button[data-action]').forEach(btn => {
+        btn.addEventListener('click', function() {
+          const u = this.dataset.user;
+          const a = this.dataset.action;
+          if (a === 'toggle-admin') toggleAdmin(u);
+          else if (a === 'ban') banUser(u);
+          else if (a === 'delete') deleteUser(u);
+        });
+      });
     }
     async function loadMessages() {
       const d = await api('/admin/messages?limit=100');
       if (!d.success) return;
       document.getElementById('msgsTable').innerHTML = d.messages.map(m =>
-        '<tr><td>'+escape(m.sender)+'</td><td>'+escape(m.recipient||m.group_id||'')+'</td><td>'+m.type+'</td><td>'+m.timestamp.split('T')[0]+'</td></tr>'
+        '<tr><td>'+escape(m.sender)+'</td><td>'+escape(m.recipient||m.group_id||'')+'</td><td>'+escape(m.type)+'</td><td>'+m.timestamp.split('T')[0]+'</td></tr>'
       ).join('');
     }
-    function showSection(id) {
+    function showSection(id, el) {
       document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
       document.getElementById(id).classList.add('active');
-      event.target.classList.add('active');
+      if (el) el.classList.add('active');
       if (id === 'users') loadUsers();
       if (id === 'messages') loadMessages();
     }
     async function toggleAdmin(u) { await api('/admin/users/'+u+'/toggle-admin', {method:'POST'}); loadUsers(); loadStats(); }
     async function banUser(u) { if (!confirm('Utestenge '+u+'?')) return; await api('/admin/users/'+u+'/ban', {method:'POST'}); loadUsers(); }
     async function deleteUser(u) { if (!confirm('Slette '+u+'? Dette kan ikke angres.')) return; await api('/admin/users/'+u+'/delete', {method:'POST'}); loadUsers(); loadStats(); }
-    function escape(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+    function escape(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
     loadStats(); loadUsers();
   </script>
 </body>

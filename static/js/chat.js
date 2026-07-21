@@ -343,6 +343,13 @@
     return String(str || '').replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m]);
   }
 
+  function sanitizeWallpaperCss(css) {
+    if (!css || typeof css !== 'string') return '';
+    if (/url\s*\(/i.test(css) || /expression\s*\(/i.test(css) || /javascript\s*:/i.test(css) || /data\s*:/i.test(css) || /behavior\s*:/i.test(css) || /-moz-binding/i.test(css)) return '';
+    const safeProps = /^(background|background-image|color)\s*:/i;
+    return css.split(';').filter(p => safeProps.test(p.trim())).join(';');
+  }
+
       function formatTime(iso) {
         try { return new Date(iso).toLocaleString('no-NO'); } catch { return iso; }
       }
@@ -379,14 +386,12 @@
   }
 
   async function encryptForPeer(plaintext, peerPublicKeyPem) {
-    try {
-      const key = await window.__CRYPTO__.getSharedKey(peerPublicKeyPem);
-      const encrypted = await window.__CRYPTO__.encryptMessage(plaintext, key);
-      return encrypted.ciphertext;
-    } catch (e) {
-      console.warn('encryption failed', e);
-      return plaintext;
+    if (!peerPublicKeyPem) {
+      throw new Error('No public key available for encryption');
     }
+    const key = await window.__CRYPTO__.getSharedKey(peerPublicKeyPem);
+    const encrypted = await window.__CRYPTO__.encryptMessage(plaintext, key);
+    return encrypted.ciphertext;
   }
 
   async function decryptFromPeer(ciphertext, peerPublicKeyPem) {
@@ -942,9 +947,7 @@
         document.querySelectorAll('.item').forEach(el => el.classList.remove('active'));
       }
 
-      document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && activeChat) closeChat();
-      });
+      // (Escape handler consolidated below in keyboard shortcuts block)
 
       function renderUsers() {
         usersList.innerHTML = '';
@@ -1090,7 +1093,7 @@
           const div = document.createElement('div');
           div.className = 'item' + (activeChat?.type === 'channel' && activeChat?.target === ch.id ? ' active' : '');
           div.innerHTML = '<div class="avatar-wrap"><div class="avatar" style="background:linear-gradient(135deg,#ff6b35,#cf6fef);">📢</div></div>'
-            + '<div><div class="name">' + escapeHtml(ch.name) + '</div><div class="preview">' + (ch.description || '').slice(0,40) + '</div></div>';
+            + '<div><div class="name">' + escapeHtml(ch.name) + '</div><div class="preview">' + escapeHtml((ch.description || '').slice(0,40)) + '</div></div>';
           div.addEventListener('click', () => openChannel(ch.id));
           list.appendChild(div);
         });
@@ -1098,9 +1101,12 @@
 
       async function openChannel(channelId) {
         activeChat = { type: 'channel', target: channelId };
+        userScrolledUp = false;
+        resetDateSeparators();
         const ch = channels.find(c => c.id === channelId);
         document.getElementById('chatTitle').textContent = '📢 ' + (ch?.name || '');
         document.getElementById('chatMeta').textContent = (ch?.subscribers?.length || 0) + ' abonnenter';
+        setMobileChat(true);
         document.getElementById('wallpaperBtn').style.display = 'none';
         document.getElementById('groupAdminBtn').style.display = 'none';
         document.getElementById('pollBtn').style.display = 'none';
@@ -1139,6 +1145,8 @@
 
       async function openSavedMessages() {
         activeChat = { type: 'saved', target: '__self__' };
+        userScrolledUp = false;
+        resetDateSeparators();
         chatTitle.textContent = '📌 Lagrede meddelelser';
         setChatMeta('');
         messagesBox.innerHTML = '';
@@ -1181,7 +1189,8 @@
         let optionsHtml = '<option value="">Velg bruker...</option>';
         const usersRes = await loadJSON('/users').catch(() => ({ users: [] }));
         (usersRes.users || []).forEach(u => {
-          if (u !== window.__APP__?.username) optionsHtml += '<option value="user:' + escapeHtml(u) + '">' + escapeHtml(u) + '</option>';
+          const name = typeof u === 'string' ? u : u.username;
+          if (name !== window.__APP__?.username) optionsHtml += '<option value="user:' + escapeHtml(name) + '">' + escapeHtml(name) + '</option>';
         });
         groups.forEach(g => {
           optionsHtml += '<option value="group:' + escapeHtml(g.id) + '">' + escapeHtml(g.name) + '</option>';
@@ -1225,16 +1234,18 @@
         clearTimeout(typingTimeout);
         isTyping = false;
         chatTitle.textContent = getDisplayName(user);
-        setMobileSidebar(false);
+        setMobileChat(true);
         history.pushState({ chat: user, type: 'user' }, '', '#chat/' + user);
         const key = await getPeerPublicKeyPem(user);
         activeChat.peerPublicKey = key;
         setChatMeta(key ? '<span class="e2ee">🔒 Ende-til-ende-kryptert</span>' : '');
         const presenceData = await loadJSON('/presence/' + encodeURIComponent(user)).catch(() => ({}));
         if (presenceData.online) {
-          document.getElementById('chatMeta').textContent = 'online';
+          const e2eeHtml = activeChat.peerPublicKey ? '<span class="e2ee">🔒 Ende-til-ende-kryptert</span> · ' : '';
+          document.getElementById('chatMeta').innerHTML = e2eeHtml + 'online';
         } else if (presenceData.lastSeen) {
-          document.getElementById('chatMeta').textContent = 'sist sett ' + formatTime(presenceData.lastSeen);
+          const e2eeHtml = activeChat.peerPublicKey ? '<span class="e2ee">🔒 Ende-til-ende-kryptert</span> · ' : '';
+          document.getElementById('chatMeta').innerHTML = e2eeHtml + 'sist sett ' + formatTime(presenceData.lastSeen);
         }
         messagesBox.innerHTML = '';
         composer.style.display = 'flex';
@@ -1283,12 +1294,15 @@
         const group = groups.find(g => g.id === groupId);
         activeChat = { type: 'group', target: groupId, groupE2EEKey: null };
         replyingTo = null;
+        userScrolledUp = false;
+        resetDateSeparators();
         const replyBar = document.getElementById('replyBar');
         if (replyBar) replyBar.style.display = 'none';
         clearTimeout(typingTimeout);
-        setMobileChat(true);
         isTyping = false;
         chatTitle.textContent = group ? group.name : 'Gruppe';
+        setMobileChat(true);
+        history.pushState({ chat: groupId, type: 'group' }, '', '#group/' + groupId);
         messagesBox.innerHTML = '';
         composer.style.display = 'flex';
         clearImagePreview();
@@ -1296,15 +1310,17 @@
         try {
           const keyData = await loadJSON('/groups/' + encodeURIComponent(groupId) + '/keys');
           if (keyData.encryptedKey) {
-            const myKeyPair = await window.__CRYPTO__.getOrCreateIdentity();
-            const myPrivKey = await window.__CRYPTO__.importPrivateKey(myKeyPair.privateKeyPem);
-            const parts = keyData.encryptedKey.split('.');
-            if (parts.length === 2) {
-              const iv = base64ToArrayBuffer(parts[0]);
-              const enc = base64ToArrayBuffer(parts[1]);
-              const rawKey = await window.crypto.subtle.decrypt({ name: 'AES-GCM', iv }, myPrivKey, enc);
-              activeChat.groupE2EEKey = await window.crypto.subtle.importKey('raw', rawKey, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
-              e2eeHtml = '<span class="e2ee">🔒 E2EE i gruppe</span>';
+            const creatorPub = await getPeerPublicKeyPem(group.created_by);
+            if (creatorPub) {
+              const sharedKey = await window.__CRYPTO__.getSharedKey(creatorPub);
+              const parts = keyData.encryptedKey.split('.');
+              if (parts.length === 2) {
+                const iv = base64ToArrayBuffer(parts[0]);
+                const enc = base64ToArrayBuffer(parts[1]);
+                const rawKey = await window.crypto.subtle.decrypt({ name: 'AES-GCM', iv }, sharedKey, enc);
+                activeChat.groupE2EEKey = await window.crypto.subtle.importKey('raw', rawKey, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+                e2eeHtml = '<span class="e2ee">🔒 E2EE i gruppe</span>';
+              }
             }
           } else if (group && (group.members || []).length) {
             let anyKey = false;
@@ -1938,7 +1954,7 @@
           if (fileInput) fileInput.value = '';
           if (activeChat.type === 'user') await loadChat(activeChat.target);
           else if (activeChat.type === 'group') await loadGroup(activeChat.target);
-          else if (activeChat.type === 'channel') await loadChannel(activeChat.target);
+          else if (activeChat.type === 'channel') await openChannel(activeChat.target);
         } catch (e) {
           toast('Kunne ikke sende: ' + e.message);
         } finally {
@@ -2621,11 +2637,14 @@
           if (searchInput) searchInput.focus();
         }
         if (e.key === 'Escape') {
-          document.querySelectorAll('.modal-overlay').forEach(el => el.remove());
+          const modal = document.querySelector('.modal-overlay');
+          if (modal) { modal.remove(); return; }
+          const mediaViewer = document.querySelector('.media-viewer');
+          if (mediaViewer) { mediaViewer.remove(); return; }
           document.querySelectorAll('.full-emoji-picker.open').forEach(el => el.classList.remove('open'));
           const replyBar = document.getElementById('replyBar');
-          if (replyBar) replyBar.style.display = 'none';
-          replyingTo = null;
+          if (replyBar && replyBar.style.display !== 'none') { replyBar.style.display = 'none'; replyingTo = null; return; }
+          if (activeChat) { closeChat(); return; }
         }
         if (e.ctrlKey && e.key === 'Enter') {
           e.preventDefault();
@@ -3018,8 +3037,16 @@
       document.getElementById('fa2Btn').addEventListener('click', async () => {
         try {
           const data = await loadJSON('/auth/2fa/enable', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-          const wrap = document.createElement('div');
-          wrap.innerHTML = '<img src="https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' + encodeURIComponent(data.uri) + '" alt="2FA QR" /><div>' + escapeHtml(data.secret || '') + '</div>';
+          document.querySelectorAll('.modal-overlay').forEach(el => el.remove());
+          const overlay = document.createElement('div');
+          overlay.className = 'modal-overlay';
+          overlay.innerHTML = '<div class="modal" style="max-width:400px"><h2>2FA Aktivering</h2>'
+            + '<div style="text-align:center;padding:16px 0;"><img src="https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' + encodeURIComponent(data.uri) + '" alt="2FA QR" style="border-radius:8px;" /></div>'
+            + '<div style="text-align:center;padding:8px;background:var(--c-surface-2);border-radius:8px;font-family:monospace;font-size:.9rem;word-break:break-all;">' + escapeHtml(data.secret || '') + '</div>'
+            + '<div class="modal-actions"><button class="btn btn-ghost" id="fa2CloseBtn">Lukk</button></div></div>';
+          document.body.appendChild(overlay);
+          overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+          overlay.querySelector('#fa2CloseBtn').addEventListener('click', () => overlay.remove());
         } catch (e) {
           toast('2FA feilet');
         }
@@ -3296,9 +3323,9 @@
         } else {
           try {
             const data = await loadJSON('/stickers');
-            (data.packs || []).forEach(pack => {
+            for (const pack of (data.packs || [])) {
               try {
-                const packData = loadJSON('/stickers/' + encodeURIComponent(pack.id));
+                const packData = await loadJSON('/stickers/' + encodeURIComponent(pack.id));
                 const sticker = packData.stickers?.[0];
                 if (sticker) {
                   const item = document.createElement('div');
@@ -3309,7 +3336,7 @@
                   stickerContent.appendChild(item);
                 }
               } catch (e2) {}
-            });
+            }
           } catch (e) {}
         }
       }
@@ -3466,10 +3493,12 @@
           const presets = data.presets || [];
           let html = '<div class="modal-overlay" id="wallpaperModal"><div class="modal" style="max-width:500px"><h2>Velg bakgrunn</h2><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">';
           presets.forEach(p => {
-            html += '<div class="wallpaper-option" data-id="' + escapeHtml(p.id) + '" style="height:60px;border-radius:8px;border:2px solid #2a2d48;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:.8rem;color:#9ca3c7;transition:border-color .15s;' + (p.css || 'background:#0f1826;') + '">' + escapeHtml(p.name) + '</div>';
+            const safeCss = sanitizeWallpaperCss(p.css || '') || 'background:#0f1826;';
+            html += '<div class="wallpaper-option" data-id="' + escapeHtml(p.id) + '" style="height:60px;border-radius:8px;border:2px solid #2a2d48;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:.8rem;color:#9ca3c7;transition:border-color .15s;' + safeCss + '">' + escapeHtml(p.name) + '</div>';
           });
-          html += '</div><div class="modal-actions"><button class="btn btn-ghost" onclick="document.getElementById(\'wallpaperModal\').remove()">Lukk</button></div></div></div>';
+          html += '</div><div class="modal-actions"><button class="btn btn-ghost" id="wallpaperCloseBtn">Lukk</button></div></div></div>';
           document.body.insertAdjacentHTML('beforeend', html);
+          document.getElementById('wallpaperModal').querySelector('#wallpaperCloseBtn')?.addEventListener('click', () => document.getElementById('wallpaperModal')?.remove());
           document.getElementById('wallpaperModal').addEventListener('click', async (e) => {
             const opt = e.target.closest('.wallpaper-option');
             if (opt) {
@@ -3595,7 +3624,6 @@
               groups.length = 0;
               groups.push(...(data.groups || []));
               renderGroups();
-              renderSidebar();
             } catch (e) { toast(e.message || 'Kunne ikke forlate'); }
           });
         }
@@ -3846,7 +3874,7 @@
             const senderDisplay = getDisplayName(message.sender || '');
             item.innerHTML = '<div class="meta"><span class="sender">' + escapeHtml(senderDisplay) + '</span><span class="time">' + escapeHtml(formatTime(message.timestamp)) + '</span></div>'
               + renderLocationHtml(loc)
-              + '<div class="meta">' + e2eeIndicator + (isMe ? '<span class="read">' + (message.read ? '<span class="read-receipt read">✓✓</span>' : '<span class="read-receipt unread">✓</span>') + '</span>' : '') + '</div>';
+              + '<div class="meta">' + (isMe ? '<span class="read">' + (message.read ? '<span class="read-receipt read">✓✓</span>' : '<span class="read-receipt unread">✓</span>') + '</span>' : '') + '</div>';
             messagesBox.appendChild(item);
             if (!userScrolledUp) messagesBox.scrollTop = messagesBox.scrollHeight;
             return;
@@ -3855,35 +3883,7 @@
         _origFinishAppend2(message, chatId, isMe, renderedText);
       };
 
-      function initSwipeToReply() {
-        let startX = 0, currentMsg = null;
-        messagesBox.addEventListener('touchstart', (e) => {
-          const msg = e.target.closest('.msg');
-          if (!msg) return;
-          startX = e.touches[0].clientX;
-          currentMsg = msg;
-        });
-        messagesBox.addEventListener('touchmove', (e) => {
-          if (!currentMsg) return;
-          const dx = e.touches[0].clientX - startX;
-          if (dx > 30 && dx < 150) {
-            currentMsg.style.transform = 'translateX(' + Math.min(dx - 30, 80) + 'px)';
-            currentMsg.style.opacity = Math.max(0.5, 1 - dx / 300);
-          }
-        });
-        messagesBox.addEventListener('touchend', (e) => {
-          if (!currentMsg) return;
-          const dx = e.changedTouches[0].clientX - startX;
-          currentMsg.style.transform = '';
-          currentMsg.style.opacity = '';
-          if (dx > 80) {
-            const msgId = currentMsg.dataset.msgId;
-            if (msgId) startReply(msgId);
-          }
-          currentMsg = null;
-        });
-      }
-      initSwipeToReply();
+      // initSwipeToReply moved to mobile improvements block
 
       // ──────────────────────────────────────────────
       // STORIES BAR
@@ -3970,21 +3970,36 @@
         const overlay = document.createElement('div');
         overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:999999;';
         let contactsHtml = contacts.map(c =>
-          '<div style="display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--c-border);border-radius:10px;background:var(--c-surface);cursor:pointer;" onclick="window._openChatFromContact(\'' + escapeHtml(c.username) + '\');this.closest(\'div[style]\').remove();">' +
+          '<div class="contact-item" data-username="' + escapeHtml(c.username) + '" style="display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--c-border);border-radius:10px;background:var(--c-surface);cursor:pointer;">' +
             '<div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#7a3bff,#cf6fef);display:flex;align-items:center;justify-content:center;font-size:.9rem;">👤</div>' +
             '<div style="flex:1;"><div style="font-weight:600;color:var(--c-text);font-size:.9rem;">' + escapeHtml(c.displayName) + '</div>' +
             '<div style="font-size:.75rem;color:var(--c-text-muted);">' + (c.phone || '') + (c.online ? ' · 🟢 online' : '') + '</div></div>' +
-            '<button onclick="event.stopPropagation();window._removeContact(\'' + escapeHtml(c.username) + '\',this)" style="background:none;border:none;color:var(--c-text-muted);cursor:pointer;font-size:.8rem;">✕</button></div>'
+            '<button class="contact-remove-btn" data-username="' + escapeHtml(c.username) + '" style="background:none;border:none;color:var(--c-text-muted);cursor:pointer;font-size:.8rem;">✕</button></div>'
         ).join('');
         overlay.innerHTML = '<div style="background:var(--c-bg);border:1px solid var(--c-border);border-radius:16px;padding:24px;width:380px;max-width:95vw;max-height:80vh;overflow-y:auto;">' +
           '<h3 style="color:var(--c-text);margin:0 0 16px;">📒 Kontakter</h3>' +
           '<div style="display:flex;gap:6px;margin-bottom:16px;">' +
             '<input id="addContactUsername" class="input-text" placeholder="Brukernavn" style="flex:1;" />' +
             '<input id="addContactName" class="input-text" placeholder="Navn" style="flex:1;" />' +
-            '<button onclick="window._addContact()" class="btn btn-small btn-primary">+</button></div>' +
+            '<button class="btn btn-small btn-primary" id="addContactBtn">+</button></div>' +
           '<div style="display:flex;flex-direction:column;gap:6px;">' + (contactsHtml || '<div style="color:var(--c-text-muted);text-align:center;padding:20px;">Ingen kontakter ennå</div>') + '</div>' +
-          '<button onclick="this.closest(\'div[style]\').remove()" class="btn btn-ghost" style="width:100%;margin-top:16px;">Lukk</button></div>';
+          '<button class="btn btn-ghost" id="contactsCloseBtn" style="width:100%;margin-top:16px;">Lukk</button></div>';
         overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+        overlay.querySelectorAll('.contact-item').forEach(el => {
+          el.addEventListener('click', (e) => {
+            if (e.target.closest('.contact-remove-btn')) return;
+            window._openChatFromContact(el.dataset.username);
+            overlay.remove();
+          });
+        });
+        overlay.querySelectorAll('.contact-remove-btn').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            window._removeContact(btn.dataset.username, btn);
+          });
+        });
+        overlay.querySelector('#addContactBtn')?.addEventListener('click', () => window._addContact());
+        overlay.querySelector('#contactsCloseBtn')?.addEventListener('click', () => overlay.remove());
         document.body.appendChild(overlay);
       };
       window._addContact = async function() {
@@ -4187,7 +4202,7 @@
               + '<div class="info-bio">' + (bio ? escapeHtml(bio) : 'Ingen bio satt') + '</div>'
               + '<div style="text-align:center;font-size:.8rem;color:var(--c-text-muted);">' + (online ? '🟢 Online' : (lastSeen ? 'Sist sett: ' + formatTime(lastSeen) : 'Sist sett: Ukjent')) + '</div>'
               + '<div class="info-section">'
-              + '<button onclick="window._toggleBlock(\'' + escapeHtml(username) + '\',this)" class="btn btn-ghost" style="width:100%;' + (blockData.iBlocked ? 'color:#ff6666;' : '') + '">'
+              + '<button class="btn btn-ghost block-user-btn" data-username="' + escapeHtml(username) + '" style="width:100%;' + (blockData.iBlocked ? 'color:#ff6666;' : '') + '">'
               + (blockData.iBlocked ? '🔓 Lås opp bruker' : '🚫 Blokker bruker') + '</button></div>'
               + '<div class="info-section"><div class="info-section-title">FELLES MEDIER</div>'
               + '<div id="sharedMediaList" style="color:var(--c-text-muted);font-size:.82rem;">Laster...</div></div>';
@@ -4215,7 +4230,11 @@
               + '<div class="info-name">' + escapeHtml(activeChat.displayName || activeChat.target) + '</div>'
               + '<div class="info-username">Kanal</div>';
           }
-          panel.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;"><button onclick="this.closest(\'.chat-info-panel\').remove()" style="background:none;border:none;color:var(--c-text);font-size:1.2rem;cursor:pointer;">✕</button><span style="font-weight:600;color:var(--c-text);">Informasjon</span></div>' + infoHtml;
+          panel.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;"><button class="info-close-btn" style="background:none;border:none;color:var(--c-text);font-size:1.2rem;cursor:pointer;">✕</button><span style="font-weight:600;color:var(--c-text);">Informasjon</span></div>' + infoHtml;
+          panel.querySelector('.info-close-btn')?.addEventListener('click', () => panel.remove());
+          panel.querySelector('.block-user-btn')?.addEventListener('click', function() {
+            window._toggleBlock(this.dataset.username, this);
+          });
           panel.querySelectorAll('.info-avatar, .info-name').forEach(el => {
             el.style.cursor = 'default';
           });
@@ -4455,6 +4474,137 @@
             : '<div>Ingen abonnenter</div>';
         } catch(e) { document.getElementById('channelSubList').textContent = 'Feil ved lasting'; }
       };
+
+      // ──────────────────────────────────────────────
+      // ANDROID BACK BUTTON + DEEP LINKING
+      // ──────────────────────────────────────────────
+      window.addEventListener('popstate', (e) => {
+        const panel = document.querySelector('.chat-info-panel');
+        if (panel) { panel.remove(); return; }
+        const mediaViewer = document.querySelector('.media-viewer');
+        if (mediaViewer) { mediaViewer.remove(); return; }
+        const overlay = document.querySelector('.cs-overlay');
+        if (overlay) { overlay.remove(); return; }
+        const deleteChoice = document.querySelector('.delete-choice');
+        if (deleteChoice?.parentElement) { deleteChoice.parentElement.remove(); return; }
+        const emojiPicker = document.getElementById('fullEmojiPicker');
+        if (emojiPicker?.classList.contains('open')) { emojiPicker.classList.remove('open'); return; }
+        if (activeChat) { closeChat(); return; }
+      });
+      if (window.location.hash) {
+        const hash = window.location.hash.substring(1);
+        if (hash.startsWith('chat/')) {
+          const user = decodeURIComponent(hash.substring(5));
+          const item = document.querySelector('.item[data-user="' + user + '"]');
+          if (item) setTimeout(() => item.click(), 100);
+        } else if (hash.startsWith('group/')) {
+          const gid = decodeURIComponent(hash.substring(6));
+          const item = document.querySelector('.item[data-group="' + gid + '"]');
+          if (item) setTimeout(() => item.click(), 100);
+        }
+      }
+
+      // ──────────────────────────────────────────────
+      // VIRTUAL KEYBOARD VIEWPORT FIX
+      // ──────────────────────────────────────────────
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', () => {
+          const composer = document.getElementById('composer');
+          const chatMain = document.querySelector('.chat-main');
+          if (composer && window.visualViewport) {
+            const kbHeight = window.innerHeight - window.visualViewport.height;
+            if (kbHeight > 50) {
+              composer.style.bottom = '0px';
+              composer.style.position = 'sticky';
+              if (chatMain) chatMain.scrollTop = chatMain.scrollHeight;
+            }
+          }
+        });
+      }
+
+      // ──────────────────────────────────────────────
+      // CLICKABLE LINKS IN MESSAGES
+      // ──────────────────────────────────────────────
+      function linkifyText(text) {
+        return escapeHtml(text).replace(
+          /(https?:\/\/[^\s<&]+)/g,
+          '<a href="$1" target="_blank" rel="noopener noreferrer" style="color:#7a3bff;text-decoration:underline;word-break:break-all;">$1</a>'
+        );
+      }
+
+      // Patch finishAppend to use linkifyText
+      const _origFinishAppend4 = finishAppend;
+      finishAppend = function(message, chatId, isMe, renderedText) {
+        _origFinishAppend4(message, chatId, isMe, renderedText);
+        const lastMsg = messagesBox.lastElementChild;
+        if (lastMsg && !message.deleted) {
+          const textEl = lastMsg.querySelector('.msg-text');
+          if (textEl && renderedText && !message.deleted) {
+            textEl.innerHTML = linkifyText(renderedText);
+          }
+        }
+      };
+
+      // ──────────────────────────────────────────────
+      // CLICKABLE LINK PREVIEW CARDS
+      // ──────────────────────────────────────────────
+      const _origRenderLinkPreview = renderLinkPreview;
+      renderLinkPreview = function(preview) {
+        if (!preview) return '';
+        const html = _origRenderLinkPreview(preview);
+        return '<a href="' + escapeHtml(preview.url) + '" target="_blank" rel="noopener noreferrer" style="text-decoration:none;color:inherit;display:block;">' + html + '</a>';
+      };
+
+      // ──────────────────────────────────────────────
+      // HAPTIC FEEDBACK + CONTEXT MENU BOUNDS
+      // ──────────────────────────────────────────────
+      const _origShowQuickActions = showQuickActions;
+      showQuickActions = function(msgEl, x, y) {
+        navigator.vibrate?.(15);
+        const menuWidth = 180, menuHeight = 320;
+        let posX = Math.min(x, window.innerWidth - menuWidth - 8);
+        let posY = Math.min(y, window.innerHeight - menuHeight - 8);
+        posX = Math.max(8, posX);
+        posY = Math.max(8, posY);
+        _origShowQuickActions(msgEl, posX, posY);
+      };
+
+      // ──────────────────────────────────────────────
+      // SWIPE-TO-REPLY: PASSIVE:FALSE + CONFLICT FIX
+      // ──────────────────────────────────────────────
+      function initSwipeToReply() {
+        let startX = 0, currentMsg = null, swiping = false;
+        messagesBox.addEventListener('touchstart', (e) => {
+          const msg = e.target.closest('.msg');
+          if (!msg) return;
+          startX = e.touches[0].clientX;
+          currentMsg = msg;
+          swiping = false;
+        }, { passive: true });
+        messagesBox.addEventListener('touchmove', (e) => {
+          if (!currentMsg) return;
+          const dx = e.touches[0].clientX - startX;
+          const dy = Math.abs(e.touches[0].clientY - (e.touches[0].clientY || 0));
+          if (dx > 20) swiping = true;
+          if (swiping && dx > 30 && dx < 150) {
+            e.preventDefault();
+            currentMsg.style.transform = 'translateX(' + Math.min(dx - 30, 80) + 'px)';
+            currentMsg.style.opacity = Math.max(0.5, 1 - dx / 300);
+          }
+        }, { passive: false });
+        messagesBox.addEventListener('touchend', (e) => {
+          if (!currentMsg) return;
+          const dx = e.changedTouches[0].clientX - startX;
+          currentMsg.style.transform = '';
+          currentMsg.style.opacity = '';
+          if (dx > 80) {
+            const msgId = currentMsg.dataset.msgId;
+            if (msgId) startReply(msgId);
+          }
+          currentMsg = null;
+          swiping = false;
+        });
+      }
 
       await loadFolders();
       await loadPinnedChats();
