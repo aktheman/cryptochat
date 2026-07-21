@@ -1,7 +1,9 @@
 import os, json, base64, secrets, hashlib, time, re, collections, threading
+import ipaddress
 from datetime import datetime, timedelta
 from pathlib import Path
 from functools import wraps
+from urllib.parse import urlparse
 
 from flask import (
     Flask, render_template, request, jsonify, session,
@@ -33,6 +35,8 @@ app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE='Lax',
     PERMANENT_SESSION_LIFETIME=timedelta(minutes=30),
+    CSRF_ENABLED=bool(os.environ.get('CSRF_ENABLED', 'false').lower() in ('true', '1', 'yes')),
+    CSRF_TRUSTED_ORIGINS=[o.strip() for o in os.environ.get('CSRF_TRUSTED_ORIGINS', '').split(',') if o.strip()],
 )
 app.config.update(
     MAX_CONTENT_LENGTH=50 * 1024 * 1024,
@@ -51,10 +55,6 @@ def set_security_headers(response):
     response.headers['X-XSS-Protection'] = '1; mode=block'
     response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
     response.headers['Permissions-Policy'] = 'camera=(self), microphone=(self), geolocation=()'
-    response.headers['Cross-Origin-Embedder-Policy'] = 'require-corp'
-    response.headers['Cross-Origin-Opener-Policy'] = 'same-origin'
-    response.headers['Cross-Origin-Resource-Policy'] = 'same-origin'
-    response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
     response.headers['Content-Security-Policy'] = (
         "default-src 'self'; "
         "script-src 'self' 'wasm-unsafe-eval'; "
@@ -74,7 +74,39 @@ def set_security_headers(response):
         response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
     return response
 
-RATE_LIMIT_STORE = collections.defaultdict(list)
+def_rate_store = {'ts': [], 'n': 0}
+def _rl_get(store, key):
+    item = store.setdefault(key, {'ts': [], 'n': 0})
+    return item
+def _rl_prune(store, now, window_seconds=3600):
+    limit = now - window_seconds
+    for k in list(store):
+        item = store[k]
+        item['ts'] = [t for t in item['ts'] if t > limit]
+        if not item['ts']:
+            del store[k]
+
+
+class _RateStore:
+    __slots__ = ('_d', '_max_items', '_window')
+    def __init__(self, max_items=10000, window_seconds=3600):
+        self._d = {}
+        self._max_items = max_items
+        self._window = window_seconds
+    def allow(self, key: str, max_requests: int, window_seconds: int):
+        now = time.time()
+        item = _rl_get(self._d, key)
+        item['ts'] = [t for t in item['ts'] if now - t < window_seconds]
+        if len(item['ts']) >= max_requests:
+            return False
+        item['ts'].append(now)
+        if len(self._d) > self._max_items:
+            _rl_prune(self._d, now, self._window)
+        return True
+    def clear(self):
+        self._d.clear()
+
+RATE_LIMIT_STORE = _RateStore()
 
 def rate_limit(max_requests=30, window_seconds=60):
     def decorator(f):
@@ -82,17 +114,9 @@ def rate_limit(max_requests=30, window_seconds=60):
         def wrapper(*args, **kwargs):
             username = session.get('username') or request.remote_addr
             key = f"{f.__name__}:{username}"
-            now = time.time()
-            RATE_LIMIT_STORE[key] = [t for t in RATE_LIMIT_STORE[key] if now - t < window_seconds]
-            if len(RATE_LIMIT_STORE[key]) >= max_requests:
+            if not RATE_LIMIT_STORE.allow(key, max_requests, window_seconds):
+                audit('rate_limited', actor=str(username or ''), target=request.path)
                 return jsonify({'success': False, 'message': 'For mange forespørsler. Vent litt.'}), 429
-            RATE_LIMIT_STORE[key].append(now)
-            if len(RATE_LIMIT_STORE) > 10000:
-                cutoff = now - window_seconds * 2
-                for k in list(RATE_LIMIT_STORE.keys()):
-                    RATE_LIMIT_STORE[k] = [t for t in RATE_LIMIT_STORE[k] if t > cutoff]
-                    if not RATE_LIMIT_STORE[k]:
-                        del RATE_LIMIT_STORE[k]
             return f(*args, **kwargs)
         return wrapper
     return decorator
@@ -103,6 +127,7 @@ DATA_DIR.mkdir(exist_ok=True)
 (DATA_DIR / 'uploads').mkdir(exist_ok=True)
 
 USERS_FILE = DATA_DIR / 'users.json'
+AUDIT_LOG_FILE = DATA_DIR / 'audit.jsonl'
 MESSAGES_FILE = DATA_DIR / 'messages.json'
 KEYS_FILE = DATA_DIR / 'keys.json'
 GROUPS_FILE = DATA_DIR / 'groups.json'
@@ -148,9 +173,25 @@ def convert_to_bool(val, default=False):
         return val.lower() in ["true", "1", "yes", "on"]
     return default
 
+def audit(event: str, actor: str = '', target: str = '', meta: str = ''):
+    try:
+        line = json.dumps({
+            'ts': datetime.utcnow().isoformat() + 'Z',
+            'event': event,
+            'actor': actor,
+            'target': target,
+            'meta': meta,
+        }, ensure_ascii=False) + '\n'
+        with AUDIT_LOG_FILE.open('a', encoding='utf-8') as f:
+            f.write(line)
+    except Exception:
+        pass
+
 def touch_presence(username):
     presence = load_json(USER_PRESENCE_FILE, {})
-    presence[username] = now_iso()
+    if not isinstance(presence.get(username), dict):
+        presence[username] = {}
+    presence[username]['lastSeen'] = now_iso()
     save_json(USER_PRESENCE_FILE, presence)
 
 def parse_iso(dt):
@@ -166,7 +207,9 @@ def parse_iso(dt):
 
 def is_online(username, timeout_minutes=5):
     presence = load_json(USER_PRESENCE_FILE, {})
-    last = parse_iso(presence.get(username))
+    entry = presence.get(username)
+    ts = entry.get('lastSeen') if isinstance(entry, dict) else entry
+    last = parse_iso(ts)
     if not last:
         return False
     return (datetime.utcnow() - last) < timedelta(minutes=timeout_minutes)
@@ -262,6 +305,35 @@ def require_login(f):
         return f(*args, **kwargs)
     return wrapper
 
+_encoded_prefixes = ('http://', 'https://')
+
+def _is_public_ip(host: str) -> bool:
+    try:
+        addr = ipaddress.ip_address(host)
+        return not (addr.is_private or addr.is_loopback or addr.is_reserved or addr.is_link_local or addr.is_multicast) and not (addr.version == 6 and str(addr) == '::1')
+    except ValueError:
+        return False
+
+def _is_public_site_url(url: str) -> bool:
+    if not url.startswith(_encoded_prefixes):
+        return False
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme != 'https' and parsed.scheme != 'http':
+            return False
+        host = (parsed.hostname or '').lower().split(':')[0]
+        if not host:
+            return False
+        if host in ('localhost', '127.0.0.1', '0.0.0.0'):
+            return False
+        try:
+            addr = ipaddress.ip_address(host)
+            return not (addr.is_private or addr.is_loopback or addr.is_reserved or addr.is_link_local or addr.is_multicast)
+        except ValueError:
+            return True
+    except Exception:
+        return False
+
 def sanitize_input(text, max_length=5000):
     if not isinstance(text, str):
         return ''
@@ -276,6 +348,20 @@ def validate_password(password):
     if not password or not isinstance(password, str):
         return False
     return len(password) >= 6 and len(password) <= 128
+
+def password_strength_ok(pw: str) -> bool:
+    if len(pw) < 10:
+        return False
+    if not any(c.isupper() for c in pw):
+        return False
+    if not any(c.islower() for c in pw):
+        return False
+    if not any(c.isdigit() for c in pw):
+        return False
+    symbols = set('!@#$%^&*()-_=+[]{}|;:\',"./<>?`~')
+    if not any(c in symbols for c in pw):
+        return False
+    return True
 
 def is_admin(username):
     user = get_user(username)
@@ -312,6 +398,19 @@ def derive_shared_keycurve25519(my_priv_b64, their_pub_b64):
     shared = my_priv.exchange(their_pub)
     derived = HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=b'cryptochat-v1').derive(shared)
     return derived
+
+def _encrypt_2fa_secret(plaintext: str) -> str:
+    key = app.secret_key[:32]
+    aes = AESGCM(key)
+    nonce = secrets.token_bytes(12)
+    ct = aes.encrypt(nonce, plaintext.encode('utf-8'), None)
+    return base64.urlsafe_b64encode(nonce + ct).decode('utf-8')
+
+def _decrypt_2fa_secret(enc: str) -> str:
+    data = base64.urlsafe_b64decode(enc)
+    nonce, ct = data[:12], data[12:]
+    aes = AESGCM(app.secret_key[:32])
+    return aes.decrypt(nonce, ct, None).decode('utf-8')
 
 def get_user_public_key(username):
     return get_user(username or '') or {}
@@ -350,7 +449,6 @@ def get_or_create_pair_key(username_a, username_b):
     if pk not in keys:
         new_key = AESGCM.generate_key(bit_length=256)
         keys[pk] = {
-            'key': secrets.token_bytes(32).hex(),
             'key_b64': base64.b64encode(new_key).decode(),
             'created': now_iso(),
         }
@@ -362,7 +460,6 @@ def get_or_create_group_key(group_id):
     if group_id not in keys:
         new_key = AESGCM.generate_key(bit_length=256)
         keys[group_id] = {
-            'key': secrets.token_bytes(32).hex(),
             'key_b64': base64.b64encode(new_key).decode(),
             'created': now_iso(),
         }
@@ -372,11 +469,28 @@ def get_or_create_group_key(group_id):
 # ──────────────────────────────────────────────
 # Pages
 # ──────────────────────────────────────────────
-@app.route('/')
+@app.route('/', methods=['GET'])
 def index():
     if 'username' not in session:
-        return redirect(url_for('login_page'))
+        if request.accept_mimetypes.accept_html:
+            return redirect(url_for('login_page'))
+        return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
     return redirect(url_for('chat_page'))
+
+
+def require_csrf(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if request.method in ('POST', 'PUT', 'PATCH', 'DELETE'):
+            if not app.config.get('CSRF_ENABLED', False):
+                return f(*args, **kwargs)
+            origin = request.headers.get('Origin') or request.headers.get('Referer', '')
+            if origin:
+                allowed = app.config.get('CSRF_TRUSTED_ORIGINS', [])
+                if allowed and not any(origin.startswith(o.rstrip('/')) for o in allowed):
+                    return jsonify({'success': False, 'message': 'Ugyldig forespørselskilde.'}), 400
+        return f(*args, **kwargs)
+    return wrapper
 
 @app.route('/login')
 def login_page():
@@ -410,6 +524,8 @@ def register():
         return jsonify({'success': False, 'message': 'Brukernavn kan bare inneholde bokstaver, tall og understreker (3-30 tegn).'}), 400
     if not validate_password(password):
         return jsonify({'success': False, 'message': 'Passordet må være mellom 6 og 128 tegn.'}), 400
+    if not password_strength_ok(password):
+        return jsonify({'success': False, 'message': 'Passordet må være minst 10 tegn og inneholde store og små bokstaver, tall og spesialtegn (!@#$%...).'}), 400
     users = load_json(USERS_FILE, {})
     if username in users:
         return jsonify({'success': False, 'message': 'Brukernavnet er opptatt.'}), 400
@@ -427,6 +543,7 @@ def register():
     session['username'] = username
     session_id = secrets.token_hex(16)
     session['session_token'] = session_id
+    audit('registered', actor=username, target=username)
     sessions = load_json(SESSIONS_FILE, {})
     sessions.setdefault(username, {})[session_id] = {
         'token': session_id,
@@ -449,17 +566,17 @@ def login():
     twofa_code = (data.get('twofa_code') or '').strip()
     if not username or not password:
         return jsonify({'success': False, 'message': 'Brukernavn og passord er påkrevd.'}), 400
-    if not validate_password(password):
-        return jsonify({'success': False, 'message': 'Passordet må være mellom 6 og 128 tegn.'}), 400
     users = load_json(USERS_FILE, {})
     user = users.get(username)
     if not user or not check_password_hash(user.get('password_hash', ''), password):
+        audit('login_failed', actor=username, target=username, meta='invalid_credentials')
         return jsonify({'success': False, 'message': 'Ugyldig brukernavn eller passord.'}), 401
     if user.get('banned'):
         return jsonify({'success': False, 'message': 'Kontoen din er utestengt.'}), 403
     if user.get('twofa_enabled') and user.get('twofa_secret_hash'):
-        totp = pyotp.TOTP(user['twofa_secret_hash'])
+        totp = pyotp.TOTP(_decrypt_2fa_secret(user['twofa_secret_hash']))
         if not totp.verify(twofa_code):
+            audit('login_failed', actor=username, target=username, meta='bad_2fa')
             return jsonify({'success': False, 'message': 'Ugyldig 2FA-kode.'}), 401
     session['username'] = username
     session_id = secrets.token_hex(16)
@@ -475,20 +592,24 @@ def login():
     }
     save_json(SESSIONS_FILE, sessions)
     touch_presence(username)
+    audit('login_success', actor=username, target=username)
     return jsonify({'success': True})
 
 @app.route('/auth/logout', methods=['POST'])
 @rate_limit(max_requests=30, window_seconds=60)
+@require_csrf
 def logout():
-    username = session.get('username')
-    session_id = session.get('session_token')
+    username = session.get('username', '')
+    session_id = session.get('session_token', '')
     if username and session_id:
         invalidate_session(username, session_id)
     session.clear()
+    audit('logout', actor=username, target=username)
     return jsonify({'success': True})
 
 @app.route('/auth/logout-all', methods=['POST'])
 @rate_limit(max_requests=10, window_seconds=300)
+@require_csrf
 def logout_all():
     username = session.get('username')
     if username:
@@ -518,6 +639,7 @@ def revoke_session(session_id):
 
 @app.route('/auth/2fa/enable', methods=['POST'])
 @rate_limit(max_requests=5, window_seconds=600)
+@require_csrf
 def enable_2fa():
     username = session.get('username')
     if not username:
@@ -526,13 +648,15 @@ def enable_2fa():
     totp = pyotp.TOTP(secret)
     uri = totp.provisioning_uri(name=username, issuer_name='CryptoChat')
     users = load_json(USERS_FILE, {})
-    users[username]['twofa_secret_hash'] = secret
+    users[username]['twofa_secret_hash'] = _encrypt_2fa_secret(secret)
     users[username]['twofa_enabled'] = True
     save_json(USERS_FILE, users)
+    audit('twofa_enabled', actor=username, target=username)
     return jsonify({'success': True, 'secret': secret, 'uri': uri})
 
 @app.route('/auth/2fa/disable', methods=['POST'])
 @rate_limit(max_requests=5, window_seconds=600)
+@require_csrf
 def disable_2fa():
     username = session.get('username')
     if not username:
@@ -541,6 +665,7 @@ def disable_2fa():
     users[username]['twofa_enabled'] = False
     users[username]['twofa_secret_hash'] = None
     save_json(USERS_FILE, users)
+    audit('twofa_disabled', actor=username, target=username)
     return jsonify({'success': True})
 
 # ──────────────────────────────────────────────
@@ -548,6 +673,7 @@ def disable_2fa():
 # ──────────────────────────────────────────────
 @app.route('/presence/batch', methods=['POST'])
 @rate_limit(max_requests=60, window_seconds=60)
+@require_login
 def presence_batch():
     data = request.get_json(force=True, silent=True) or {}
     users = data.get('users', [])
@@ -555,10 +681,11 @@ def presence_batch():
     now = datetime.utcnow()
     result = []
     for u in users:
-        last = presence.get(u)
-        last_dt = parse_iso(last)
+        entry = presence.get(u)
+        ts = entry.get('lastSeen') if isinstance(entry, dict) else entry
+        last_dt = parse_iso(ts)
         online = bool(last_dt and (now - last_dt) < timedelta(minutes=5))
-        result.append({'username': u, 'online': online, 'lastSeen': last})
+        result.append({'username': u, 'online': online, 'lastSeen': ts})
     return jsonify({'success': True, 'presence': result})
 
 # ──────────────────────────────────────────────
@@ -566,6 +693,7 @@ def presence_batch():
 # ──────────────────────────────────────────────
 @app.route('/key/publish', methods=['POST'])
 @rate_limit(max_requests=20, window_seconds=120)
+@require_csrf
 def publish_public_key():
     if 'username' not in session:
         return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
@@ -577,6 +705,7 @@ def publish_public_key():
     if session['username'] in users:
         users[session['username']]['identity_public_key'] = public_key
         save_json(USERS_FILE, users)
+        audit('key_published', actor=session['username'], target=session['username'])
     return jsonify({'success': True})
 
 # ──────────────────────────────────────────────
@@ -593,6 +722,7 @@ def get_theme():
 
 @app.route('/theme', methods=['POST'])
 @rate_limit(max_requests=20, window_seconds=120)
+@require_csrf
 def set_theme():
     username = session.get('username')
     if not username:
@@ -704,6 +834,7 @@ def get_messages(other_user):
 
 @app.route('/send', methods=['POST'])
 @rate_limit(max_requests=30, window_seconds=60)
+@require_csrf
 def send_message():
     if 'username' not in session:
         return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
@@ -739,10 +870,12 @@ def send_message():
         'silent': convert_to_bool(data.get('silent', False), False),
     })
     save_json(MESSAGES_FILE, messages)
+    audit('message_sent', actor=session['username'], target=recipient, meta=mtype)
     return jsonify({'success': True, 'message': 'Melding sendt.'})
 
 @app.route('/upload', methods=['POST'])
 @rate_limit(max_requests=20, window_seconds=120)
+@require_csrf
 def upload_file():
     if 'username' not in session:
         return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
@@ -878,6 +1011,8 @@ def mark_read(partner):
     return jsonify({'success': True, 'updated': updated, 'lastReadAt': now})
 
 @app.route('/notifications', methods=['GET'])
+@rate_limit(max_requests=60, window_seconds=60)
+@require_login
 def get_notifications():
     username = session.get('username')
     if not username:
@@ -885,6 +1020,58 @@ def get_notifications():
     notify = load_json(NOTIFICATIONS_FILE, {})
     entries = notify.get(username, [])
     return jsonify({'success': True, 'notifications': entries})
+
+def create_notification(username, type_, message, data=None):
+    data = data or {}
+    entry = {
+        'type': type_,
+        'message': message,
+        'data': data,
+        'read': False,
+        'created': now_iso(),
+    }
+    notify = load_json(NOTIFICATIONS_FILE, {})
+    notify.setdefault(username, [])
+    notify[username].append(entry)
+    if len(notify[username]) > 500:
+        notify[username] = notify[username][-200:]
+    save_json(NOTIFICATIONS_FILE, notify)
+    return entry
+
+@app.route('/notifications', methods=['POST'])
+@rate_limit(max_requests=30, window_seconds=120)
+@require_login
+def add_notification():
+    me = session['username']
+    payload = request.get_json(force=True, silent=True) or {}
+    type_ = (payload.get('type') or 'info').strip()
+    message = (payload.get('message') or '').strip()
+    if not message:
+        return jsonify({'success': False, 'message': 'Mangler melding.'}), 400
+    entry = create_notification(me, type_, message, payload.get('data') or {})
+    return jsonify({'success': True, 'notification': entry})
+
+@app.route('/notifications/read', methods=['POST'])
+@rate_limit(max_requests=30, window_seconds=120)
+@require_login
+def mark_notifications_read():
+    username = session.get('username')
+    if not username:
+        return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
+    payload = request.get_json(force=True, silent=True) or {}
+    ids = payload.get('ids') or []
+    if not isinstance(ids, list):
+        return jsonify({'success': False, 'message': 'ids må være liste.'}), 400
+    notify = load_json(NOTIFICATIONS_FILE, {})
+    entries = notify.get(username, [])
+    read_set = set(str(i) for i in ids)
+    updated = 0
+    for i, item in enumerate(entries):
+        if str(i) in read_set and item.get('read') is False:
+            entries[i]['read'] = True
+            updated += 1
+    save_json(NOTIFICATIONS_FILE, notify)
+    return jsonify({'success': True, 'updated': updated})
 
 # ──────────────────────────────────────────────
 # Groups
@@ -945,6 +1132,7 @@ def list_groups():
 
 @app.route('/groups', methods=['POST'])
 @rate_limit(max_requests=10, window_seconds=300)
+@require_csrf
 def create_group():
     if 'username' not in session:
         return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
@@ -966,6 +1154,7 @@ def create_group():
     get_or_create_group_key(group_id)
     groups.append(group)
     save_json(GROUPS_FILE, groups)
+    audit('group_created', actor=session['username'], target=group_id, meta=name)
     return jsonify({'success': True, 'group': group})
 
 @app.route('/groups/<group_id>/messages', methods=['GET'])
@@ -1170,6 +1359,7 @@ def get_reactions(message_id):
 # ──────────────────────────────────────────────
 @app.route('/messages/<message_id>/edit', methods=['PUT'])
 @rate_limit(max_requests=30, window_seconds=60)
+@require_csrf
 def edit_message(message_id):
     username = session.get('username')
     if not username:
@@ -1185,11 +1375,13 @@ def edit_message(message_id):
             m['edited'] = True
             m['edited_at'] = now_iso()
             save_json(MESSAGES_FILE, messages)
+            audit('message_edited', actor=username, target=message_id)
             return jsonify({'success': True})
     return jsonify({'success': False, 'message': 'Melding ikke funnet.'}), 404
 
 @app.route('/messages/<message_id>', methods=['DELETE'])
 @rate_limit(max_requests=30, window_seconds=60)
+@require_csrf
 def delete_message(message_id):
     username = session.get('username')
     if not username:
@@ -1201,6 +1393,7 @@ def delete_message(message_id):
             m['ciphertext'] = ''
             m['type'] = 'deleted'
             save_json(MESSAGES_FILE, messages)
+            audit('message_deleted', actor=username, target=message_id)
             return jsonify({'success': True})
     return jsonify({'success': False, 'message': 'Melding ikke funnet.'}), 404
 
@@ -1224,6 +1417,7 @@ def get_profile():
 
 @app.route('/profile', methods=['POST'])
 @rate_limit(max_requests=20, window_seconds=120)
+@require_csrf
 def update_profile():
     username = session.get('username')
     if not username:
@@ -1462,7 +1656,12 @@ def admin_stats():
     messages = load_json(MESSAGES_FILE, [])
     groups = load_json(GROUPS_FILE, [])
     sessions = load_json(SESSIONS_FILE, {})
-    active_sessions = sum(1 for s in sessions.values() if s.get('active', False))
+    active_sessions = 0
+    for user_sessions in sessions.values():
+        if isinstance(user_sessions, dict):
+            for sid, sdata in user_sessions.items():
+                if isinstance(sdata, dict) and sdata.get('active'):
+                    active_sessions += 1
     return jsonify({
         'success': True,
         'stats': {
@@ -1563,6 +1762,7 @@ def admin_list_messages():
     return jsonify({'success': True, 'messages': result})
 
 @app.route('/admin/pages', methods=['GET'])
+@require_admin
 def admin_page():
     return render_template('admin.html')
 
@@ -1853,7 +2053,15 @@ def cleanup_disappearing_messages():
     messages = load_json(MESSAGES_FILE, [])
     now = datetime.utcnow()
     before = len(messages)
-    cleaned = [m for m in messages if not m.get('self_destruct_at') or parse_iso(m.get('self_destruct_at')) and parse_iso(m.get('self_destruct_at')).replace(tzinfo=None) > now]
+    cleaned = []
+    for m in messages:
+        sda = m.get('self_destruct_at')
+        if not sda:
+            cleaned.append(m)
+            continue
+        parsed = parse_iso(sda)
+        if parsed and parsed.replace(tzinfo=None) > now:
+            cleaned.append(m)
     if len(cleaned) < before:
         save_json(MESSAGES_FILE, cleaned)
 
@@ -1880,6 +2088,7 @@ def touch_session():
 @app.route('/messages/<message_id>/forward', methods=['POST'])
 @rate_limit(max_requests=30, window_seconds=120)
 @require_login
+@require_csrf
 def forward_message(message_id):
     me = session['username']
     data = request.get_json(force=True, silent=True) or {}
@@ -2211,7 +2420,7 @@ def search_gifs():
         return jsonify({'success': True, 'gifs': []})
     try:
         import urllib.request, urllib.parse
-        url = 'https://tenor.googleapis.com/v2/search?q=' + urllib.parse.quote(query) + '&key=AIzaSyAyimkuYQYF_FXVALexPuGQctUWRURdCYQ&limit=20&media_filter=gif,tinygif'
+        url = 'https://tenor.googleapis.com/v2/search?q=' + urllib.parse.quote(query) + '&key=' + urllib.parse.quote(os.environ.get('TENOR_API_KEY', '')) + '&limit=20&media_filter=gif,tinygif'
         req = urllib.request.Request(url, headers={'User-Agent': 'CryptoChat/1.0'})
         with urllib.request.urlopen(req, timeout=5) as resp:
             data = json.loads(resp.read())
@@ -2527,6 +2736,31 @@ def sync_remove_key(device_id):
 # ──────────────────────────────────────────────
 # SECRET_KEY Rotation
 # ──────────────────────────────────────────────
+@app.route('/auth/change-password', methods=['POST'])
+@rate_limit(max_requests=5, window_seconds=300)
+@require_csrf
+@require_login
+def change_password():
+    data = request.get_json(force=True, silent=True) or {}
+    old_password = data.get('old_password', '')
+    new_password = data.get('new_password', '')
+    if not old_password or not new_password:
+        return jsonify({'success': False, 'message': 'Gamelt og nytt passord er påkrevd.'}), 400
+    if not password_strength_ok(new_password):
+        return jsonify({'success': False, 'message': 'Det nye passordet er ikke sterkt nok. Minst 10 tegn med store/små bokstaver, tall og spesialtegn.'}), 400
+    username = session.get('username')
+    users = load_json(USERS_FILE, {})
+    user = users.get(username)
+    if not user or not check_password_hash(user.get('password_hash', ''), old_password):
+        return jsonify({'success': False, 'message': 'Feil gamalt passord.'}), 401
+    users[username]['password_hash'] = generate_password_hash(new_password)
+    save_json(USERS_FILE, users)
+    invalidate_all_sessions(username)
+    session.clear()
+    audit('password_changed', actor=username, target=username)
+    return jsonify({'success': True, 'message': 'Passord endra. Logg inn på nytt.'})
+
+
 @app.route('/admin/rotate-secret', methods=['POST'])
 @require_login
 def rotate_secret_key():
@@ -2551,6 +2785,7 @@ DRAFTS_FILE = DATA_DIR / 'drafts.json'
 @app.route('/drafts', methods=['POST'])
 @rate_limit(max_requests=60, window_seconds=60)
 @require_login
+@require_csrf
 def save_draft():
     me = session['username']
     data = request.get_json(force=True, silent=True) or {}
@@ -2661,20 +2896,20 @@ def push_vapid_key():
 # Link Previews
 # ──────────────────────────────────────────────
 @app.route('/link-preview')
+@rate_limit(max_requests=20, window_seconds=120)
 @require_login
 def get_link_preview():
     url = (request.args.get('url') or '').strip()
-    if not url or not url.startswith(('http://', 'https://')):
+    if not url or not _is_public_site_url(url):
         return jsonify({'success': True, 'preview': None})
     cache = load_json(LINK_PREVIEWS_FILE, {})
     if url in cache:
         return jsonify({'success': True, 'preview': cache[url]})
-    import urllib.request
     try:
-        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (compatible; CryptoChat/1.0)'})
+        import urllib.request
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
         with urllib.request.urlopen(req, timeout=5) as resp:
             html = resp.read(200000).decode('utf-8', errors='ignore')
-        import re
         title_match = re.search(r'<title[^>]*>(.*?)</title>', html, re.IGNORECASE | re.DOTALL)
         desc_match = re.search(r'<meta[^>]*name=["\']description["\'][^>]*content=["\'](.*?)["\']', html, re.IGNORECASE) or re.search(r'<meta[^>]*content=["\'](.*?)["\'][^>]*name=["\']description["\']', html, re.IGNORECASE)
         og_img = re.search(r'<meta[^>]*property=["\']og:image["\'][^>]*content=["\'](.*?)["\']', html, re.IGNORECASE) or re.search(r'<meta[^>]*content=["\'](.*?)["\'][^>]*property=["\']og:image["\']', html, re.IGNORECASE)
@@ -2687,11 +2922,14 @@ def get_link_preview():
         cache[url] = preview
         if len(cache) > 500:
             oldest = list(cache.keys())[:100]
-            for k in oldest: del cache[k]
+            for k in oldest:
+                del cache[k]
         save_json(LINK_PREVIEWS_FILE, cache)
         return jsonify({'success': True, 'preview': preview})
     except Exception:
         return jsonify({'success': True, 'preview': None})
+
+
 
 # ──────────────────────────────────────────────
 # Key Rotation
@@ -2699,6 +2937,7 @@ def get_link_preview():
 @app.route('/key/rotate', methods=['POST'])
 @rate_limit(max_requests=5, window_seconds=600)
 @require_login
+@require_csrf
 def rotate_key():
     me = session['username']
     users = load_json(USERS_FILE, {})
@@ -2708,6 +2947,7 @@ def rotate_key():
     users[me]['identity_keypair'] = new_keypair
     users[me]['key_rotated_at'] = now_iso()
     save_json(USERS_FILE, users)
+    audit('key_rotated', actor=me, target=me)
     return jsonify({'success': True, 'message': 'Noekkel rotert. Del den nye offentlige noekkelen med kontakter.'})
 
 @app.route('/key/rotation-status')
@@ -2753,72 +2993,19 @@ def manifest_json():
 
 @app.route('/sw.js')
 def service_worker():
-    sw = r"""
-const CACHE = 'cryptochat-v3';
-const ASSETS = [
-  '/',
-  '/chat',
-  '/static/css/style.css',
-  '/static/js/chat.js',
-  '/static/js/crypto.js',
-  '/manifest.json',
-  '/offline.html'
-];
-const API = [
-  '/users/all',
-  '/groups',
-  '/channels',
-  '/folders',
-  '/saved',
-  '/auth/register',
-  '/auth/login',
-  '/presence/batch',
-  '/keys/'
-];
-const CACHE_API = 'cryptochat-api-v1';
-
-self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
-});
+    sw = """
+self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) => {
-  e.waitUntil(self.clients.claim());
+  e.waitUntil(
+    caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k))))
+      .then(() => self.registration.unregister())
+      .then(() => self.clients.matchAll(clients => {
+        for (const c of clients) { if (c.url.includes('/chat')) c.navigate('/chat'); }
+      }))
+  );
 });
-self.addEventListener('fetch', (event) => {
-  const url = new URL(event.request.url);
-  if (API.some(p => url.pathname.startsWith(p))) {
-    event.respondWith(
-      fetch(event.request)
-        .then((res) => {
-          if (res.ok) {
-            const clone = res.clone();
-            caches.open(CACHE_API).then(c => c.put(event.request, clone));
-          }
-          return res;
-        })
-        .catch(() => caches.match('/offline.html'))
-    );
-  } else {
-    event.respondWith(
-      caches.match(event.request).then(c => c || fetch(event.request).then(r => {
-        if (r.ok) caches.open(CACHE).then(c => c.put(event.request, r.clone()));
-        return r;
-      }).catch(() => caches.match('/offline.html')))
-    );
-  }
-});
-self.addEventListener('push', (event) => {
-  const data = event.data ? event.data.json() : {};
-  const title = data.title || 'CryptoChat';
-  const options = { body: data.body || '', icon: '/static/img/icon-192.png', badge: '/static/img/icon-192.png', data: data.url || '/', renotify: true };
-  event.waitUntil(self.registration.showNotification(title, options));
-});
-self.addEventListener('notificationclick', (event) => {
-  event.notification.close();
-  event.waitUntil(clients.matchAll({ type: 'window' }).then(c => {
-    const url = event.notification.data || '/chat';
-    for (const client of c) { if (client.url.includes(url) && 'focus' in client) return client.focus(); }
-    return clients.openWindow(url);
-  }));
+self.addEventListener('fetch', (e) => {
+  e.respondWith(fetch(e.request).catch(() => caches.match(e.request)));
 });
 """
     return Response(sw, mimetype='application/javascript')
@@ -3129,7 +3316,7 @@ def search_v2():
         text = ''
         try:
             if is_dm:
-                sk = derive_symmetric_key(me, m.get('sender', '') if m.get('recipient') == me else m.get('recipient', ''))
+                sk = get_or_create_pair_key(me, m.get('sender', '') if m.get('recipient') == me else m.get('recipient', ''))
                 text = decrypt_symmetric(m['ciphertext'], sk) if m.get('type') == 'text' else m.get('filename', '')
             elif is_group:
                 is_e2ee = convert_to_bool(m.get('e2ee'), False)
@@ -3163,7 +3350,7 @@ def search_v2():
 # Admin Dashboard Enhanced
 # ──────────────────────────────────────────────
 @app.route('/admin/dashboard')
-@require_login
+@require_admin
 def admin_dashboard_data():
     me = session['username']
     users = load_json(USERS_FILE, {})
@@ -3572,6 +3759,7 @@ DELETED_FOR_ME_FILE = DATA_DIR / 'deleted_for_me.json'
 @app.route('/messages/<message_id>/me', methods=['DELETE'])
 @rate_limit(max_requests=30, window_seconds=60)
 @require_login
+@require_csrf
 def delete_for_me(message_id):
     me = session['username']
     deleted = load_json(DELETED_FOR_ME_FILE, {})
