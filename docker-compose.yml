@@ -7,6 +7,8 @@ services:
       - SECRET_KEY_FILE=/run/secrets/secret_key
       - FLASK_ENV=production
       - SESSION_COOKIE_SECURE=true
+      - CSRF_ENABLED=true
+      - CSRF_TRUSTED_ORIGINS=https://raspberrypi5.tail686286.ts.net
     secrets:
       - secret_key
     restart: unless-stopped
