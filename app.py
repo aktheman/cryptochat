@@ -2065,6 +2065,22 @@ def cleanup_disappearing_messages():
     if len(cleaned) < before:
         save_json(MESSAGES_FILE, cleaned)
 
+def cleanup_typing_indicators():
+    typing = load_json(TYPING_FILE, {})
+    now = datetime.utcnow()
+    changed = False
+    for user in list(typing.keys()):
+        for target in list(typing[user].keys()):
+            ts = parse_iso(typing[user][target])
+            if not ts or (now - ts.replace(tzinfo=None)) > timedelta(minutes=5):
+                del typing[user][target]
+                changed = True
+        if not typing[user]:
+            del typing[user]
+            changed = True
+    if changed:
+        save_json(TYPING_FILE, typing)
+
 def _background_worker():
     import threading
     while True:
@@ -2072,6 +2088,7 @@ def _background_worker():
         try:
             deliver_scheduled_messages()
             cleanup_disappearing_messages()
+            cleanup_typing_indicators()
         except Exception:
             pass
 
@@ -2763,18 +2780,18 @@ def change_password():
 
 @app.route('/admin/rotate-secret', methods=['POST'])
 @require_login
+@require_admin
 def rotate_secret_key():
     me = session['username']
-    users = load_json(USERS_FILE, {})
-    user = users.get(me, {})
-    if not user.get('is_admin') and me != 'aktheman':
-        return jsonify({'success': False, 'message': 'Mangler tillatelse.'}), 403
-    new_key = secrets.token_hex(32)
+    new_key = secrets.token_bytes(32)
     key_path = Path('secrets/secret_key')
     key_path.parent.mkdir(parents=True, exist_ok=True)
-    key_path.write_text(new_key)
+    key_path.write_bytes(new_key)
     key_path.chmod(0o600)
-    app.secret_key = new_key.encode()
+    app.secret_key = new_key
+    invalidate_all_sessions(me)
+    session.clear()
+    audit('secret_rotated', actor=me, target=me)
     return jsonify({'success': True, 'message': 'SECRET_KEY rotert. Logg inn på nytt.'})
 
 # ──────────────────────────────────────────────
@@ -2907,8 +2924,19 @@ def get_link_preview():
         return jsonify({'success': True, 'preview': cache[url]})
     try:
         import urllib.request
-        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=5) as resp:
+        import socket
+
+        class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, req, fp, code, msg, headers, newurl):
+                raise urllib.error.HTTPError(newurl, code, msg, headers, fp)
+
+        opener = urllib.request.build_opener(NoRedirectHandler)
+        req = urllib.request.Request(url, headers={'User-Agent': 'CryptoChat/1.0'})
+        with opener.open(req, timeout=5) as resp:
+            final_url = resp.geturl()
+            if final_url != url:
+                if not _is_public_site_url(final_url):
+                    return jsonify({'success': True, 'preview': None})
             html = resp.read(200000).decode('utf-8', errors='ignore')
         title_match = re.search(r'<title[^>]*>(.*?)</title>', html, re.IGNORECASE | re.DOTALL)
         desc_match = re.search(r'<meta[^>]*name=["\']description["\'][^>]*content=["\'](.*?)["\']', html, re.IGNORECASE) or re.search(r'<meta[^>]*content=["\'](.*?)["\'][^>]*name=["\']description["\']', html, re.IGNORECASE)
