@@ -57,8 +57,8 @@ def set_security_headers(response):
     response.headers['Permissions-Policy'] = 'camera=(self), microphone=(self), geolocation=()'
     response.headers['Content-Security-Policy'] = (
         "default-src 'self'; "
-        "script-src 'self' 'wasm-unsafe-eval'; "
-        "style-src 'self' 'unsafe-inline'; "
+        "script-src 'self'; "
+        "style-src 'self'; "
         "font-src 'self' data:; "
         "img-src 'self' data: blob: https:; "
         "media-src 'self' blob: data:; "
@@ -85,7 +85,6 @@ def _rl_prune(store, now, window_seconds=3600):
         item['ts'] = [t for t in item['ts'] if t > limit]
         if not item['ts']:
             del store[k]
-
 
 class _RateStore:
     __slots__ = ('_d', '_max_items', '_window')
@@ -184,6 +183,13 @@ def audit(event: str, actor: str = '', target: str = '', meta: str = ''):
         }, ensure_ascii=False) + '\n'
         with AUDIT_LOG_FILE.open('a', encoding='utf-8') as f:
             f.write(line)
+        try:
+            if AUDIT_LOG_FILE.stat().st_size > 5 * 1024 * 1024:
+                lines = AUDIT_LOG_FILE.read_text(encoding='utf-8', errors='ignore').splitlines()
+                keep = lines[-2000:]
+                AUDIT_LOG_FILE.write_text('\n'.join(keep) + ('\n' if keep else ''), encoding='utf-8')
+        except Exception:
+            pass
     except Exception:
         pass
 
@@ -249,12 +255,14 @@ def invalidate_all_sessions(username):
         user_sessions = sessions[username]
         if isinstance(user_sessions, dict) and 'token' in user_sessions:
             sessions[username] = {}
+            save_json(SESSIONS_FILE, sessions)
         elif isinstance(user_sessions, dict):
             for sid in user_sessions:
                 if isinstance(user_sessions[sid], dict):
                     user_sessions[sid]['active'] = False
                     user_sessions[sid]['revoked'] = True
-        save_json(SESSIONS_FILE, sessions)
+            save_json(SESSIONS_FILE, sessions)
+        invalidate_cache()
 
 def invalidate_session(username, session_id):
     sessions = load_json(SESSIONS_FILE, {})
@@ -299,9 +307,7 @@ def require_login(f):
         username = session.get('username')
         if not username or not is_user_session_active(username):
             session.clear()
-            if request.accept_mimetypes.accept_json:
-                return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
-            return redirect(url_for('login_page'))
+            return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
         return f(*args, **kwargs)
     return wrapper
 
@@ -396,7 +402,7 @@ def derive_shared_keycurve25519(my_priv_b64, their_pub_b64):
     my_priv = x25519.X25519PrivateKey.from_private_bytes(base64.urlsafe_b64decode(my_priv_b64))
     their_pub = x25519.X25519PublicKey.from_public_bytes(base64.urlsafe_b64decode(their_pub_b64))
     shared = my_priv.exchange(their_pub)
-    derived = HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=b'cryptochat-v1').derive(shared)
+    derived = HKDF(algorithm=hashes.SHA256(), length=32, salt=secrets.token_bytes(16), info=b'cryptochat-v1').derive(shared)
     return derived
 
 def _encrypt_2fa_secret(plaintext: str) -> str:
@@ -406,7 +412,23 @@ def _encrypt_2fa_secret(plaintext: str) -> str:
     ct = aes.encrypt(nonce, plaintext.encode('utf-8'), None)
     return base64.urlsafe_b64encode(nonce + ct).decode('utf-8')
 
+
 def _decrypt_2fa_secret(enc: str) -> str:
+    data = base64.urlsafe_b64decode(enc)
+    nonce, ct = data[:12], data[12:]
+    aes = AESGCM(app.secret_key[:32])
+    return aes.decrypt(nonce, ct, None).decode('utf-8')
+
+
+def _encrypt_payload(plaintext: str) -> str:
+    key = app.secret_key[:32]
+    aes = AESGCM(key)
+    nonce = secrets.token_bytes(12)
+    ct = aes.encrypt(nonce, plaintext.encode('utf-8'), None)
+    return base64.urlsafe_b64encode(nonce + ct).decode('utf-8')
+
+
+def _decrypt_payload(enc: str) -> str:
     data = base64.urlsafe_b64decode(enc)
     nonce, ct = data[:12], data[12:]
     aes = AESGCM(app.secret_key[:32])
@@ -506,8 +528,31 @@ def chat_page():
         username=session.get('username'),
         turn_url=os.environ.get('TURN_URL', ''),
         turn_user=os.environ.get('TURN_USER', ''),
-        turn_pass=os.environ.get('TURN_PASS', ''),
     )
+
+# ──────────────────────────────────────────────
+# Recovery codes for password reset
+# ──────────────────────────────────────────────
+def generate_recovery_codes(count=5):
+    codes = []
+    hashed = []
+    for _ in range(count):
+        code = secrets.token_hex(4).upper()
+        code_formatted = f"{code[:4]}-{code[4:8]}"
+        codes.append(code_formatted)
+        hashed.append(hashlib.sha256(code_formatted.encode()).hexdigest())
+    return codes, hashed
+
+def verify_recovery_code(code_input, stored_hashes):
+    code = code_input.strip().upper().replace('-', '')
+    if len(code) != 8:
+        return False, -1
+    code_formatted = f"{code[:4]}-{code[4:8]}"
+    code_hash = hashlib.sha256(code_formatted.encode()).hexdigest()
+    for i, h in enumerate(stored_hashes):
+        if h == code_hash:
+            return True, i
+    return False, -1
 
 # ──────────────────────────────────────────────
 # Auth
@@ -529,6 +574,7 @@ def register():
     users = load_json(USERS_FILE, {})
     if username in users:
         return jsonify({'success': False, 'message': 'Brukernavnet er opptatt.'}), 400
+    recovery_codes_plain, recovery_codes_hashed = generate_recovery_codes()
     users[username] = {
         'password_hash': generate_password_hash(password),
         'created_at': now_iso(),
@@ -538,6 +584,7 @@ def register():
         'twofa_secret_hash': None,
         'identity_keypair': generate_identity_keypair(),
         'notifications_enabled': True,
+        'recovery_codes': recovery_codes_hashed,
     }
     save_json(USERS_FILE, users)
     session['username'] = username
@@ -668,6 +715,51 @@ def disable_2fa():
     audit('twofa_disabled', actor=username, target=username)
     return jsonify({'success': True})
 
+@app.route('/auth/recovery', methods=['POST'])
+@rate_limit(max_requests=5, window_seconds=300)
+def recover_password():
+    data = request.get_json(force=True, silent=True) or {}
+    username = (data.get('username') or '').strip().lower()
+    code = (data.get('code') or '').strip()
+    new_password = data.get('new_password') or ''
+    if not username or not code or not new_password:
+        return jsonify({'success': False, 'message': 'Brukernavn, kode og nytt passord er påkrevd.'}), 400
+    if not password_strength_ok(new_password):
+        return jsonify({'success': False, 'message': 'Det nye passordet er ikke sterkt nok.'}), 400
+    users = load_json(USERS_FILE, {})
+    user = users.get(username)
+    if not user:
+        return jsonify({'success': False, 'message': 'Ugyldig kode eller bruker.'}), 401
+    stored_hashes = user.get('recovery_codes', [])
+    if not stored_hashes:
+        return jsonify({'success': False, 'message': 'Ingen gjenopprettingskoder funnet for denne brukeren.'}), 401
+    valid, idx = verify_recovery_code(code, stored_hashes)
+    if not valid:
+        audit('recovery_failed', actor=username, target=username, meta='invalid_code')
+        return jsonify({'success': False, 'message': 'Ugyldig gjenopprettingskode.'}), 401
+    stored_hashes.pop(idx)
+    users[username]['recovery_codes'] = stored_hashes
+    users[username]['password_hash'] = generate_password_hash(new_password)
+    save_json(USERS_FILE, users)
+    invalidate_all_sessions(username)
+    audit('password_recovered', actor=username, target=username)
+    return jsonify({'success': True, 'message': 'Passord tilbakestilt. Logg inn med det nye passordet.', 'codes_remaining': len(stored_hashes)})
+
+@app.route('/auth/recovery/generate', methods=['POST'])
+@rate_limit(max_requests=3, window_seconds=3600)
+@require_login
+@require_csrf
+def regenerate_recovery_codes():
+    me = session['username']
+    users = load_json(USERS_FILE, {})
+    if me not in users:
+        return jsonify({'success': False, 'message': 'Bruker ikke funnet.'}), 404
+    codes_plain, codes_hashed = generate_recovery_codes()
+    users[me]['recovery_codes'] = codes_hashed
+    save_json(USERS_FILE, users)
+    audit('recovery_codes_regenerated', actor=me, target=me)
+    return jsonify({'success': True, 'recovery_codes': codes_plain})
+
 # ──────────────────────────────────────────────
 # Presence
 # ──────────────────────────────────────────────
@@ -750,6 +842,7 @@ def settings_notifications():
 # Users
 # ──────────────────────────────────────────────
 @app.route('/users', methods=['GET'])
+@require_login
 def list_users():
     if 'username' not in session:
         return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
@@ -886,7 +979,13 @@ def upload_file():
     if not allowed_file(file.filename):
         return jsonify({'success': False, 'message': 'Ugyldig filtype.'}), 400
     filename = secure_filename(file.filename)
+    if not filename:
+        return jsonify({'success': False, 'message': 'Ugyldig filnavn.'}), 400
     target = os.path.join(app.config['UPLOAD_FOLDER'], f"{time.time()}_{filename}")
+    abs_target = os.path.abspath(target)
+    abs_root = os.path.abspath(app.config['UPLOAD_FOLDER'])
+    if not abs_target.startswith(abs_root + os.sep):
+        return jsonify({'success': False, 'message': 'Ugyldig filsti.'}), 400
     file.save(target)
     with open(target, 'rb') as fh:
         file_bytes = fh.read()
@@ -2811,9 +2910,11 @@ def save_draft():
     drafts = load_json(DRAFTS_FILE, {})
     drafts.setdefault(me, {})
     if text:
-        drafts[me][target] = {'text': text, 'updated_at': datetime.utcnow().isoformat()}
+        drafts[me][target] = {'text': _encrypt_payload(text), 'updated_at': datetime.utcnow().isoformat()}
     else:
         drafts[me].pop(target, None)
+        if not drafts[me]:
+            drafts.pop(me, None)
     save_json(DRAFTS_FILE, drafts)
     return jsonify({'success': True})
 
@@ -2822,7 +2923,13 @@ def save_draft():
 def get_drafts():
     me = session['username']
     drafts = load_json(DRAFTS_FILE, {})
-    return jsonify({'success': True, 'drafts': drafts.get(me, {})})
+    out = {}
+    for target, item in (drafts.get(me) or {}).items():
+        try:
+            out[target] = {'text': _decrypt_payload(item['text']), 'updated_at': item.get('updated_at')}
+        except Exception:
+            out[target] = {'text': '', 'updated_at': item.get('updated_at')}
+    return jsonify({'success': True, 'drafts': out})
 
 # ──────────────────────────────────────────────
 # Chat Wallpapers
@@ -2887,7 +2994,9 @@ def push_subscribe():
     subs.setdefault(me, [])
     endpoint = subscription.get('endpoint', '')
     subs[me] = [s for s in subs[me] if s.get('endpoint') != endpoint]
-    subs[me].append(subscription)
+    item = dict(subscription)
+    item['_payload'] = _encrypt_payload(json.dumps(item, ensure_ascii=False))
+    subs[me].append(item)
     save_json(PUSH_SUBSCRIPTIONS_FILE, subs)
     return jsonify({'success': True})
 
@@ -2917,7 +3026,15 @@ def push_vapid_key():
 @require_login
 def get_link_preview():
     url = (request.args.get('url') or '').strip()
-    if not url or not _is_public_site_url(url):
+    if not url:
+        return jsonify({'success': True, 'preview': None})
+    try:
+        parsed = urlparse(url)
+        host = (parsed.hostname or '').lower()
+        allowed_hosts = {'tenor.googleapis.com', 'giphy.com', 'imgur.com', 'i.imgur.com'}
+        if parsed.scheme not in ('https',) or host not in allowed_hosts:
+            return jsonify({'success': True, 'preview': None})
+    except Exception:
         return jsonify({'success': True, 'preview': None})
     cache = load_json(LINK_PREVIEWS_FILE, {})
     if url in cache:
@@ -2935,8 +3052,7 @@ def get_link_preview():
         with opener.open(req, timeout=5) as resp:
             final_url = resp.geturl()
             if final_url != url:
-                if not _is_public_site_url(final_url):
-                    return jsonify({'success': True, 'preview': None})
+                return jsonify({'success': True, 'preview': None})
             html = resp.read(200000).decode('utf-8', errors='ignore')
         title_match = re.search(r'<title[^>]*>(.*?)</title>', html, re.IGNORECASE | re.DOTALL)
         desc_match = re.search(r'<meta[^>]*name=["\']description["\'][^>]*content=["\'](.*?)["\']', html, re.IGNORECASE) or re.search(r'<meta[^>]*content=["\'](.*?)["\'][^>]*name=["\']description["\']', html, re.IGNORECASE)

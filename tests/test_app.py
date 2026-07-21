@@ -631,3 +631,85 @@ class TestCsrf:
         finally:
             app.config['CSRF_ENABLED'] = False
             app.config['CSRF_TRUSTED_ORIGINS'] = []
+
+
+class TestRecovery:
+    def test_register_does_not_expose_recovery_codes(self, client):
+        r = client.post('/auth/register', json={'username': 'alice', 'password': 'Passw0rd!23'})
+        data = r.get_json()
+        assert r.status_code == 200
+        assert data['success'] is True
+        assert 'recovery_codes' not in data
+
+    def test_recovery_resets_password(self, client):
+        r = client.post('/auth/register', json={'username': 'alice', 'password': 'Passw0rd!23'})
+        r = client.post('/auth/recovery/generate', json={})
+        assert r.status_code == 200
+        codes = r.get_json()['recovery_codes']
+        r = client.post('/auth/logout')
+        assert r.status_code == 200
+
+        r = client.post('/auth/recovery', json={
+            'username': 'alice',
+            'code': codes[0],
+            'new_password': 'N3wP@ssw0rd!',
+        })
+        assert r.status_code == 200
+        data = r.get_json()
+        assert data['success'] is True
+        assert data['codes_remaining'] == 4
+
+        r = client.post('/auth/login', json={'username': 'alice', 'password': 'N3wP@ssw0rd!'})
+        assert r.status_code == 200
+
+    def test_recovery_code_single_use(self, client):
+        r = client.post('/auth/register', json={'username': 'alice', 'password': 'Passw0rd!23'})
+        r = client.post('/auth/recovery/generate', json={})
+        assert r.status_code == 200
+        codes = r.get_json()['recovery_codes']
+        r = client.post('/auth/logout')
+
+        r = client.post('/auth/recovery', json={
+            'username': 'alice', 'code': codes[0], 'new_password': 'N3wP@ssw0rd!'
+        })
+        assert r.status_code == 200
+
+        r = client.post('/auth/recovery', json={
+            'username': 'alice', 'code': codes[0], 'new_password': 'N3wP@ssw0rd!'
+        })
+        assert r.status_code == 401
+        assert 'Ugyldig' in r.get_json().get('message', '')
+
+    def test_recovery_invalid_code(self, client):
+        client.post('/auth/register', json={'username': 'alice', 'password': 'Passw0rd!23'})
+        client.post('/auth/logout')
+        r = client.post('/auth/recovery', json={
+            'username': 'alice', 'code': '0000-0000', 'new_password': 'N3wP@ssw0rd!'
+        })
+        assert r.status_code == 401
+
+    def test_recovery_invalidates_old_sessions(self, client):
+        r = client.post('/auth/register', json={'username': 'alice', 'password': 'Passw0rd!23'})
+        r = client.post('/auth/recovery/generate', json={})
+        codes = r.get_json()['recovery_codes']
+
+        r = client.get('/users')
+        assert r.status_code == 200
+
+        client.post('/auth/recovery', json={
+            'username': 'alice', 'code': codes[0], 'new_password': 'N3wP@ssw0rd!'
+        })
+
+        r = client.get('/users')
+        assert r.status_code in (401, 302)
+
+    def test_regenerate_recovery_codes(self, client):
+        r = client.post('/auth/register', json={'username': 'alice', 'password': 'Passw0rd!23'})
+        r = client.post('/auth/recovery/generate', json={})
+        assert r.status_code == 200
+        codes1 = r.get_json()['recovery_codes']
+        r = client.post('/auth/recovery/generate', json={})
+        assert r.status_code == 200
+        codes2 = r.get_json()['recovery_codes']
+        assert codes2 != codes1
+        assert len(codes2) == 5

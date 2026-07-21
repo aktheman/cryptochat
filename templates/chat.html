@@ -38,8 +38,7 @@
       partnerKeys: localStorage.getItem('partnerKeys') ? JSON.parse(localStorage.getItem('partnerKeys')) : {},
       theme: localStorage.getItem('theme') || 'dark',
       turnUrl: {{ turn_url | tojson }},
-      turnUser: {{ turn_user | tojson }},
-      turnPass: {{ turn_pass | tojson }}
+      turnUser: {{ turn_user | tojson }}
     };
     let deferredPrompt;
     window.addEventListener('beforeinstallprompt', (e) => {

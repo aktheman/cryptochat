@@ -28,7 +28,14 @@
 .feedback.error { background:#3d1212; color:#ffb3b3; }
 .feedback.success { background:#14301a; color:#a3ffb3; }
 .feedback.loading { background:#1a1c30; color:#cfcfef; }
-  </style>
+.link-btn { background:none; border:none; color:#7a3bff; cursor:pointer; font-size:.82rem; padding:0; margin-top:8px; text-decoration:underline; }
+.link-btn:hover { color:#cf6fef; }
+.recovery-codes { background:#0a0c18; border:1px solid #232540; border-radius:10px; padding:16px; margin:12px 0; }
+.recovery-codes h3 { margin:0 0 8px; color:#cf6fef; font-size:.95rem; }
+.recovery-codes .code { font-family:monospace; font-size:1.1rem; color:#f0f0ff; letter-spacing:2px; display:block; padding:4px 0; }
+.recovery-codes .warning { color:#ffb3b3; font-size:.78rem; margin-top:8px; }
+.recovery-codes .copy-btn { margin-top:10px; padding:6px 12px; background:#1c1030; color:#cf6fef; border:1px solid #7a3bff; border-radius:6px; cursor:pointer; font-size:.82rem; }
+</style>
 </head>
 <body>
   <main class="page">
@@ -70,7 +77,45 @@
           <div class="actions">
             <button class="btn btn-primary" type="submit">Logg inn</button>
           </div>
+          <div style="text-align:center;">
+            <button type="button" class="link-btn" onclick="switchTab('recovery')">Glemt passord? Bruk gjenopprettingskode</button>
+          </div>
         </form>
+
+        <form id="form-recovery" style="display:none;">
+          <div class="field">
+            <label for="recovery-username">Brukernavn</label>
+            <input id="recovery-username" autocomplete="username" required />
+          </div>
+          <div class="field">
+            <label for="recovery-code">Gjenopprettingskode</label>
+            <input id="recovery-code" placeholder="XXXX-XXXX" style="text-transform:uppercase;letter-spacing:2px;" required />
+          </div>
+          <div class="field">
+            <label for="recovery-new-password">Nytt passord</label>
+            <input id="recovery-new-password" type="password" autocomplete="new-password" required />
+            <div style="font-size:.72rem;color:#7c7e9a;margin-top:4px;">Minst 10 tegn med store og små bokstaver, tall og spesialtegn (!@#$%...)</div>
+          </div>
+          <div class="actions">
+            <button class="btn btn-primary" type="submit">Tilbstill passord</button>
+          </div>
+          <div style="text-align:center;">
+            <button type="button" class="link-btn" onclick="switchTab('login')">Tilbake til innlogging</button>
+          </div>
+        </form>
+
+        <div id="recovery-codes-display" style="display:none;">
+          <div class="recovery-codes">
+            <h3>Dine gjenopprettingskoder</h3>
+            <p style="font-size:.82rem;color:#7c7e9a;margin:0 0 8px;">Lagre disse kodene. De kan brukes til å tilbakestille passordet ditt.</p>
+            <div id="codes-list"></div>
+            <p class="warning">Hver kode kan bare brukes én gang. Du får nyekoder via Innstillinger.</p>
+            <button type="button" class="copy-btn" onclick="copyCodes()">Kopier alle</button>
+          </div>
+          <div class="actions">
+            <button class="btn btn-primary" onclick="switchTab('login')">Logg inn</button>
+          </div>
+        </div>
 
         <div id="feedback" class="feedback" role="status" aria-live="polite"></div>
       </div>
@@ -78,6 +123,8 @@
   </main>
 
   <script>
+    let pendingCodes = [];
+
     function showFeedback(message, type = 'error') {
       const el = document.getElementById('feedback');
       el.textContent = message;
@@ -85,12 +132,37 @@
       el.style.display = 'block';
     }
 
+    function hideFeedback() {
+      document.getElementById('feedback').style.display = 'none';
+    }
+
     function switchTab(tab) {
       document.getElementById('tab-register').classList.toggle('active', tab === 'register');
       document.getElementById('tab-login').classList.toggle('active', tab === 'login');
       document.getElementById('form-register').style.display = tab === 'register' ? 'block' : 'none';
       document.getElementById('form-login').style.display = tab === 'login' ? 'block' : 'none';
-      document.getElementById('feedback').style.display = 'none';
+      document.getElementById('form-recovery').style.display = tab === 'recovery' ? 'block' : 'none';
+      document.getElementById('recovery-codes-display').style.display = 'none';
+      hideFeedback();
+    }
+
+    function showRecoveryCodes(codes) {
+      pendingCodes = codes;
+      const list = document.getElementById('codes-list');
+      list.innerHTML = codes.map(c => '<span class="code">' + c + '</span>').join('');
+      document.getElementById('form-register').style.display = 'none';
+      document.getElementById('form-login').style.display = 'none';
+      document.getElementById('form-recovery').style.display = 'none';
+      document.getElementById('recovery-codes-display').style.display = 'block';
+      document.getElementById('tab-register').classList.remove('active');
+      document.getElementById('tab-login').classList.remove('active');
+      hideFeedback();
+    }
+
+    function copyCodes() {
+      navigator.clipboard.writeText(pendingCodes.join('\n')).then(() => {
+        showFeedback('Kodene er kopiert!', 'success');
+      });
     }
 
     async function postJSON(url, body) {
@@ -110,11 +182,13 @@
       const password = document.getElementById('register-password').value;
       try {
         showFeedback('Registrerer...', 'loading');
-        await postJSON('/auth/register', { username, password });
-        showFeedback('Registrert! Logger inn...', 'success');
-        setTimeout(() => {
-          window.location.href = '/chat';
-        }, 500);
+        const data = await postJSON('/auth/register', { username, password });
+        if (data.recovery_codes && data.recovery_codes.length > 0) {
+          showRecoveryCodes(data.recovery_codes);
+        } else {
+          showFeedback('Registrert! Logger inn...', 'success');
+          setTimeout(() => { window.location.href = '/chat'; }, 500);
+        }
       } catch (err) {
         showFeedback('Registrering feilet: ' + err.message);
       }
@@ -132,6 +206,22 @@
         showFeedback('Innlogging feilet: ' + err.message);
       }
     });
+
+    document.getElementById('form-recovery').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const username = document.getElementById('recovery-username').value.trim();
+      const code = document.getElementById('recovery-code').value.trim();
+      const new_password = document.getElementById('recovery-new-password').value;
+      try {
+        showFeedback('Tilbakestiller passord...', 'loading');
+        const data = await postJSON('/auth/recovery', { username, code, new_password });
+        showFeedback(data.message || 'Passord tilbakestilt!', 'success');
+        setTimeout(() => switchTab('login'), 2000);
+      } catch (err) {
+        showFeedback('Feil: ' + err.message);
+      }
+    });
+
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister()));
       caches.keys().then(keys => keys.forEach(k => caches.delete(k)));
