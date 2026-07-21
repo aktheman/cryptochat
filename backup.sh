@@ -1,36 +1,31 @@
 #!/bin/bash
-# CryptoChat Backup Script
-# Run daily via cron: 0 2 * * * /home/aktheman/cryptochat/backup.sh
-
 set -euo pipefail
+cd "$(dirname "$0")"
 
-BACKUP_DIR="/home/aktheman/cryptochat/backups"
-DATA_DIR="/home/aktheman/cryptochat/data"
+BACKUP_DIR="./backups"
+DATA_DIR="./data"
 KEEP_DAYS=14
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+KEY_FILE="./secrets/backup_key"
+ENC_SUFFIX=".enc"
 
 mkdir -p "$BACKUP_DIR"
 
-echo "[$(date)] Starting CryptoChat backup..."
+enc() {
+  python3 ./backup_crypto.py enc "$1" "$2"
+}
 
-# Backup SQLite database
 if [ -f "$DATA_DIR/cryptochat.db" ]; then
-    cp "$DATA_DIR/cryptochat.db" "$BACKUP_DIR/db_${TIMESTAMP}.db"
-    echo "  Database backed up: db_${TIMESTAMP}.db"
+  enc "$DATA_DIR/cryptochat.db" "$BACKUP_DIR/db_${TIMESTAMP}${ENC_SUFFIX}"
+  echo "[$(date)] Database encrypted backup: db_${TIMESTAMP}${ENC_SUFFIX}"
 fi
 
-# Backup uploaded files
 if [ -d "$DATA_DIR/uploads" ]; then
-    tar -czf "$BACKUP_DIR/uploads_${TIMESTAMP}.tar.gz" -C "$DATA_DIR" uploads/ 2>/dev/null || true
-    echo "  Uploads backed up: uploads_${TIMESTAMP}.tar.gz"
+  tar -C "$DATA_DIR" -czf /tmp/uploads_${TIMESTAMP}.tar.gz uploads 2>/dev/null || true
+  enc "/tmp/uploads_${TIMESTAMP}.tar.gz" "$BACKUP_DIR/uploads_${TIMESTAMP}${ENC_SUFFIX}"
+  rm -f /tmp/uploads_${TIMESTAMP}.tar.gz
+  echo "[$(date)] Uploads encrypted backup: uploads_${TIMESTAMP}${ENC_SUFFIX}"
 fi
 
-# Cleanup old backups
-find "$BACKUP_DIR" -name "*.db" -mtime +${KEEP_DAYS} -delete 2>/dev/null || true
-find "$BACKUP_DIR" -name "*.tar.gz" -mtime +${KEEP_DAYS} -delete 2>/dev/null || true
-echo "  Cleaned backups older than ${KEEP_DAYS} days"
-
-# Report disk usage
-DISK_USAGE=$(du -sh "$BACKUP_DIR" 2>/dev/null | cut -f1)
-echo "  Backup directory: ${DISK_USAGE}"
+find "$BACKUP_DIR" -name "*${ENC_SUFFIX}" -mtime +${KEEP_DAYS} -delete 2>/dev/null || true
 echo "[$(date)] Backup complete."
