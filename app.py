@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 
 from flask import (
     Flask, render_template, request, jsonify, session,
-    redirect, url_for, send_from_directory, Response
+    redirect, url_for, send_from_directory, Response, make_response
 )
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
@@ -520,7 +520,11 @@ def require_csrf(f):
 def login_page():
     if 'username' in session:
         return redirect(url_for('chat_page'))
-    return render_template('login.html')
+    resp = make_response(render_template('login.html'))
+    resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    resp.headers['Pragma'] = 'no-cache'
+    resp.headers['Expires'] = '0'
+    return resp
 
 @app.route('/chat')
 def chat_page():
