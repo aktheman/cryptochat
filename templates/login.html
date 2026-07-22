@@ -3,171 +3,649 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>CryptoChat</title>
-  <link rel="stylesheet" href="/static/css/style.css" />
+  <title>CryptoChat - Logg inn</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔒</text></svg>">
   <style>
-.page { min-height:100vh; display:flex; align-items:center; justify-content:center; background:#0b0c12; }
-.container-center { width:100%; max-width:400px; padding:24px; }
-.auth-card { background:#111322; border:1px solid #151d30; border-radius:16px; padding:32px 28px; }
-.brand { text-align:center; margin-bottom:24px; }
-.brand h1 { margin:0; font-size:1.8rem; color:#cf6fef; }
-.subtitle { color:#7c7e9a; font-size:.9rem; margin-top:4px; }
-.tabs { display:flex; gap:0; margin-bottom:20px; background:#0a0c18; border-radius:10px; overflow:hidden; }
-.tab-btn { flex:1; padding:10px; border:none; background:transparent; color:#7c7e9a; font-weight:600; cursor:pointer; transition:all .2s; }
-.tab-btn.active { background:#1c1030; color:#f3f1ff; }
-.field { margin-bottom:14px; }
-.field label { display:block; font-size:.8rem; color:#7c7e9a; margin-bottom:4px; }
-.field input { width:100%; padding:10px 12px; background:#0a0c18; color:#f0f0ff; border:1px solid #232540; border-radius:10px; font-size:.95rem; }
-.field input:focus { outline:none; border-color:#5b5cf5; }
-.actions { margin-top:20px; }
-.btn { display:inline-flex; align-items:center; justify-content:center; width:100%; padding:12px; border-radius:10px; border:none; cursor:pointer; font-weight:600; font-size:.95rem; transition:all .15s; }
-.btn-primary { background:linear-gradient(135deg,#7a3bff,#cf6fef); color:#fff; }
-.btn-primary:hover { opacity:.9; transform:translateY(-1px); }
-.btn-primary:disabled { opacity:.5; cursor:not-allowed; transform:none; }
-.feedback { display:none; margin-top:12px; padding:10px; border-radius:8px; font-size:.85rem; text-align:center; }
-.feedback.error { background:#3d1212; color:#ffb3b3; }
-.feedback.success { background:#14301a; color:#a3ffb3; }
-.feedback.loading { background:#1a1c30; color:#cfcfef; }
-.link-btn { background:none; border:none; color:#7a3bff; cursor:pointer; font-size:.82rem; padding:0; margin-top:8px; text-decoration:underline; }
-.link-btn:hover { color:#cf6fef; }
-.recovery-codes { background:#0a0c18; border:1px solid #232540; border-radius:10px; padding:16px; margin:12px 0; }
-.recovery-codes h3 { margin:0 0 8px; color:#cf6fef; font-size:.95rem; }
-.recovery-codes .code { font-family:monospace; font-size:1.1rem; color:#f0f0ff; letter-spacing:2px; display:block; padding:4px 0; }
-.recovery-codes .warning { color:#ffb3b3; font-size:.78rem; margin-top:8px; }
-.recovery-codes .copy-btn { margin-top:10px; padding:6px 12px; background:#1c1030; color:#cf6fef; border:1px solid #7a3bff; border-radius:6px; cursor:pointer; font-size:.82rem; }
-</style>
+    *, *::before, *::after { box-sizing: border-box; }
+    
+    :root {
+      --bg: #0a0b10;
+      --surface: #12141f;
+      --surface-hover: #181b28;
+      --border: #1e2235;
+      --border-focus: #6c5ce7;
+      --accent: #6c5ce7;
+      --accent-glow: rgba(108, 92, 231, 0.3);
+      --accent-hover: #7c6cf7;
+      --text: #f0f0f5;
+      --text-dim: #8b8fa3;
+      --text-faint: #5a5e73;
+      --success: #2ed573;
+      --error: #ff6b6b;
+      --error-bg: rgba(255, 107, 107, 0.1);
+      --success-bg: rgba(46, 213, 115, 0.1);
+      --radius: 12px;
+      --radius-lg: 16px;
+    }
+
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    /* Animated background */
+    .bg {
+      position: fixed;
+      inset: 0;
+      overflow: hidden;
+      z-index: 0;
+    }
+
+    .bg::before {
+      content: '';
+      position: absolute;
+      width: 600px;
+      height: 600px;
+      background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
+      top: -200px;
+      right: -100px;
+      animation: float 20s ease-in-out infinite;
+    }
+
+    .bg::after {
+      content: '';
+      position: absolute;
+      width: 500px;
+      height: 500px;
+      background: radial-gradient(circle, rgba(108, 92, 231, 0.15) 0%, transparent 70%);
+      bottom: -150px;
+      left: -100px;
+      animation: float 15s ease-in-out infinite reverse;
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translate(0, 0) scale(1); }
+      33% { transform: translate(30px, -30px) scale(1.05); }
+      66% { transform: translate(-20px, 20px) scale(0.95); }
+    }
+
+    .container {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      max-width: 400px;
+      padding: 20px;
+      animation: fadeInUp 0.6s ease;
+    }
+
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Brand */
+    .brand {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+
+    .brand-icon {
+      width: 72px;
+      height: 72px;
+      margin: 0 auto 16px;
+      background: linear-gradient(135deg, var(--accent) 0%, #a29bfe 100%);
+      border-radius: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 32px;
+      box-shadow: 0 8px 32px rgba(108, 92, 231, 0.3);
+      animation: pulse 3s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 8px 32px rgba(108, 92, 231, 0.3); }
+      50% { box-shadow: 0 8px 48px rgba(108, 92, 231, 0.5); }
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 1.75rem;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      background: linear-gradient(135deg, #fff 0%, #a29bfe 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .brand p {
+      margin: 8px 0 0;
+      color: var(--text-dim);
+      font-size: 0.9rem;
+    }
+
+    /* Card */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 28px;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+    }
+
+    /* Tabs */
+    .tabs {
+      display: flex;
+      background: var(--bg);
+      border-radius: var(--radius);
+      padding: 4px;
+      margin-bottom: 24px;
+    }
+
+    .tab {
+      flex: 1;
+      padding: 10px;
+      border: none;
+      background: transparent;
+      color: var(--text-dim);
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      border-radius: 8px;
+      transition: all 0.2s ease;
+    }
+
+    .tab:hover {
+      color: var(--text);
+    }
+
+    .tab.active {
+      background: var(--accent);
+      color: #fff;
+      box-shadow: 0 2px 8px rgba(108, 92, 231, 0.3);
+    }
+
+    /* Forms */
+    .form {
+      display: none;
+      animation: fadeIn 0.3s ease;
+    }
+
+    .form.active {
+      display: block;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    .field {
+      margin-bottom: 18px;
+    }
+
+    .field label {
+      display: block;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--text-dim);
+      margin-bottom: 8px;
+      letter-spacing: 0.3px;
+    }
+
+    .field input {
+      width: 100%;
+      padding: 12px 14px;
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      font-size: 0.95rem;
+      transition: all 0.2s ease;
+      outline: none;
+    }
+
+    .field input::placeholder {
+      color: var(--text-faint);
+    }
+
+    .field input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+
+    .field-hint {
+      font-size: 0.75rem;
+      color: var(--text-faint);
+      margin-top: 6px;
+      line-height: 1.4;
+    }
+
+    /* Button */
+    .btn {
+      width: 100%;
+      padding: 13px 20px;
+      border: none;
+      border-radius: var(--radius);
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      margin-top: 8px;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent) 0%, #a29bfe 100%);
+      color: #fff;
+      box-shadow: 0 4px 16px rgba(108, 92, 231, 0.3);
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 24px rgba(108, 92, 231, 0.4);
+    }
+
+    .btn-primary:active:not(:disabled) {
+      transform: translateY(0);
+    }
+
+    .btn-primary:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    /* Links */
+    .link-row {
+      text-align: center;
+      margin-top: 16px;
+    }
+
+    .link-btn {
+      background: none;
+      border: none;
+      color: var(--accent);
+      font-size: 0.82rem;
+      cursor: pointer;
+      padding: 4px;
+      transition: color 0.2s;
+    }
+
+    .link-btn:hover {
+      color: var(--accent-hover);
+      text-decoration: underline;
+    }
+
+    /* Feedback */
+    .feedback {
+      display: none;
+      margin-top: 16px;
+      padding: 12px 14px;
+      border-radius: var(--radius);
+      font-size: 0.85rem;
+      text-align: center;
+      animation: fadeIn 0.2s ease;
+    }
+
+    .feedback.show {
+      display: block;
+    }
+
+    .feedback.error {
+      background: var(--error-bg);
+      color: var(--error);
+      border: 1px solid rgba(255, 107, 107, 0.2);
+    }
+
+    .feedback.success {
+      background: var(--success-bg);
+      color: var(--success);
+      border: 1px solid rgba(46, 213, 115, 0.2);
+    }
+
+    .feedback.loading {
+      background: var(--surface-hover);
+      color: var(--text-dim);
+      border: 1px solid var(--border);
+    }
+
+    /* Recovery codes */
+    .codes-display {
+      display: none;
+      animation: fadeIn 0.3s ease;
+    }
+
+    .codes-display.show {
+      display: block;
+    }
+
+    .codes-header {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    .codes-header h3 {
+      margin: 0 0 8px;
+      color: var(--text);
+      font-size: 1.1rem;
+    }
+
+    .codes-header p {
+      margin: 0;
+      color: var(--text-dim);
+      font-size: 0.85rem;
+    }
+
+    .codes-list {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+
+    .code-item {
+      display: flex;
+      align-items: center;
+      padding: 10px 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 8px;
+      font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text);
+      letter-spacing: 1.5px;
+    }
+
+    .code-item:last-child {
+      margin-bottom: 0;
+    }
+
+    .code-icon {
+      margin-right: 10px;
+      opacity: 0.5;
+    }
+
+    .codes-warning {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 12px;
+      background: rgba(255, 193, 7, 0.1);
+      border: 1px solid rgba(255, 193, 7, 0.2);
+      border-radius: var(--radius);
+      margin-bottom: 16px;
+    }
+
+    .codes-warning-icon {
+      font-size: 1.1rem;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    .codes-warning-text {
+      color: #ffc107;
+      font-size: 0.82rem;
+      line-height: 1.4;
+    }
+
+    .copy-btn {
+      width: 100%;
+      padding: 12px;
+      background: var(--surface-hover);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .copy-btn:hover {
+      background: var(--accent);
+      border-color: var(--accent);
+    }
+
+    .copy-btn.copied {
+      background: var(--success-bg);
+      border-color: var(--success);
+      color: var(--success);
+    }
+
+    /* Footer */
+    .footer {
+      text-align: center;
+      margin-top: 24px;
+      color: var(--text-faint);
+      font-size: 0.78rem;
+    }
+
+    .footer a {
+      color: var(--text-dim);
+      text-decoration: none;
+    }
+
+    .footer a:hover {
+      color: var(--accent);
+    }
+
+    /* Mobile */
+    @media (max-width: 480px) {
+      .container {
+        padding: 16px;
+      }
+
+      .card {
+        padding: 20px;
+      }
+
+      .brand-icon {
+        width: 60px;
+        height: 60px;
+        font-size: 28px;
+        border-radius: 16px;
+      }
+
+      .brand h1 {
+        font-size: 1.5rem;
+      }
+    }
+
+    /* Reduced motion */
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+  </style>
 </head>
 <body>
-  <main class="page">
-    <div class="container-center">
-      <div class="auth-card">
-        <div class="brand">
-          <h1>CryptoChat</h1>
-          <p class="subtitle">Ende-til-ende-kryptert meldinger</p>
-        </div>
-        <div class="tabs">
-          <button class="tab-btn active" id="tab-register" onclick="switchTab('register')">Registrer</button>
-          <button class="tab-btn" id="tab-login" onclick="switchTab('login')">Logg inn</button>
-        </div>
-
-        <form id="form-register">
-          <div class="field">
-            <label for="register-username">Brukernavn</label>
-            <input id="register-username" autocomplete="username" required />
-          </div>
-          <div class="field">
-            <label for="register-password">Passord</label>
-            <input id="register-password" type="password" autocomplete="new-password" required />
-            <div style="font-size:.72rem;color:#7c7e9a;margin-top:4px;">Minst 10 tegn med store og små bokstaver, tall og spesialtegn (!@#$%...)</div>
-          </div>
-          <div class="actions">
-            <button class="btn btn-primary" type="submit">Registrer</button>
-          </div>
-        </form>
-
-        <form id="form-login" style="display:none;">
-          <div class="field">
-            <label for="login-username">Brukernavn</label>
-            <input id="login-username" autocomplete="username" required />
-          </div>
-          <div class="field">
-            <label for="login-password">Passord</label>
-            <input id="login-password" type="password" autocomplete="current-password" required />
-          </div>
-          <div class="actions">
-            <button class="btn btn-primary" type="submit">Logg inn</button>
-          </div>
-          <div style="text-align:center;">
-            <button type="button" class="link-btn" onclick="switchTab('recovery')">Glemt passord? Bruk gjenopprettingskode</button>
-          </div>
-        </form>
-
-        <form id="form-recovery" style="display:none;">
-          <div class="field">
-            <label for="recovery-username">Brukernavn</label>
-            <input id="recovery-username" autocomplete="username" required />
-          </div>
-          <div class="field">
-            <label for="recovery-code">Gjenopprettingskode</label>
-            <input id="recovery-code" placeholder="XXXX-XXXX" style="text-transform:uppercase;letter-spacing:2px;" required />
-          </div>
-          <div class="field">
-            <label for="recovery-new-password">Nytt passord</label>
-            <input id="recovery-new-password" type="password" autocomplete="new-password" required />
-            <div style="font-size:.72rem;color:#7c7e9a;margin-top:4px;">Minst 10 tegn med store og små bokstaver, tall og spesialtegn (!@#$%...)</div>
-          </div>
-          <div class="actions">
-            <button class="btn btn-primary" type="submit">Tilbakestill passord</button>
-          </div>
-          <div style="text-align:center;">
-            <button type="button" class="link-btn" onclick="switchTab('login')">Tilbake til innlogging</button>
-          </div>
-        </form>
-
-        <div id="recovery-codes-display" style="display:none;">
-          <div class="recovery-codes">
-            <h3>Dine gjenopprettingskoder</h3>
-            <p style="font-size:.82rem;color:#7c7e9a;margin:0 0 8px;">Lagre disse kodene. De kan brukes til å tilbakestille passordet ditt.</p>
-            <div id="codes-list"></div>
-            <p class="warning">Hver kode kan bare brukes én gang. Du får nyekoder via Innstillinger.</p>
-            <button type="button" class="copy-btn" onclick="copyCodes()">Kopier alle</button>
-          </div>
-          <div class="actions">
-            <button class="btn btn-primary" onclick="switchTab('login')">Logg inn</button>
-          </div>
-        </div>
-
-        <div id="feedback" class="feedback" role="status" aria-live="polite"></div>
-      </div>
+  <div class="bg"></div>
+  
+  <div class="container">
+    <div class="brand">
+      <div class="brand-icon">🔐</div>
+      <h1>CryptoChat</h1>
+      <p>Ende-til-ende-kryptert kommunikasjon</p>
     </div>
-  </main>
+
+    <div class="card">
+      <div class="tabs">
+        <button class="tab active" id="tab-register" onclick="switchTab('register')">Opprett konto</button>
+        <button class="tab" id="tab-login" onclick="switchTab('login')">Logg inn</button>
+      </div>
+
+      <!-- Register Form -->
+      <form id="form-register" class="form active">
+        <div class="field">
+          <label for="reg-username">Brukernavn</label>
+          <input type="text" id="reg-username" autocomplete="username" placeholder="Velg et brukernavn" required>
+        </div>
+        <div class="field">
+          <label for="reg-password">Passord</label>
+          <input type="password" id="reg-password" autocomplete="new-password" placeholder="Opprett et sterkt passord" required>
+          <div class="field-hint">Minst 10 tegn med store og små bokstaver, tall og spesialtegn</div>
+        </div>
+        <button type="submit" class="btn btn-primary">Opprett konto</button>
+      </form>
+
+      <!-- Login Form -->
+      <form id="form-login" class="form">
+        <div class="field">
+          <label for="login-username">Brukernavn</label>
+          <input type="text" id="login-username" autocomplete="username" placeholder="Ditt brukernavn" required>
+        </div>
+        <div class="field">
+          <label for="login-password">Passord</label>
+          <input type="password" id="login-password" autocomplete="current-password" placeholder="Ditt passord" required>
+        </div>
+        <button type="submit" class="btn btn-primary">Logg inn</button>
+        <div class="link-row">
+          <button type="button" class="link-btn" onclick="switchTab('recovery')">Glemt passord?</button>
+        </div>
+      </form>
+
+      <!-- Recovery Form -->
+      <form id="form-recovery" class="form">
+        <div class="field">
+          <label for="rec-username">Brukernavn</label>
+          <input type="text" id="rec-username" autocomplete="username" placeholder="Ditt brukernavn" required>
+        </div>
+        <div class="field">
+          <label for="rec-code">Gjenopprettingskode</label>
+          <input type="text" id="rec-code" placeholder="XXXX-XXXX" style="text-transform: uppercase; letter-spacing: 2px;" required>
+        </div>
+        <div class="field">
+          <label for="rec-new-password">Nytt passord</label>
+          <input type="password" id="rec-new-password" autocomplete="new-password" placeholder="Nytt sterkt passord" required>
+          <div class="field-hint">Minst 10 tegn med store og små bokstaver, tall og spesialtegn</div>
+        </div>
+        <button type="submit" class="btn btn-primary">Tilbakestill passord</button>
+        <div class="link-row">
+          <button type="button" class="link-btn" onclick="switchTab('login')">Tilbake til innlogging</button>
+        </div>
+      </form>
+
+      <!-- Recovery Codes Display -->
+      <div id="codes-display" class="codes-display">
+        <div class="codes-header">
+          <h3>Dine gjenopprettingskoder</h3>
+          <p>Lagre disse kodene trygt. De kan brukes for å gjenopprette kontoen din.</p>
+        </div>
+        
+        <div class="codes-list" id="codes-list"></div>
+        
+        <div class="codes-warning">
+          <span class="codes-warning-icon">⚠️</span>
+          <span class="codes-warning-text">Hver kode kan kun brukes én gang. Du kan generere nye koder fra innstillinger.</span>
+        </div>
+        
+        <button type="button" class="copy-btn" id="copy-btn" onclick="copyCodes()">
+          <span>📋</span> Kopier alle koder
+        </button>
+        
+        <div class="link-row" style="margin-top: 16px;">
+          <button type="button" class="link-btn" onclick="switchTab('login')">Fortsett til innlogging</button>
+        </div>
+      </div>
+
+      <!-- Feedback -->
+      <div id="feedback" class="feedback"></div>
+    </div>
+
+    <div class="footer">
+      Kryptert med ECDH + AES-GCM • <a href="#">Personvern</a>
+    </div>
+  </div>
 
   <script>
     let pendingCodes = [];
+    let currentTab = 'register';
+
+    function switchTab(tab) {
+      currentTab = tab;
+      
+      // Update tabs
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      if (tab === 'register' || tab === 'login') {
+        document.getElementById(`tab-${tab}`).classList.add('active');
+      }
+      
+      // Update forms
+      document.querySelectorAll('.form').forEach(f => f.classList.remove('active'));
+      document.getElementById('codes-display').classList.remove('show');
+      
+      if (tab === 'register') {
+        document.getElementById('form-register').classList.add('active');
+      } else if (tab === 'login') {
+        document.getElementById('form-login').classList.add('active');
+      } else if (tab === 'recovery') {
+        document.getElementById('form-recovery').classList.add('active');
+      }
+      
+      hideFeedback();
+    }
 
     function showFeedback(message, type = 'error') {
       const el = document.getElementById('feedback');
       el.textContent = message;
-      el.className = 'feedback ' + type;
-      el.style.display = 'block';
+      el.className = `feedback ${type} show`;
     }
 
     function hideFeedback() {
-      document.getElementById('feedback').style.display = 'none';
-    }
-
-    function switchTab(tab) {
-      document.getElementById('tab-register').classList.toggle('active', tab === 'register');
-      document.getElementById('tab-login').classList.toggle('active', tab === 'login');
-      document.getElementById('form-register').style.display = tab === 'register' ? 'block' : 'none';
-      document.getElementById('form-login').style.display = tab === 'login' ? 'block' : 'none';
-      document.getElementById('form-recovery').style.display = tab === 'recovery' ? 'block' : 'none';
-      document.getElementById('recovery-codes-display').style.display = 'none';
-      hideFeedback();
+      const el = document.getElementById('feedback');
+      el.className = 'feedback';
     }
 
     function showRecoveryCodes(codes) {
       pendingCodes = codes;
       const list = document.getElementById('codes-list');
-      list.textContent = '';
-      codes.forEach(c => {
-        const span = document.createElement('span');
-        span.className = 'code';
-        span.textContent = c;
-        list.appendChild(span);
+      list.innerHTML = '';
+      
+      codes.forEach(code => {
+        const item = document.createElement('div');
+        item.className = 'code-item';
+        item.innerHTML = `<span class="code-icon">🔑</span>${code}`;
+        list.appendChild(item);
       });
-      document.getElementById('form-register').style.display = 'none';
-      document.getElementById('form-login').style.display = 'none';
-      document.getElementById('form-recovery').style.display = 'none';
-      document.getElementById('recovery-codes-display').style.display = 'block';
-      document.getElementById('tab-register').classList.remove('active');
-      document.getElementById('tab-login').classList.remove('active');
+      
+      // Hide all forms, show codes
+      document.querySelectorAll('.form').forEach(f => f.classList.remove('active'));
+      document.getElementById('codes-display').classList.add('show');
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      
       hideFeedback();
     }
 
     function copyCodes() {
+      const btn = document.getElementById('copy-btn');
       navigator.clipboard.writeText(pendingCodes.join('\n')).then(() => {
-        showFeedback('Kodene er kopiert!', 'success');
+        btn.classList.add('copied');
+        btn.innerHTML = '<span>✓</span> Kopiert!';
+        setTimeout(() => {
+          btn.classList.remove('copied');
+          btn.innerHTML = '<span>📋</span> Kopier alle koder';
+        }, 2000);
       });
     }
 
@@ -175,24 +653,27 @@
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body || {}),
+        body: JSON.stringify(body),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || data.error || `HTTP ${res.status}`);
       return data;
     }
 
+    // Register
     document.getElementById('form-register').addEventListener('submit', async (e) => {
       e.preventDefault();
-      const username = document.getElementById('register-username').value.trim();
-      const password = document.getElementById('register-password').value;
+      const username = document.getElementById('reg-username').value.trim();
+      const password = document.getElementById('reg-password').value;
+      
       try {
-        showFeedback('Registrerer...', 'loading');
+        showFeedback('Oppretter konto...', 'loading');
         const data = await postJSON('/auth/register', { username, password });
+        
         if (data.recovery_codes && data.recovery_codes.length > 0) {
           showRecoveryCodes(data.recovery_codes);
         } else {
-          showFeedback('Registrert! Logger inn...', 'success');
+          showFeedback('Konto opprettet! Logger inn...', 'success');
           setTimeout(() => { window.location.href = '/chat'; }, 500);
         }
       } catch (err) {
@@ -200,10 +681,12 @@
       }
     });
 
+    // Login
     document.getElementById('form-login').addEventListener('submit', async (e) => {
       e.preventDefault();
       const username = document.getElementById('login-username').value.trim();
       const password = document.getElementById('login-password').value;
+      
       try {
         showFeedback('Logger inn...', 'loading');
         await postJSON('/auth/login', { username, password });
@@ -213,11 +696,13 @@
       }
     });
 
+    // Recovery
     document.getElementById('form-recovery').addEventListener('submit', async (e) => {
       e.preventDefault();
-      const username = document.getElementById('recovery-username').value.trim();
-      const code = document.getElementById('recovery-code').value.trim();
-      const new_password = document.getElementById('recovery-new-password').value;
+      const username = document.getElementById('rec-username').value.trim();
+      const code = document.getElementById('rec-code').value.trim();
+      const new_password = document.getElementById('rec-new-password').value;
+      
       try {
         showFeedback('Tilbakestiller passord...', 'loading');
         const data = await postJSON('/auth/recovery', { username, code, new_password });
@@ -228,6 +713,7 @@
       }
     });
 
+    // Clear service workers
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister()));
       caches.keys().then(keys => keys.forEach(k => caches.delete(k)));
