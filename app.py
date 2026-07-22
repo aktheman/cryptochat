@@ -148,6 +148,7 @@ FOLDERS_FILE = DATA_DIR / 'folders.json'
 CHANNELS_FILE = DATA_DIR / 'channels.json'
 INVITE_LINKS_FILE = DATA_DIR / 'invite_links.json'
 MUTED_CHATS_FILE = DATA_DIR / 'muted_chats.json'
+ARCHIVE_FILE = DATA_DIR / 'archive.json'
 CONTACTS_FILE = DATA_DIR / 'contacts.json'
 STORIES_FILE = DATA_DIR / 'stories.json'
 
@@ -603,7 +604,7 @@ def register():
     }
     save_json(SESSIONS_FILE, sessions)
     touch_presence(username)
-    return jsonify({'success': True})
+    return jsonify({'success': True, 'recovery_codes': recovery_codes_plain})
 
 @app.route('/auth/login', methods=['POST'])
 @rate_limit(max_requests=10, window_seconds=120)
@@ -928,6 +929,7 @@ def get_messages(other_user):
             'forwarded_from': m.get('forwarded_from'),
             'poll_id': m.get('poll_id'),
             'e2ee': convert_to_bool(m.get('e2ee'), False),
+            'effect': m.get('effect'),
         })
     filtered.sort(key=lambda x: x['timestamp'])
     total = len(filtered)
@@ -958,6 +960,9 @@ def send_message():
     filename = data.get('filename')
     self_destruct_minutes = data.get('self_destruct_minutes')
     reply_to = (data.get('reply_to') or '').strip() or None
+    effect = (data.get('effect') or '').strip() or None
+    if effect and effect not in ('confetti', 'hearts', 'fireworks', 'snow', 'stars'):
+        effect = None
     if not recipient or not ciphertext:
         return jsonify({'success': False, 'message': 'Manglende felt.'}), 400
     shared_key = get_or_create_pair_key(session['username'], recipient)
@@ -981,6 +986,7 @@ def send_message():
         'filename': filename,
         'reply_to': reply_to,
         'silent': convert_to_bool(data.get('silent', False), False),
+        'effect': effect,
     })
     save_json(MESSAGES_FILE, messages)
     audit('message_sent', actor=session['username'], target=recipient, meta=mtype)
@@ -1307,6 +1313,7 @@ def get_group_messages(group_id):
                 'silent': convert_to_bool(m.get('silent'), False),
                 'forwarded_from': m.get('forwarded_from'),
                 'poll_id': m.get('poll_id'),
+                'effect': m.get('effect'),
             })
         except Exception as e:
             filtered.append({
@@ -1551,6 +1558,42 @@ def update_profile():
         users[username]['avatar'] = data['avatar']
     save_json(USERS_FILE, users)
     return jsonify({'success': True})
+
+@app.route('/profile/avatar', methods=['POST'])
+@rate_limit(max_requests=10, window_seconds=300)
+@require_csrf
+def upload_avatar():
+    username = session.get('username')
+    if not username:
+        return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
+    file = request.files.get('file')
+    if not file or not file.filename:
+        return jsonify({'success': False, 'message': 'Ingen fil valgt.'}), 400
+    allowed = {'image/png', 'image/jpeg', 'image/webp', 'image/gif'}
+    if file.content_type not in allowed:
+        return jsonify({'success': False, 'message': 'Kun PNG, JPEG, WebP og GIF er tillatt.'}), 400
+    file.seek(0, 2)
+    size = file.tell()
+    file.seek(0)
+    if size > 2 * 1024 * 1024:
+        return jsonify({'success': False, 'message': 'Filen er for stor (maks 2 MB).'}), 400
+    ext = file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else 'png'
+    data_b64 = base64.b64encode(file.read()).decode()
+    avatar_data = f"data:image/{ext};base64,{data_b64}"
+    users = load_json(USERS_FILE, {})
+    users[username]['avatar'] = avatar_data
+    save_json(USERS_FILE, users)
+    audit('avatar_updated', actor=username, target=username)
+    return jsonify({'success': True, 'avatar': avatar_data})
+
+@app.route('/profile/avatar/<target_user>')
+def get_avatar(target_user):
+    users = load_json(USERS_FILE, {})
+    user = users.get(target_user, {})
+    avatar = user.get('avatar', '')
+    if not avatar:
+        return '', 204
+    return jsonify({'avatar': avatar})
 
 @app.route('/profile/pin', methods=['POST'])
 @rate_limit(max_requests=5, window_seconds=60)
@@ -2182,6 +2225,19 @@ def deliver_scheduled_messages():
                 })
             entry['sent'] = True
             changed = True
+    for m in messages:
+        sf = m.get('scheduled_for')
+        if not sf or m.get('cancelled'):
+            continue
+        try:
+            sched_dt = datetime.fromisoformat(sf.replace('Z', '+00:00')).replace(tzinfo=None)
+        except Exception:
+            continue
+        if sched_dt <= now:
+            m['scheduled_for'] = None
+            m['timestamp'] = now.isoformat()
+            changed = True
+            audit('scheduled_delivered', actor=m.get('sender', ''), target=m.get('recipient', ''))
     if changed:
         save_json(MESSAGES_FILE, messages)
         save_json(SCHEDULED_FILE, scheduled)
@@ -3278,6 +3334,35 @@ def toggle_pinned_chat():
     save_json(PINNED_CHATS_FILE, pins)
     return jsonify({'success': True, 'pinned': pinned})
 
+@app.route('/archive', methods=['GET'])
+@require_login
+def get_archive():
+    me = session['username']
+    data = load_json(ARCHIVE_FILE, {})
+    return jsonify({'success': True, 'archive': data.get(me, [])})
+
+@app.route('/archive', methods=['POST'])
+@rate_limit(max_requests=30, window_seconds=120)
+@require_login
+@require_csrf
+def toggle_archive():
+    me = session['username']
+    payload = request.get_json(force=True, silent=True) or {}
+    chat_type = payload.get('chatType', 'user')
+    chat_id = payload.get('chatId', '')
+    if not chat_id:
+        return jsonify({'success': False, 'message': 'Manglende chatId.'}), 400
+    all_archive = load_json(ARCHIVE_FILE, {})
+    user_archive = set(all_archive.setdefault(me, []))
+    entry = chat_type + ':' + chat_id
+    if entry in user_archive:
+        user_archive.discard(entry)
+    else:
+        user_archive.add(entry)
+    all_archive[me] = list(user_archive)
+    save_json(ARCHIVE_FILE, all_archive)
+    return jsonify({'success': True, 'archived': entry in user_archive})
+
 # ──────────────────────────────────────────────
 # Chat Folders (Telegram-style tabs)
 # ──────────────────────────────────────────────
@@ -3351,6 +3436,7 @@ def send_channel_message(channel_id):
     ciphertext = sanitize_input(data.get('ciphertext', ''), 10000)
     mtype = data.get('type', 'text')
     filename = data.get('filename')
+    reply_to = (data.get('reply_to') or '').strip() or None
     if not ciphertext:
         return jsonify({'success': False, 'message': 'Manglende innhold.'}), 400
     channels = load_json(CHANNELS_FILE, [])
@@ -3368,6 +3454,7 @@ def send_channel_message(channel_id):
         'type': mtype,
         'timestamp': datetime.utcnow().isoformat(),
         'filename': filename,
+        'reply_to': reply_to,
     })
     save_json(MESSAGES_FILE, messages)
     return jsonify({'success': True})
@@ -3385,6 +3472,16 @@ def get_channel_messages(channel_id):
     messages = load_json(MESSAGES_FILE, [])
     filtered = [m for m in messages if m.get('channel_id') == channel_id]
     filtered.sort(key=lambda x: x['timestamp'], reverse=True)
+    msg_by_id = {m['id']: m for m in filtered if 'id' in m}
+    for m in filtered:
+        reply_to = m.get('reply_to')
+        if reply_to and reply_to in msg_by_id:
+            rm = msg_by_id[reply_to]
+            sender = rm.get('sender', '')
+            txt = rm.get('ciphertext', '')
+            m['reply_preview'] = f"({sender}) {txt[:60]}"
+        else:
+            m['reply_preview'] = ''
     return jsonify({'success': True, 'messages': filtered[:100]})
 
 @app.route('/channels/<channel_id>/subscribe', methods=['POST'])

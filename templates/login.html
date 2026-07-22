@@ -97,7 +97,7 @@
             <div style="font-size:.72rem;color:#7c7e9a;margin-top:4px;">Minst 10 tegn med store og små bokstaver, tall og spesialtegn (!@#$%...)</div>
           </div>
           <div class="actions">
-            <button class="btn btn-primary" type="submit">Tilbstill passord</button>
+            <button class="btn btn-primary" type="submit">Tilbakestill passord</button>
           </div>
           <div style="text-align:center;">
             <button type="button" class="link-btn" onclick="switchTab('login')">Tilbake til innlogging</button>
@@ -149,7 +149,13 @@
     function showRecoveryCodes(codes) {
       pendingCodes = codes;
       const list = document.getElementById('codes-list');
-      list.innerHTML = codes.map(c => '<span class="code">' + c + '</span>').join('');
+      list.textContent = '';
+      codes.forEach(c => {
+        const span = document.createElement('span');
+        span.className = 'code';
+        span.textContent = c;
+        list.appendChild(span);
+      });
       document.getElementById('form-register').style.display = 'none';
       document.getElementById('form-login').style.display = 'none';
       document.getElementById('form-recovery').style.display = 'none';
