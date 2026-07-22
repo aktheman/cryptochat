@@ -354,6 +354,21 @@
         try { return new Date(iso).toLocaleString('no-NO'); } catch { return iso; }
       }
 
+      function formatSidebarTime(iso) {
+        if (!iso) return '';
+        try {
+          const d = new Date(iso);
+          const now = new Date();
+          const diffMs = now - d;
+          const diffDays = Math.floor(diffMs / 86400000);
+          const time = d.toLocaleTimeString('no-NO', { hour: '2-digit', minute: '2-digit' });
+          if (diffDays === 0) return time;
+          if (diffDays === 1) return 'I går';
+          if (diffDays < 7) return d.toLocaleDateString('no-NO', { weekday: 'short' });
+          return d.toLocaleDateString('no-NO', { day: '2-digit', month: '2-digit' });
+        } catch { return ''; }
+      }
+
       function arrayBufferToBase64(buffer) {
         const bytes = new Uint8Array(buffer);
         let binary = '';
@@ -602,6 +617,8 @@
                 <button id="exportBtn" class="btn btn-small btn-ghost" title="Eksporter samtale" aria-label="Eksporter chat" style="display:none">💾</button>
                 <button id="wallpaperBtn" class="btn btn-small btn-ghost" title="Bakgrunn" aria-label="Velg bakgrunn" style="display:none">🖼️</button>
                 <button id="muteBtn" class="btn btn-small btn-ghost" title="DempVarsler" style="display:none">🔔</button>
+                <button id="inviteBtn" class="btn btn-small btn-ghost" title="Del invitasjon" style="display:none" aria-label="Del gruppeinvitasjon">🔗</button>
+                <button id="lockBtn" class="btn btn-small btn-ghost" title="E2EE-status" style="display:none" aria-label="Krypteringsstatus">🔓</button>
                 <button id="groupAdminBtn" class="btn btn-small btn-ghost" title="Gruppeinnstillinger" aria-label="Gruppeinnstillinger" style="display:none">⚙️</button>
               </div>
             </header>
@@ -676,6 +693,7 @@
       let userScrolledUp = false;
       let lastMessages = {};
       let groupLastMessages = {};
+      let lastMessageData = { users: {}, groups: {} };
       // ── WebRTC Call state ──
       let currentCall = null;
       let peerConnection = null;
@@ -906,6 +924,65 @@
         }
       }
 
+      async function updateE2EEStatus() {
+        const inviteBtn = document.getElementById('inviteBtn');
+        const lockBtn = document.getElementById('lockBtn');
+        if (!lockBtn) return;
+        let html = 'e2ee' in window ? '🔓' : '🔓';
+        if (activeChat) {
+          if (activeChat.type === 'user' && window.__CRYPTO__) {
+            html = '🔒';
+            lockBtn.style.display = '';
+          } else if (activeChat.type === 'group' && activeChat.groupE2EEKey) {
+            html = '🔒';
+            lockBtn.style.display = '';
+          } else {
+            lockBtn.style.display = 'none';
+          }
+        } else {
+          lockBtn.style.display = 'none';
+        }
+        lockBtn.textContent = html;
+        if (inviteBtn) inviteBtn.style.display = 'none';
+        if (lockBtn && activeChat && activeChat.type === 'group') {
+          const group = groups.find(g => g.id === activeChat.target) || {};
+          if (group.invite_token || (group.members || []).length) {
+            if (inviteBtn) inviteBtn.style.display = '';
+          } else {
+            if (inviteBtn) inviteBtn.style.display = 'none';
+          }
+        }
+      }
+
+      document.getElementById('lockBtn').addEventListener('click', () => {
+        if (!activeChat || !document.getElementById('lockBtn').textContent.includes('🔒')) return;
+        toast(activeChat.type === 'group' ? 'Gruppe er ende-til-ende-kryptert' : 'Dette er en kryptert samtale');
+      });
+
+      document.getElementById('inviteBtn').addEventListener('click', async () => {
+        if (!activeChat || activeChat.type !== 'group') return;
+        const inviteBtn = document.getElementById('inviteBtn');
+        try {
+          const res = await fetch('/groups/' + encodeURIComponent(activeChat.target) + '/invite', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: '{}',
+          });
+          const data = await safeJson(res);
+          if (data && data.success && data.invite_url) {
+            await navigator.clipboard.writeText(data.invite_url).catch(() => {});
+            inviteBtn.textContent = '✅';
+            inviteBtn.title = 'Invitasjonslenke kopiert';
+            toast('Invitasjonslenke kopiert');
+            setTimeout(() => { inviteBtn.textContent = '🔗'; inviteBtn.title = 'Del invitasjon'; }, 2500);
+          } else {
+            toast(data && data.message ? data.message : 'Kunne ikke opprette invitasjon');
+          }
+        } catch (e) {
+          toast('Kunne ikke opprette invitasjon');
+        }
+      });
+
       document.getElementById('verifyBtn').addEventListener('click', () => {
         if (activeChat && activeChat.type === 'user') {
           showSafetyNumberModal(activeChat.target);
@@ -944,8 +1021,47 @@
         document.getElementById('groupAdminBtn').style.display = 'none';
         document.getElementById('pollBtn').style.display = 'none';
         document.getElementById('verifyBtn').style.display = 'none';
+        document.getElementById('inviteBtn').style.display = 'none';
+        document.getElementById('lockBtn').style.display = 'none';
+        document.getElementById('lockBtn').textContent = '🔓';
         document.querySelectorAll('.item').forEach(el => el.classList.remove('active'));
       }
+
+      async function showUnlockModal() {
+        if (window._cryptoChatLocked) return;
+        window._cryptoChatLocked = true;
+        document.getElementById('lockBtn').textContent = '🔒';
+        const overlay = document.createElement('div');
+        overlay.id = 'lockOverlay';
+        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:99999;';
+        const box = document.createElement('div');
+        box.style.cssText = 'background:#fff;padding:14px;border-radius:14px;width:280px;max-width:92vw;box-shadow:0 10px 30px rgba(0,0,0,.35);';
+        box.innerHTML = '<div style="font-weight:800;margin-bottom:8px;">🔐 Låst</div>' +
+          '<input id="lockPin" type="password" inputmode="numeric" pattern="[0-9]*" placeholder="PIN" autocomplete="one-time-code" style="width:100%;padding:10px;font-size:1rem;letter-spacing:.4rem;text-align:center;border:1px solid #ccc;border-radius:10px;" />' +
+          '<button id="unlockBtn" style="margin-top:8px;width:100%;padding:8px;border:0;border-radius:10px;background:#1a73e8;color:#fff;font-weight:800;">Lås opp</button>';
+        overlay.appendChild(box);
+        document.body.appendChild(overlay);
+        const input = document.getElementById('lockPin');
+        input.focus();
+        const attempt = async () => {
+          const pin = input.value.trim();
+          if (!pin) return;
+          const ok = await fetch('/auth/session/pin', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({pin})});
+          if (ok.status === 200) { overlay.remove(); window._cryptoChatLocked = false; document.getElementById('lockBtn').textContent = '🔓'; };
+        };
+        document.getElementById('unlockBtn').addEventListener('click', attempt);
+        input.addEventListener('keydown', (e) => { if (e.key === 'Enter') attempt(); });
+      }
+
+      function setupIdleTimer() {
+        let timer;
+        const reset = () => { clearTimeout(timer); timer = setTimeout(() => { if (window.__APP__?.username) showUnlockModal(); }, 60000); };
+        window.addEventListener('mousemove', reset);
+        window.addEventListener('keydown', reset);
+        document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reset(); else clearTimeout(timer); });
+        reset();
+      }
+
 
       // (Escape handler consolidated below in keyboard shortcuts block)
 
@@ -973,7 +1089,10 @@
           const badge = (unreadCounts[name] || 0) > 0 ? '<span class="badge-count">' + Math.min(unreadCounts[name], 99) + '</span>' : '';
           const lastSeenText = presence[name] ? '' : (window.__lastSeenTimes && window.__lastSeenTimes[name] ? '<div class="last-seen">Sist sett: ' + escapeHtml(formatTime(window.__lastSeenTimes[name])) + '</div>' : '');
           const pinIcon = isPinnedChat(name, 'user') ? '<span class="pin-indicator" style="font-size:.65rem;margin-left:4px;" title="Festet">📌</span>' : '';
-          item.innerHTML = '<div class="avatar-wrap"><div class="avatar" style="background:' + avatarGradient(name) + ';">' + avatarLetter(name) + '</div>' + (presence[name] ? '<div class="presence"></div>' : '') + '</div><div style="flex:1;min-width:0;"><div class="name">' + escapeHtml(displayName) + verifyIcon + pinIcon + '</div><div class="preview">' + escapeHtml(preview) + lastSeenText + '</div></div>' + badge;
+          const key = window.__allUsers?.find ? window.__allUsers.find(x => (x && x.username) === name) : undefined;
+          const hasKey = (typeof key === 'object' && key && key.identity_public_key);
+          const lockIcon = hasKey ? '<span class="e2ee" title="E2EE">🔒</span>' : '';
+          item.innerHTML = '<div class="avatar-wrap"><div class="avatar" style="background:' + avatarGradient(name) + ';">' + avatarLetter(name) + '</div>' + (presence[name] ? '<div class="presence"></div>' : '') + '</div><div style="flex:1;min-width:0;"><div class="name">' + escapeHtml(displayName) + lockIcon + verifyIcon + pinIcon + '</div><div class="preview">' + escapeHtml(preview) + lastSeenText + '</div></div>' + badge;
           item.addEventListener('click', () => { activateItem(usersList, item); openChat(name); });
           usersList.appendChild(item);
         });
@@ -986,7 +1105,10 @@
           item.className = 'item';
           item.dataset.groupId = g.id;
           const preview = groupLastMessages[g.id] || '';
-          item.innerHTML = '<div class="avatar-wrap"><div class="avatar" style="background:' + avatarGradient(g.name) + ';">' + avatarLetter(g.name) + '</div></div><div style="flex:1;min-width:0;"><div class="name">' + escapeHtml(g.name) + '</div><div class="preview">' + escapeHtml(preview || ((g.members || []).length + ' medlemmer')) + '</div></div><button class="btn btn-small btn-ghost delete-group" data-id="' + escapeHtml(g.id) + '">Slett</button>';
+          const hasKey = !!(g && g.encryptedKey);
+          const lockIcon = hasKey ? '<span class="e2ee" title="E2EE">🔒</span>' : '';
+          const inviteIcon = g.invite_token ? '<span class="e2ee" title="Invitasjon aktiv">🔗</span>' : '';
+          item.innerHTML = '<div class="avatar-wrap"><div class="avatar" style="background:' + avatarGradient(g.name) + ';">' + avatarLetter(g.name) + '</div></div><div style="flex:1;min-width:0;"><div class="name">' + escapeHtml(g.name) + lockIcon + inviteIcon + '</div><div class="preview">' + escapeHtml(preview || ((g.members || []).length + ' medlemmer')) + '</div></div><button class="btn btn-small btn-ghost delete-group" data-id="' + escapeHtml(g.id) + '">Slett</button>';
           item.addEventListener('click', (e) => { if (e.target.closest('.delete-group')) return; activateItem(groupsList, item); openGroup(g.id); });
           const del = item.querySelector('.delete-group');
           if (del) del.addEventListener('click', async () => { await deleteGroup(g.id); });
@@ -1283,7 +1405,10 @@
             });
           }
           await loadJSON('/read_receipts/' + encodeURIComponent(user), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).catch(() => {});
-          if (list.length) lastMessages[user] = list[list.length - 1].text || '';
+          if (list.length) {
+            const last = list[list.length - 1];
+            lastMessages[user] = { text: last.text || '', timestamp: last.timestamp || '' };
+          }
         } catch (e) {
           messagesBox.innerHTML = '<div class="empty-state"><div class="empty-icon">⚠️</div><p>Kunne ikke hente meldinger</p></div>';
           toast('Kunne ikke hente meldinger');
@@ -2886,6 +3011,10 @@
           + '<input id="profileDisplayName" class="input-text" value="' + escapeHtml(profile.display_name || '') + '" placeholder="Ditt visningsnavn" maxlength="30" /></div>'
           + '<div><label for="profileBio">Bio</label>'
           + '<textarea id="profileBio" class="input-text" placeholder="Fortell litt om deg selv..." maxlength="150">' + escapeHtml(profile.bio || '') + '</textarea></div>'
+          + '<div style="border-top:1px solid var(--c-border);padding-top:10px;margin-top:6px;"><label>Applikasjons PIN</label>'
+          + '<div style="display:flex;gap:6px;margin-top:4px;"><input id="profilePin" class="input-text" type="password" inputmode="numeric" pattern="[0-9]*" placeholder="Ny PIN" autocomplete="new-password" style="flex:1;" />'
+          + '<input id="profilePinConfirm" class="input-text" type="password" inputmode="numeric" pattern="[0-9]*" placeholder="Gjenta PIN" autocomplete="new-password" style="flex:1;" /></div>'
+          + '<button id="profilePinSaveBtn" class="btn btn-ghost" style="margin-top:6px;">Lagre PIN</button></div>'
           + '<div class="modal-actions">'
           + '<button id="profileCancelBtn" class="btn btn-ghost">Avbryt</button>'
           + '<button id="profileSaveBtn" class="btn btn-primary">Lagre</button>'
@@ -2935,6 +3064,33 @@
             toast('Kunne ikke lagre profil');
           }
         });
+
+        const pinSaveBtn = overlay.querySelector('#profilePinSaveBtn');
+        if (pinSaveBtn) {
+          pinSaveBtn.addEventListener('click', async () => {
+            const pin = overlay.querySelector('#profilePin').value.trim();
+            const confirm = overlay.querySelector('#profilePinConfirm').value.trim();
+            if (!pin || pin.length < 4) return toast('PIN må være minst 4 siffer');
+            if (pin !== confirm) return toast('PIN matcher ikke');
+            try {
+              const res = await fetch('/profile/pin', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ pin })
+              });
+              const data = await safeJson(res);
+              if (data && data.success) {
+                toast('PIN lagret', 'success');
+                overlay.querySelector('#profilePin').value = '';
+                overlay.querySelector('#profilePinConfirm').value = '';
+              } else {
+                toast(data && data.message ? data.message : 'Kunne ikke lagre PIN');
+              }
+            } catch (e) {
+              toast('Kunne ikke lagre PIN');
+            }
+          });
+        }
 
         overlay.querySelector('#profileCancelBtn').addEventListener('click', () => overlay.remove());
         overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });

@@ -1,4 +1,5 @@
-import os, json, base64, secrets, hashlib, time, re, collections, threading
+import os, json, base64, secrets, hashlib, hmac, time, re, collections, threading
+import fcntl
 import ipaddress
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -744,6 +745,25 @@ def recover_password():
     invalidate_all_sessions(username)
     audit('password_recovered', actor=username, target=username)
     return jsonify({'success': True, 'message': 'Passord tilbakestilt. Logg inn med det nye passordet.', 'codes_remaining': len(stored_hashes)})
+
+@app.route('/auth/session/pin', methods=['POST'])
+@rate_limit(max_requests=5, window_seconds=60)
+@require_login
+def session_pin():
+    data = request.get_json(force=True, silent=True) or {}
+    pin = (data.get('pin') or '').strip()
+    if not pin:
+        return jsonify({'success': False, 'message': 'PIN mangler.'}), 400
+    users = load_json(USERS_FILE, {})
+    me = session.get('username')
+    user = users.get(me) if me else None
+    if not user:
+        return jsonify({'success': False, 'message': 'Bruker ikke funnet.'}), 404
+    expected = user.get('session_pin')
+    if expected and expected == hashlib.sha256(pin.encode()).hexdigest()[:16]:
+        session['unlocked'] = True
+        return jsonify({'success': True})
+    return jsonify({'success': False, 'message': 'Feil PIN.'}), 401
 
 @app.route('/auth/recovery/generate', methods=['POST'])
 @rate_limit(max_requests=3, window_seconds=3600)
@@ -1532,6 +1552,24 @@ def update_profile():
     save_json(USERS_FILE, users)
     return jsonify({'success': True})
 
+@app.route('/profile/pin', methods=['POST'])
+@rate_limit(max_requests=5, window_seconds=60)
+@require_csrf
+def set_profile_pin():
+    data = request.get_json(force=True, silent=True) or {}
+    pin = (data.get('pin') or '').strip()
+    if not pin or len(pin) < 4:
+        return jsonify({'success': False, 'message': 'PIN må være minst 4 siffer.'}), 400
+    username = session.get('username')
+    if not username:
+        return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
+    users = load_json(USERS_FILE, {})
+    users[username]['session_pin'] = hashlib.sha256(pin.encode()).hexdigest()[:16]
+    save_json(USERS_FILE, users)
+    audit('session_pin_set', actor=username, target=username)
+    return jsonify({'success': True})
+
+
 @app.route('/users/all', methods=['GET'])
 def list_users_with_profiles():
     if 'username' not in session:
@@ -2300,6 +2338,55 @@ def unread_counts():
             continue
         counts[partner] = counts.get(partner, 0) + 1
     return jsonify({'success': True, 'counts': counts})
+
+# ──────────────────────────────────────────────
+# Last Messages (sidebar previews)
+# ──────────────────────────────────────────────
+@app.route('/last-messages')
+@require_login
+def last_messages_preview():
+    me = session['username']
+    messages = load_json(MESSAGES_FILE, [])
+    groups = load_json(GROUPS_FILE, [])
+    last_by_user = {}
+    last_by_group = {}
+    for m in messages:
+        ts = m.get('timestamp', '')
+        sender = m.get('sender', '')
+        recipient = m.get('recipient', '')
+        group_id = m.get('group_id', '')
+        text = m.get('ciphertext', '')
+        mtype = m.get('type', 'text')
+        if group_id:
+            gid = group_id
+            if me not in [u for u in (m.get('members', []) if isinstance(m.get('members'), list) else [])] and m.get('sender') != me:
+                grp = next((g for g in groups if g.get('id') == gid), None)
+                if grp and me not in grp.get('members', []):
+                    continue
+            if gid not in last_by_group or ts > last_by_group[gid].get('timestamp', ''):
+                snippet = text[:80] if mtype == 'text' else ('📎 Fil' if mtype == 'file' else '📊 Avstemning' if mtype == 'poll' else '🎙 Lyd' if mtype == 'voice' else '📷 Bilde' if mtype == 'image' else '💬')
+                last_by_group[gid] = {
+                    'text': snippet,
+                    'timestamp': ts,
+                    'sender': sender,
+                }
+        elif recipient == me and sender != me:
+            if sender not in last_by_user or ts > last_by_user[sender].get('timestamp', ''):
+                snippet = text[:80] if mtype == 'text' else ('📎 Fil' if mtype == 'file' else '📊 Avstemning' if mtype == 'poll' else '🎙 Lyd' if mtype == 'voice' else '📷 Bilde' if mtype == 'image' else '💬')
+                last_by_user[sender] = {
+                    'text': snippet,
+                    'timestamp': ts,
+                    'sender': sender,
+                }
+        elif sender == me and recipient != me:
+            if recipient not in last_by_user or ts > last_by_user[recipient].get('timestamp', ''):
+                snippet = text[:80] if mtype == 'text' else ('📎 Fil' if mtype == 'file' else '📊 Avstemning' if mtype == 'poll' else '🎙 Lyd' if mtype == 'voice' else '📷 Bilde' if mtype == 'image' else '💬')
+                last_by_user[recipient] = {
+                    'text': 'Du: ' + snippet,
+                    'timestamp': ts,
+                    'sender': me,
+                }
+    return jsonify({'success': True, 'users': last_by_user, 'groups': last_by_group})
 
 # ──────────────────────────────────────────────
 # Chat Export
