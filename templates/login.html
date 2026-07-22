@@ -8,462 +8,648 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    html, body {
-      height: 100%;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #0d1117;
-      color: #e6edf3;
+    :root {
+      --bg: #09090b;
+      --card: rgba(255,255,255,0.03);
+      --card-border: rgba(255,255,255,0.06);
+      --input-bg: rgba(255,255,255,0.04);
+      --input-border: rgba(255,255,255,0.08);
+      --input-focus: #8b5cf6;
+      --accent: #8b5cf6;
+      --accent-dark: #7c3aed;
+      --accent-glow: rgba(139,92,246,0.15);
+      --text: #fafafa;
+      --text-secondary: #a1a1aa;
+      --text-muted: #52525b;
+      --error: #ef4444;
+      --error-bg: rgba(239,68,68,0.08);
+      --success: #22c55e;
+      --success-bg: rgba(34,197,94,0.08);
+      --warn: #eab308;
+      --warn-bg: rgba(234,179,8,0.08);
+    }
+
+    html { height: 100%; }
+    body {
+      min-height: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      overflow-x: hidden;
       -webkit-font-smoothing: antialiased;
     }
 
-    body {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 20px;
+    /* ── Ambient background ── */
+    .ambient {
+      position: fixed;
+      inset: 0;
+      overflow: hidden;
+      pointer-events: none;
+      z-index: 0;
     }
 
-    /* ── Wrapper ── */
-    .wrap {
+    .ambient-orb {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(120px);
+      opacity: 0.4;
+    }
+
+    .ambient-orb.a {
+      width: 600px; height: 600px;
+      background: #7c3aed;
+      top: -250px; right: -150px;
+      opacity: 0.12;
+      animation: drift 25s ease-in-out infinite;
+    }
+
+    .ambient-orb.b {
+      width: 500px; height: 500px;
+      background: #3b82f6;
+      bottom: -200px; left: -100px;
+      opacity: 0.08;
+      animation: drift 20s ease-in-out infinite reverse;
+    }
+
+    .ambient-orb.c {
+      width: 300px; height: 300px;
+      background: #8b5cf6;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      opacity: 0.05;
+      animation: drift 30s ease-in-out infinite;
+    }
+
+    @keyframes drift {
+      0%, 100% { transform: translate(0, 0); }
+      25% { transform: translate(40px, -30px); }
+      50% { transform: translate(-20px, 40px); }
+      75% { transform: translate(30px, 20px); }
+    }
+
+    /* ── Layout ── */
+    .container {
+      position: relative;
+      z-index: 1;
       width: 100%;
-      max-width: 380px;
+      max-width: 420px;
     }
 
-    /* ── Logo area ── */
+    /* ── Logo ── */
     .logo {
       text-align: center;
-      margin-bottom: 36px;
+      margin: 0 0 32px;
+      animation: fadeUp 0.5s ease both;
     }
 
-    .logo-mark {
-      width: 56px;
-      height: 56px;
-      margin: 0 auto 16px;
-      background: linear-gradient(135deg, #7c3aed 0%, #a78bfa 100%);
-      border-radius: 14px;
+    .logo-icon {
+      width: 64px;
+      height: 64px;
+      margin: 0 auto 20px;
+      background: linear-gradient(135deg, #8b5cf6, #6366f1);
+      border-radius: 18px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 26px;
+      font-size: 30px;
+      box-shadow:
+        0 0 0 1px rgba(255,255,255,0.1),
+        0 8px 40px rgba(139,92,246,0.25),
+        inset 0 1px 0 rgba(255,255,255,0.15);
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .logo-icon:hover {
+      transform: scale(1.05) rotate(-2deg);
+      box-shadow:
+        0 0 0 1px rgba(255,255,255,0.12),
+        0 12px 48px rgba(139,92,246,0.35),
+        inset 0 1px 0 rgba(255,255,255,0.15);
     }
 
     .logo h1 {
-      font-size: 1.4rem;
+      font-size: 1.5rem;
       font-weight: 700;
-      color: #fff;
-      margin-bottom: 4px;
+      letter-spacing: -0.5px;
+      color: var(--text);
     }
 
     .logo p {
-      font-size: 0.875rem;
-      color: #8b949e;
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+      margin-top: 6px;
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
     }
 
     /* ── Card ── */
     .card {
-      background: #161b22;
-      border: 1px solid #21262d;
-      border-radius: 12px;
-      padding: 24px;
+      background: var(--card);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 28px;
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.2);
+      animation: fadeUp 0.5s ease 0.1s both;
     }
 
     /* ── Tabs ── */
     .tabs {
       display: flex;
-      gap: 4px;
-      background: #0d1117;
-      border-radius: 8px;
-      padding: 4px;
-      margin-bottom: 24px;
+      gap: 2px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 3px;
+      margin-bottom: 28px;
     }
 
     .tab {
       flex: 1;
-      padding: 8px;
+      padding: 9px 12px;
       border: none;
       background: transparent;
-      color: #8b949e;
+      color: var(--text-muted);
       font-size: 0.875rem;
       font-weight: 500;
-      border-radius: 6px;
+      border-radius: 8px;
       cursor: pointer;
-      transition: all 0.15s;
+      transition: all 0.2s ease;
+      position: relative;
+    }
+
+    .tab:hover {
+      color: var(--text-secondary);
     }
 
     .tab.active {
-      background: #21262d;
-      color: #e6edf3;
+      background: rgba(255,255,255,0.06);
+      color: var(--text);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
     }
 
-    .tab:hover:not(.active) {
-      color: #e6edf3;
-    }
-
-    /* ── Form ── */
+    /* ── Forms ── */
     .form {
       display: none;
+      animation: fadeIn 0.25s ease;
     }
 
-    .form.active {
-      display: block;
+    .form.active { display: block; }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
     }
 
-    .input-group {
-      margin-bottom: 16px;
+    /* ── Input ── */
+    .field {
+      margin-bottom: 18px;
     }
 
-    .input-group label {
+    .field label {
       display: block;
       font-size: 0.8125rem;
       font-weight: 500;
-      color: #e6edf3;
-      margin-bottom: 6px;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
     }
 
-    .input-group input {
+    .field input {
       width: 100%;
-      padding: 10px 12px;
-      background: #0d1117;
-      border: 1px solid #21262d;
-      border-radius: 6px;
-      color: #e6edf3;
+      padding: 11px 14px;
+      background: var(--input-bg);
+      border: 1px solid var(--input-border);
+      border-radius: 10px;
+      color: var(--text);
       font-size: 0.9375rem;
       outline: none;
-      transition: border-color 0.15s, box-shadow 0.15s;
+      transition: all 0.2s ease;
     }
 
-    .input-group input::placeholder {
-      color: #484f58;
+    .field input::placeholder {
+      color: var(--text-muted);
     }
 
-    .input-group input:focus {
-      border-color: #7c3aed;
-      box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.15);
+    .field input:focus {
+      border-color: var(--input-focus);
+      box-shadow: 0 0 0 3px var(--accent-glow), 0 0 20px rgba(139,92,246,0.08);
+      background: rgba(255,255,255,0.05);
     }
 
-    .input-hint {
+    .field-hint {
       font-size: 0.75rem;
-      color: #484f58;
-      margin-top: 6px;
+      color: var(--text-muted);
+      margin-top: 8px;
+      line-height: 1.5;
     }
 
     /* ── Button ── */
-    .submit-btn {
+    .btn {
       width: 100%;
-      padding: 10px 16px;
-      background: #7c3aed;
-      color: #fff;
+      padding: 11px 20px;
       border: none;
-      border-radius: 6px;
+      border-radius: 10px;
       font-size: 0.9375rem;
       font-weight: 600;
       cursor: pointer;
-      transition: background 0.15s;
+      transition: all 0.2s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #8b5cf6, #6366f1);
+      color: #fff;
+      box-shadow: 0 2px 12px rgba(139,92,246,0.25), inset 0 1px 0 rgba(255,255,255,0.15);
       margin-top: 4px;
     }
 
-    .submit-btn:hover {
-      background: #6d28d9;
+    .btn-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 20px rgba(139,92,246,0.35), inset 0 1px 0 rgba(255,255,255,0.15);
     }
 
-    .submit-btn:disabled {
+    .btn-primary:active {
+      transform: translateY(0);
+      box-shadow: 0 1px 8px rgba(139,92,246,0.2);
+    }
+
+    .btn-primary:disabled {
       opacity: 0.5;
       cursor: not-allowed;
+      transform: none;
     }
 
-    /* ── Link ── */
+    /* ── Links ── */
     .form-footer {
       text-align: center;
-      margin-top: 16px;
+      margin-top: 18px;
     }
 
-    .form-link {
+    .link-btn {
       background: none;
       border: none;
-      color: #7c3aed;
+      color: var(--accent);
       font-size: 0.8125rem;
+      font-weight: 500;
       cursor: pointer;
-      padding: 0;
+      padding: 4px;
+      transition: color 0.15s;
     }
 
-    .form-link:hover {
-      text-decoration: underline;
+    .link-btn:hover {
+      color: #a78bfa;
     }
 
-    /* ── Message ── */
-    .msg {
+    /* ── Feedback ── */
+    .feedback {
       display: none;
-      margin-top: 16px;
-      padding: 10px 12px;
-      border-radius: 6px;
+      margin-top: 18px;
+      padding: 11px 14px;
+      border-radius: 10px;
       font-size: 0.8125rem;
+      font-weight: 500;
       text-align: center;
+      animation: fadeIn 0.2s ease;
     }
 
-    .msg.visible {
-      display: block;
+    .feedback.show { display: block; }
+
+    .feedback.error {
+      background: var(--error-bg);
+      color: var(--error);
+      border: 1px solid rgba(239,68,68,0.15);
     }
 
-    .msg.error {
-      background: rgba(248, 81, 73, 0.1);
-      color: #f85149;
+    .feedback.success {
+      background: var(--success-bg);
+      color: var(--success);
+      border: 1px solid rgba(34,197,94,0.15);
     }
 
-    .msg.success {
-      background: rgba(63, 185, 80, 0.1);
-      color: #3fb950;
-    }
-
-    .msg.loading {
-      background: #21262d;
-      color: #8b949e;
+    .feedback.loading {
+      background: rgba(255,255,255,0.03);
+      color: var(--text-secondary);
+      border: 1px solid var(--card-border);
     }
 
     /* ── Recovery codes ── */
-    .codes {
+    .codes-view {
       display: none;
+      animation: fadeIn 0.25s ease;
     }
 
-    .codes.visible {
-      display: block;
+    .codes-view.show { display: block; }
+
+    .codes-header {
+      margin-bottom: 20px;
     }
 
-    .codes h3 {
-      font-size: 0.9375rem;
+    .codes-header h3 {
+      font-size: 1.05rem;
       font-weight: 600;
-      color: #e6edf3;
-      margin-bottom: 4px;
+      color: var(--text);
+      margin-bottom: 6px;
     }
 
-    .codes > p {
+    .codes-header p {
       font-size: 0.8125rem;
-      color: #8b949e;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+
+    .codes-box {
+      background: rgba(0,0,0,0.3);
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 14px;
       margin-bottom: 16px;
     }
 
-    .codes-list {
-      background: #0d1117;
-      border: 1px solid #21262d;
-      border-radius: 6px;
-      padding: 12px;
-      margin-bottom: 12px;
-    }
-
-    .code-row {
+    .code-item {
       display: flex;
       align-items: center;
-      gap: 8px;
-      padding: 8px;
-      background: #161b22;
-      border: 1px solid #21262d;
-      border-radius: 6px;
+      gap: 10px;
+      padding: 10px 12px;
+      background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.04);
+      border-radius: 8px;
       margin-bottom: 6px;
-      font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+      font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
       font-size: 0.9375rem;
-      color: #e6edf3;
-      letter-spacing: 1px;
+      color: var(--text);
+      letter-spacing: 1.5px;
+      transition: background 0.15s, border-color 0.15s;
     }
 
-    .code-row:last-child {
-      margin-bottom: 0;
+    .code-item:hover {
+      background: rgba(255,255,255,0.04);
+      border-color: rgba(255,255,255,0.08);
     }
 
-    .code-row span {
-      opacity: 0.4;
-      font-size: 0.75rem;
+    .code-item:last-child { margin-bottom: 0; }
+
+    .code-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+      opacity: 0.5;
+      flex-shrink: 0;
     }
 
-    .codes-warn {
+    .warn-box {
       display: flex;
       align-items: flex-start;
-      gap: 8px;
-      padding: 10px 12px;
-      background: rgba(210, 153, 34, 0.08);
-      border: 1px solid rgba(210, 153, 34, 0.2);
-      border-radius: 6px;
-      margin-bottom: 12px;
+      gap: 10px;
+      padding: 12px 14px;
+      background: var(--warn-bg);
+      border: 1px solid rgba(234,179,8,0.12);
+      border-radius: 10px;
+      margin-bottom: 16px;
     }
 
-    .codes-warn-icon {
+    .warn-icon {
       font-size: 0.875rem;
       margin-top: 1px;
+      flex-shrink: 0;
     }
 
-    .codes-warn p {
-      font-size: 0.75rem;
-      color: #d29922;
+    .warn-text {
+      font-size: 0.78rem;
+      color: var(--warn);
       line-height: 1.5;
-      margin: 0;
     }
 
     .copy-btn {
       width: 100%;
-      padding: 10px 16px;
-      background: #21262d;
-      border: 1px solid #30363d;
-      border-radius: 6px;
-      color: #e6edf3;
+      padding: 11px 16px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      color: var(--text);
       font-size: 0.875rem;
       font-weight: 500;
       cursor: pointer;
-      transition: background 0.15s, border-color 0.15s;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .copy-btn:hover {
+      background: rgba(255,255,255,0.06);
+      border-color: rgba(255,255,255,0.12);
+    }
+
+    .copy-btn.done {
+      background: var(--success-bg);
+      border-color: rgba(34,197,94,0.2);
+      color: var(--success);
+    }
+
+    /* ── Footer ── */
+    .page-footer {
+      text-align: center;
+      margin-top: 24px;
+      animation: fadeUp 0.5s ease 0.2s both;
+    }
+
+    .page-footer p {
+      font-size: 0.75rem;
+      color: var(--text-muted);
       display: flex;
       align-items: center;
       justify-content: center;
       gap: 6px;
     }
 
-    .copy-btn:hover {
-      background: #30363d;
+    .page-footer .dot {
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      background: var(--text-muted);
+      opacity: 0.5;
     }
 
-    .copy-btn.done {
-      background: rgba(63, 185, 80, 0.1);
-      border-color: rgba(63, 185, 80, 0.3);
-      color: #3fb950;
-    }
-
-    /* ── Footer ── */
-    .footer {
-      text-align: center;
-      margin-top: 24px;
-      font-size: 0.75rem;
-      color: #484f58;
+    /* ── Mobile ── */
+    @media (max-width: 440px) {
+      body { padding: 16px; }
+      .card { padding: 22px; }
+      .logo-icon { width: 56px; height: 56px; font-size: 26px; border-radius: 15px; }
+      .logo h1 { font-size: 1.3rem; }
     }
 
     @media (prefers-reduced-motion: reduce) {
-      * { transition: none !important; }
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+      }
     }
   </style>
 </head>
 <body>
-  <div class="wrap">
+  <div class="ambient">
+    <div class="ambient-orb a"></div>
+    <div class="ambient-orb b"></div>
+    <div class="ambient-orb c"></div>
+  </div>
+
+  <div class="container">
     <div class="logo">
-      <div class="logo-mark">💬</div>
+      <div class="logo-icon">💬</div>
       <h1>CryptoChat</h1>
-      <p>Ende-til-ende-kryptert</p>
+      <p>Ende-til-ende-kryptert kommunikasjon</p>
     </div>
 
     <div class="card">
       <div class="tabs">
-        <button class="tab active" onclick="switchTab('register')">Registrer</button>
+        <button class="tab active" onclick="switchTab('register')">Opprett konto</button>
         <button class="tab" onclick="switchTab('login')">Logg inn</button>
       </div>
 
       <!-- Register -->
       <form id="form-register" class="form active">
-        <div class="input-group">
-          <label for="reg-user">Brukernavn</label>
-          <input type="text" id="reg-user" autocomplete="username" placeholder="velg brukernavn" required>
+        <div class="field">
+          <label>Brukernavn</label>
+          <input type="text" id="reg-user" autocomplete="username" placeholder="Velg et brukernavn" required>
         </div>
-        <div class="input-group">
-          <label for="reg-pass">Passord</label>
-          <input type="password" id="reg-pass" autocomplete="new-password" placeholder="minst 10 tegn" required>
-          <div class="input-hint">Store og små bokstaver, tall og spesialtegn</div>
+        <div class="field">
+          <label>Passord</label>
+          <input type="password" id="reg-pass" autocomplete="new-password" placeholder="Opprett et sterkt passord" required>
+          <div class="field-hint">Minst 10 tegn med store og små bokstaver, tall og spesialtegn (!@#$%...)</div>
         </div>
-        <button type="submit" class="submit-btn">Registrer</button>
+        <button type="submit" class="btn btn-primary">Opprett konto</button>
       </form>
 
       <!-- Login -->
       <form id="form-login" class="form">
-        <div class="input-group">
-          <label for="login-user">Brukernavn</label>
-          <input type="text" id="login-user" autocomplete="username" placeholder="brukernavn" required>
+        <div class="field">
+          <label>Brukernavn</label>
+          <input type="text" id="login-user" autocomplete="username" placeholder="Skriv inn brukernavn" required>
         </div>
-        <div class="input-group">
-          <label for="login-pass">Passord</label>
-          <input type="password" id="login-pass" autocomplete="current-password" placeholder="passord" required>
+        <div class="field">
+          <label>Passord</label>
+          <input type="password" id="login-pass" autocomplete="current-password" placeholder="Skriv inn passord" required>
         </div>
-        <button type="submit" class="submit-btn">Logg inn</button>
+        <button type="submit" class="btn btn-primary">Logg inn</button>
         <div class="form-footer">
-          <button type="button" class="form-link" onclick="switchTab('recovery')">Glemt passord?</button>
+          <button type="button" class="link-btn" onclick="switchTab('recovery')">Glemt passord?</button>
         </div>
       </form>
 
       <!-- Recovery -->
       <form id="form-recovery" class="form">
-        <div class="input-group">
-          <label for="rec-user">Brukernavn</label>
-          <input type="text" id="rec-user" autocomplete="username" placeholder="brukernavn" required>
+        <div class="field">
+          <label>Brukernavn</label>
+          <input type="text" id="rec-user" autocomplete="username" placeholder="Skriv inn brukernavn" required>
         </div>
-        <div class="input-group">
-          <label for="rec-code">Gjenopprettingskode</label>
-          <input type="text" id="rec-code" placeholder="XXXX-XXXX" style="text-transform:uppercase;letter-spacing:1px" required>
+        <div class="field">
+          <label>Gjenopprettingskode</label>
+          <input type="text" id="rec-code" placeholder="XXXX-XXXX" style="text-transform:uppercase;letter-spacing:2px" required>
         </div>
-        <div class="input-group">
-          <label for="rec-pass">Nytt passord</label>
-          <input type="password" id="rec-pass" autocomplete="new-password" placeholder="minst 10 tegn" required>
-          <div class="input-hint">Store og små bokstaver, tall og spesialtegn</div>
+        <div class="field">
+          <label>Nytt passord</label>
+          <input type="password" id="rec-pass" autocomplete="new-password" placeholder="Opprett nytt passord" required>
+          <div class="field-hint">Minst 10 tegn med store og små bokstaver, tall og spesialtegn</div>
         </div>
-        <button type="submit" class="submit-btn">Tilbakestill passord</button>
+        <button type="submit" class="btn btn-primary">Tilbakestill passord</button>
         <div class="form-footer">
-          <button type="button" class="form-link" onclick="switchTab('login')">Tilbake</button>
+          <button type="button" class="link-btn" onclick="switchTab('login')">Tilbake til innlogging</button>
         </div>
       </form>
 
-      <!-- Codes -->
-      <div id="codes" class="codes">
-        <h3>Gjenopprettingskoder</h3>
-        <p>Lagre disse. De kan brukes for å hente tilgang til kontoen.</p>
-        <div class="codes-list" id="codes-list"></div>
-        <div class="codes-warn">
-          <span class="codes-warn-icon">⚠</span>
-          <p>Hver kode kan brukes én gang. Nye koder kan genereres fra innstillinger.</p>
+      <!-- Recovery codes -->
+      <div id="codes-view" class="codes-view">
+        <div class="codes-header">
+          <h3>Gjenopprettingskoder</h3>
+          <p>Lagre disse kodene på et sikkert sted. De kan brukes for å gjenopprette tilgang til kontoen din.</p>
         </div>
-        <button type="button" class="copy-btn" id="copy-btn" onclick="copyCodes()">Kopier koder</button>
-        <div class="form-footer" style="margin-top:12px">
-          <button type="button" class="form-link" onclick="switchTab('login')">Logg inn</button>
+        <div class="codes-box" id="codes-list"></div>
+        <div class="warn-box">
+          <span class="warn-icon">⚠️</span>
+          <span class="warn-text">Hver kode kan kun brukes én gang. Du kan generere nye koder fra innstillinger etter innlogging.</span>
+        </div>
+        <button type="button" class="copy-btn" id="copy-btn" onclick="copyCodes()">
+          <span id="copy-icon">📋</span> Kopier alle koder
+        </button>
+        <div class="form-footer" style="margin-top:14px">
+          <button type="button" class="link-btn" onclick="switchTab('login')">Logg inn</button>
         </div>
       </div>
 
-      <!-- Feedback -->
-      <div id="feedback" class="msg"></div>
+      <div id="feedback" class="feedback"></div>
     </div>
 
-    <div class="footer">ECDH + AES-256-GCM kryptering</div>
+    <div class="page-footer">
+      <p>
+        <span class="dot"></span>
+        ECDH + AES-256-GCM
+        <span class="dot"></span>
+      </p>
+    </div>
   </div>
 
   <script>
-    let codes = [];
+    let pendingCodes = [];
 
-    function switchTab(t) {
+    function switchTab(tab) {
       document.querySelectorAll('.tab').forEach((el, i) => {
-        el.classList.toggle('active', (t === 'register' && i === 0) || (t === 'login' && i === 1));
+        el.classList.toggle('active', (tab === 'register' && i === 0) || (tab === 'login' && i === 1));
       });
       document.querySelectorAll('.form').forEach(f => f.classList.remove('active'));
-      document.getElementById('codes').classList.remove('visible');
-      document.getElementById('feedback').className = 'msg';
+      document.getElementById('codes-view').classList.remove('show');
+      document.getElementById('feedback').className = 'feedback';
 
-      if (t === 'register') document.getElementById('form-register').classList.add('active');
-      else if (t === 'login') document.getElementById('form-login').classList.add('active');
-      else if (t === 'recovery') document.getElementById('form-recovery').classList.add('active');
+      if (tab === 'register') document.getElementById('form-register').classList.add('active');
+      else if (tab === 'login') document.getElementById('form-login').classList.add('active');
+      else if (tab === 'recovery') document.getElementById('form-recovery').classList.add('active');
     }
 
-    function showMsg(text, type) {
+    function showFeedback(text, type) {
       const el = document.getElementById('feedback');
       el.textContent = text;
-      el.className = 'msg visible ' + type;
+      el.className = 'feedback show ' + type;
     }
 
-    function showCodes(c) {
-      codes = c;
+    function hideFeedback() {
+      document.getElementById('feedback').className = 'feedback';
+    }
+
+    function showCodes(codes) {
+      pendingCodes = codes;
       const list = document.getElementById('codes-list');
       list.innerHTML = '';
-      c.forEach(code => {
-        list.innerHTML += '<div class="code-row"><span>•</span> ' + code + '</div>';
+      codes.forEach(c => {
+        list.innerHTML += '<div class="code-item"><span class="code-dot"></span>' + c + '</div>';
       });
       document.querySelectorAll('.form').forEach(f => f.classList.remove('active'));
-      document.getElementById('codes').classList.add('visible');
+      document.getElementById('codes-view').classList.add('show');
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-      document.getElementById('feedback').className = 'msg';
+      hideFeedback();
     }
 
     function copyCodes() {
       const btn = document.getElementById('copy-btn');
-      navigator.clipboard.writeText(codes.join('\n')).then(() => {
-        btn.textContent = 'Kopiert!';
+      const icon = document.getElementById('copy-icon');
+      navigator.clipboard.writeText(pendingCodes.join('\n')).then(() => {
+        icon.textContent = '✓';
         btn.classList.add('done');
-        setTimeout(() => { btn.textContent = 'Kopier koder'; btn.classList.remove('done'); }, 2000);
+        btn.querySelector('#copy-icon').nextSibling.textContent = ' Kopiert!';
+        setTimeout(() => {
+          icon.textContent = '📋';
+          btn.classList.remove('done');
+          btn.querySelector('#copy-icon').nextSibling.textContent = ' Kopier alle koder';
+        }, 2000);
       });
     }
 
@@ -474,47 +660,51 @@
         body: JSON.stringify(data)
       });
       const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j.message || j.error || 'Feil');
+      if (!r.ok) throw new Error(j.message || j.error || 'Noe gikk galt');
       return j;
     }
 
     document.getElementById('form-register').onsubmit = async (e) => {
       e.preventDefault();
       try {
-        showMsg('Registrerer...', 'loading');
+        showFeedback('Oppretter konto...', 'loading');
         const d = await api('/auth/register', {
           username: document.getElementById('reg-user').value.trim(),
           password: document.getElementById('reg-pass').value
         });
-        if (d.recovery_codes?.length) showCodes(d.recovery_codes);
-        else { showMsg('Registrert!', 'success'); setTimeout(() => location.href = '/chat', 400); }
-      } catch (err) { showMsg(err.message, 'error'); }
+        if (d.recovery_codes?.length) {
+          showCodes(d.recovery_codes);
+        } else {
+          showFeedback('Konto opprettet!', 'success');
+          setTimeout(() => location.href = '/chat', 400);
+        }
+      } catch (err) { showFeedback(err.message, 'error'); }
     };
 
     document.getElementById('form-login').onsubmit = async (e) => {
       e.preventDefault();
       try {
-        showMsg('Logger inn...', 'loading');
+        showFeedback('Logger inn...', 'loading');
         await api('/auth/login', {
           username: document.getElementById('login-user').value.trim(),
           password: document.getElementById('login-pass').value
         });
         location.href = '/chat';
-      } catch (err) { showMsg(err.message, 'error'); }
+      } catch (err) { showFeedback(err.message, 'error'); }
     };
 
     document.getElementById('form-recovery').onsubmit = async (e) => {
       e.preventDefault();
       try {
-        showMsg('Tilbakestiller...', 'loading');
+        showFeedback('Tilbakestiller passord...', 'loading');
         const d = await api('/auth/recovery', {
           username: document.getElementById('rec-user').value.trim(),
           code: document.getElementById('rec-code').value.trim(),
           new_password: document.getElementById('rec-pass').value
         });
-        showMsg(d.message || 'Ferdig!', 'success');
+        showFeedback(d.message || 'Passord tilbakestilt!', 'success');
         setTimeout(() => switchTab('login'), 1500);
-      } catch (err) { showMsg(err.message, 'error'); }
+      } catch (err) { showFeedback(err.message, 'error'); }
     };
 
     if ('serviceWorker' in navigator) {
