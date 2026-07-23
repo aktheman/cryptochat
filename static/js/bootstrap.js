@@ -3,7 +3,7 @@
   const ds = body.dataset;
   window.__APP__ = {
     username: ds.username || '',
-    partnerKeys: localStorage.getItem('partnerKeys') ? JSON.parse(localStorage.getItem('partnerKeys')) : {},
+    partnerKeys: (() => { try { return localStorage.getItem('partnerKeys') ? JSON.parse(localStorage.getItem('partnerKeys')) : {}; } catch(e) { return {}; } })(),
     theme: localStorage.getItem('theme') || 'dark',
     turnUrl: ds.turnUrl || '',
     turnUser: ds.turnUser || '',

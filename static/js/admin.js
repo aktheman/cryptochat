@@ -40,18 +40,20 @@
   function showSection(id) {
     document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
     document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
-    document.getElementById(id).classList.add('active');
-    document.querySelector('[data-section="'+id+'"]').classList.add('active');
+    const section = document.getElementById(id);
+    if (section) section.classList.add('active');
+    const tab = document.querySelector('[data-section="'+id+'"]');
+    if (tab) tab.classList.add('active');
     if (id === 'users') loadUsers();
     if (id === 'messages') loadMessages();
   }
 
   function showToast(msg) {
     const t = document.createElement('div');
+    t.className = 'toast-notification';
     t.textContent = msg;
-    t.style.cssText = 'position:fixed;top:16px;left:50%;transform:translateX(-50%);background:#1a1c30;color:#d8d8fd;padding:12px 20px;border-radius:10px;z-index:9999;font-size:.9rem;border:1px solid #2a2d48;';
     document.body.appendChild(t);
-    setTimeout(() => t.remove(), 2500);
+    setTimeout(() => t.remove(), 3000);
   }
 
   async function toggleAdmin(u) {

@@ -1,5 +1,4 @@
 import os, json, base64, secrets, hashlib, hmac, time, re, collections, threading
-import fcntl
 import ipaddress
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -75,7 +74,6 @@ def set_security_headers(response):
         response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
     return response
 
-def_rate_store = {'ts': [], 'n': 0}
 def _rl_get(store, key):
     item = store.setdefault(key, {'ts': [], 'n': 0})
     return item
@@ -436,23 +434,6 @@ def _decrypt_payload(enc: str) -> str:
     nonce, ct = data[:12], data[12:]
     aes = AESGCM(app.secret_key[:32])
     return aes.decrypt(nonce, ct, None).decode('utf-8')
-
-def get_user_public_key(username):
-    return get_user(username or '') or {}
-
-def get_user_private_key(username):
-    return get_user(username or '') or {}
-
-def compute_pair_conversation_key(username_a, username_b):
-    user_a = get_user(username_a)
-    user_b = get_user(username_b)
-    if not user_a or not user_b:
-        raise ValueError("Manglende brukernøkler")
-    priv = user_a.get('identity_private_key')
-    pub = user_b.get('identity_public_key')
-    if not priv or not pub:
-        raise ValueError("Manglende identity-nøkler")
-    return derive_shared_keycurve25519(priv, pub)
 
 def encrypt_symmetric(plaintext, key_b64):
     key = base64.b64decode(key_b64)
@@ -859,7 +840,8 @@ def settings_notifications():
     username = session.get('username')
     if not username:
         return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
-    enabled = convert_to_bool(request.json.get('enabled', True), True)
+    data = request.get_json(force=True, silent=True) or {}
+    enabled = convert_to_bool(data.get('enabled', True), True)
     users = load_json(USERS_FILE, {})
     users[username]['notifications_enabled'] = enabled
     save_json(USERS_FILE, users)
@@ -904,8 +886,11 @@ def get_messages(other_user):
         return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
     me = session['username']
     pk = pair_key(me, other_user)
-    limit = min(int(request.args.get('limit', 200)), 500)
-    offset = max(int(request.args.get('offset', 0)), 0)
+    try:
+        limit = min(int(request.args.get('limit', 200)), 500)
+        offset = max(int(request.args.get('offset', 0)), 0)
+    except (ValueError, TypeError):
+        limit, offset = 200, 0
     messages = load_json(MESSAGES_FILE, [])
     filtered = []
     for m in messages:
@@ -1591,6 +1576,7 @@ def upload_avatar():
     return jsonify({'success': True, 'avatar': avatar_data})
 
 @app.route('/profile/avatar/<target_user>')
+@require_login
 def get_avatar(target_user):
     users = load_json(USERS_FILE, {})
     user = users.get(target_user, {})
@@ -1931,7 +1917,10 @@ def admin_delete_user(username):
 @app.route('/admin/messages', methods=['GET'])
 @require_admin
 def admin_list_messages():
-    limit = min(int(request.args.get('limit', 50)), 200)
+    try:
+        limit = min(int(request.args.get('limit', 50)), 200)
+    except (ValueError, TypeError):
+        limit = 50
     messages = load_json(MESSAGES_FILE, [])
     recent = messages[-limit:]
     result = []
@@ -1969,7 +1958,8 @@ def import_key():
     username = session.get('username')
     if not username:
         return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
-    key = (request.json.get('key') or '').strip()
+    data = request.get_json(force=True, silent=True) or {}
+    key = (data.get('key') or '').strip()
     if not key:
         return jsonify({'success': False, 'message': 'Manglende nøkkel.'}), 400
     users = load_json(USERS_FILE, {})
@@ -2114,6 +2104,17 @@ def get_pins(chat_type, chat_id):
 @app.route('/pins/<chat_type>/<chat_id>/<message_id>', methods=['POST'])
 @require_login
 def pin_message(chat_type, chat_id, message_id):
+    me = session['username']
+    if chat_type == 'user':
+        if me not in (chat_id, chat_id.split(':::')[0] if ':::' in chat_id else ''):
+            other = chat_id.split(':::')[1] if ':::' in chat_id else chat_id
+            if me not in (chat_id, other):
+                return jsonify({'success': False, 'message': 'Ingen tilgang.'}), 403
+    elif chat_type == 'group':
+        groups = load_json(GROUPS_FILE, [])
+        group = next((g for g in groups if g['id'] == chat_id), None)
+        if not group or me not in group.get('members', []):
+            return jsonify({'success': False, 'message': 'Ingen tilgang.'}), 403
     pins = load_json(PINS_FILE, {})
     key = f"{chat_type}::{chat_id}"
     pinned = pins.get(key, [])
@@ -2127,6 +2128,17 @@ def pin_message(chat_type, chat_id, message_id):
 @require_login
 @rate_limit(max_requests=60, window_seconds=60)
 def unpin_message(chat_type, chat_id, message_id):
+    me = session['username']
+    if chat_type == 'user':
+        if me not in (chat_id, chat_id.split(':::')[0] if ':::' in chat_id else ''):
+            other = chat_id.split(':::')[1] if ':::' in chat_id else chat_id
+            if me not in (chat_id, other):
+                return jsonify({'success': False, 'message': 'Ingen tilgang.'}), 403
+    elif chat_type == 'group':
+        groups = load_json(GROUPS_FILE, [])
+        group = next((g for g in groups if g['id'] == chat_id), None)
+        if not group or me not in group.get('members', []):
+            return jsonify({'success': False, 'message': 'Ingen tilgang.'}), 403
     pins = load_json(PINS_FILE, {})
     key = f"{chat_type}::{chat_id}"
     pinned = pins.get(key, [])
@@ -2745,7 +2757,10 @@ def send_location():
 def set_slowmode(group_id):
     me = session['username']
     data = request.get_json(force=True, silent=True) or {}
-    seconds = int(data.get('seconds', 0))
+    try:
+        seconds = int(data.get('seconds', 0))
+    except (ValueError, TypeError):
+        seconds = 0
     groups = load_json(GROUPS_FILE, [])
     group = next((g for g in groups if g.get('id') == group_id), None)
     if not group:
@@ -3880,7 +3895,10 @@ def start_live_location():
     lng = data.get('lng')
     target = data.get('target', '')
     target_type = data.get('targetType', 'user')
-    duration = min(int(data.get('duration', 600)), 3600)
+    try:
+        duration = min(int(data.get('duration', 600)), 3600)
+    except (ValueError, TypeError):
+        duration = 600
     if lat is None or lng is None:
         return jsonify({'success': False, 'message': 'Manglende posisjon.'}), 400
     live = load_json(LIVE_LOCATION_FILE, {})
@@ -3924,10 +3942,13 @@ def update_live_location(share_id):
 @app.route('/location/live/<share_id>', methods=['GET'])
 @require_login
 def get_live_location(share_id):
+    me = session['username']
     live = load_json(LIVE_LOCATION_FILE, {})
     entry = live.get(share_id)
     if not entry:
         return jsonify({'success': False, 'message': 'Ikke funnet.'}), 404
+    if entry.get('sender') != me and entry.get('target') != me:
+        return jsonify({'success': False, 'message': 'Ingen tilgang.'}), 403
     started = parse_iso(entry.get('started', ''))
     if started and (datetime.utcnow() - started.replace(tzinfo=None)).total_seconds() > entry.get('duration', 600):
         entry['active'] = False

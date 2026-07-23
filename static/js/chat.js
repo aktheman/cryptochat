@@ -646,6 +646,7 @@
             <div id="pinnedBar" class="pinned-bar" style="display:none" role="button" tabindex="0" aria-label="Fast melding">
               <span class="pin-icon">📌</span>
               <span class="pin-text" id="pinnedText"></span>
+              <button id="pinnedClose" class="btn btn-small btn-ghost" title="Fjern" style="margin-left:auto;">✕</button>
             </div>
             <div id="chatSearchBar" class="chat-search-bar" style="display:none">
               <input id="chatSearchInput" type="text" class="input-text" placeholder="Soek i denne samtalen..." aria-label="Soek i chat" />
@@ -1661,6 +1662,7 @@
         if (peerConnection) { peerConnection.close(); peerConnection = null; }
         if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
         if (callPollInterval) { clearInterval(callPollInterval); callPollInterval = null; }
+        if (callRecorder) { try { callRecorder.stop(); } catch(e) {} callRecorder = null; }
         currentCall = null;
       }
 
@@ -1773,7 +1775,7 @@
       }
 
       function startReply(msgId) {
-        const msgEl = messagesBox.querySelector('[data-msg-id="' + msgId + '"]');
+        const msgEl = messagesBox.querySelector('[data-msg-id="' + CSS.escape(msgId) + '"]');
         if (!msgEl || msgEl.classList.contains('deleted-msg')) return;
         const sender = msgEl.querySelector('.sender')?.textContent || '';
         const textEl = msgEl.querySelector('.msg-text');
@@ -2667,7 +2669,7 @@
             text.textContent = '📌 ' + (pin.text || '').substring(0, 100);
             bar.style.display = 'flex';
             bar.onclick = () => {
-              const el = document.querySelector('[data-message-id="' + pin.id + '"]');
+              const el = document.querySelector('[data-message-id="' + CSS.escape(pin.id) + '"]');
               if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
             };
           } else {
@@ -3621,8 +3623,6 @@
         });
       }
 
-      let stickerSearchTimeout = null;
-
       document.addEventListener('click', (e) => {
         if (stickerPicker && !stickerPicker.contains(e.target) && e.target !== stickerBtn) stickerPicker.classList.remove('open');
       });
@@ -3968,8 +3968,8 @@
         hideMentionDropdown();
         const input = document.getElementById('messageInput');
         if (!input) return;
-        const users = window.__allUsers || [];
-        const matches = users.filter(u => u.toLowerCase().startsWith(query.toLowerCase()) && u !== (window.__APP__?.username || '')).slice(0, 8);
+        const users = (window.__allUsers || []).map(u => typeof u === 'string' ? u : (u?.username || ''));
+        const matches = users.filter(u => u && u.toLowerCase().startsWith(query.toLowerCase()) && u !== (window.__APP__?.username || '')).slice(0, 8);
         if (!matches.length) return;
         const dropdown = document.createElement('div');
         dropdown.id = 'mentionDropdown';
@@ -4082,7 +4082,7 @@
         const _origFetch = window.fetch;
         if (origSilent) {
           window.fetch = function(...args) {
-            if (args[0] === '/send' && args[1]?.body) {
+            if (typeof args[0] === 'string' && args[0].includes('/send') && args[1]?.body) {
               try {
                 const body = JSON.parse(args[1].body);
                 body.silent = true;
@@ -4125,7 +4125,6 @@
               + '<div class="meta">' + (isMe ? '<span class="read">' + (message.read ? '<span class="read-receipt read">✓✓</span>' : '<span class="read-receipt unread">✓</span>') + '</span>' : '') + '</div>';
             messagesBox.appendChild(item);
             if (!userScrolledUp) messagesBox.scrollTop = messagesBox.scrollHeight;
-            _origFinishAppend2(message, chatId, isMe, renderedText);
             return;
           } catch (e) {}
         }
@@ -4292,12 +4291,14 @@
             if (res.success) {
               toast('Deling startet! (' + duration + ' min)');
               const shareId = res.shareId;
+              if (window._liveLocInterval) clearInterval(window._liveLocInterval);
+              if (window._liveLocTimeout) clearTimeout(window._liveLocTimeout);
               window._liveLocInterval = setInterval(async () => {
                 navigator.geolocation.getCurrentPosition(async (p) => {
                   await loadJSON('/location/live/' + shareId, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ lat: p.coords.latitude, lng: p.coords.longitude }) }).catch(()=>{});
                 }).catch(()=>{});
               }, 10000);
-              setTimeout(() => { clearInterval(window._liveLocInterval); toast('Posisjonsdeling avsluttet'); }, duration * 60000);
+              window._liveLocTimeout = setTimeout(() => { clearInterval(window._liveLocInterval); toast('Posisjonsdeling avsluttet'); }, duration * 60000);
             }
           } catch(e) { toast('Kunne ikke dele posisjon'); }
         }, () => toast('Kunne ikke hente posisjon'), { enableHighAccuracy: true });
@@ -4783,8 +4784,9 @@
       // CLICKABLE LINKS IN MESSAGES
       // ──────────────────────────────────────────────
       function linkifyText(text) {
-        return escapeHtml(text).replace(
-          /(https?:\/\/[^\s<&]+)/g,
+        const escaped = escapeHtml(text);
+        return escaped.replace(
+          /(https?:\/\/[^\s<]+)/g,
           (match) => '<a href="' + match.replace(/"/g, '%22') + '" target="_blank" rel="noopener noreferrer" style="color:#7a3bff;text-decoration:underline;word-break:break-all;">' + match + '</a>'
         );
       }
