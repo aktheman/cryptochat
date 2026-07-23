@@ -351,7 +351,7 @@
 
   window.scrollToMessage = function(messageId) {
     if (!messageId) return;
-    const el = document.querySelector('[data-messageId="' + messageId + '"]');
+    const el = document.querySelector('[data-message-id="' + CSS.escape(messageId) + '"]');
     if (el) {
       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
       el.classList.add('msg-highlight');
@@ -579,7 +579,7 @@
 
       const offlineLink = document.createElement('link');
       offlineLink.rel = 'stylesheet';
-      offlineLink.href = '/static/css/style.css?v=13';
+      offlineLink.href = '/static/css/style.css?v=14';
       document.head.appendChild(offlineLink);
 
       app.innerHTML = `
@@ -970,7 +970,7 @@
         const inviteBtn = document.getElementById('inviteBtn');
         const lockBtn = document.getElementById('lockBtn');
         if (!lockBtn) return;
-        let html = 'e2ee' in window ? '🔓' : '🔓';
+        let html = window.__CRYPTO__ ? '🔒' : '🔓';
         if (activeChat) {
           if (activeChat.type === 'user' && window.__CRYPTO__) {
             html = '🔒';
@@ -1839,7 +1839,7 @@
               if (res.success) {
                 textEl.dataset.origText = orig;
                 textEl.dataset.translated = 'true';
-                textEl.innerHTML = escapeHtml(res.translated) + ' <span style="font-size:.7rem;color:var(--c-text-muted);font-style:italic;">(' + res.sourceLang + '→' + res.targetLang + ')</span>';
+                textEl.innerHTML = escapeHtml(res.translated) + ' <span style="font-size:.7rem;color:var(--c-text-muted);font-style:italic;">(' + escapeHtml(res.sourceLang) + '→' + escapeHtml(res.targetLang) + ')</span>';
               } else { toast(res.message || 'Feil'); }
             } catch(e) { toast('Oversettelse feilet'); }
           }},
@@ -1985,7 +1985,7 @@
         const showDateSeparator = !!chatId && !!dateKey && prevDate !== dateKey;
         const shortTime = msgDate ? new Intl.DateTimeFormat('no-NO', { hour:'2-digit', minute:'2-digit' }).format(msgDate) : '';
 
-        const replyHtml = message.reply_preview ? '<div class="reply-ref" data-reply-to="' + escapeHtml(message.reply_to || '') + '" onclick="scrollToMessage(\'' + escapeHtml(message.reply_to || '') + '\')">&#8617; ' + escapeHtml(message.reply_preview) + '</div>' : '';
+        const replyHtml = message.reply_preview ? '<div class="reply-ref" data-reply-to="' + escapeHtml(message.reply_to || '') + '">&#8617; ' + escapeHtml(message.reply_preview) + '</div>' : '';
         const replyBtnHtml = (!isMe && !message.deleted && message.id) ? '<button class="reply-msg-btn" title="Svar">&#8617;</button>' : '';
         const fwdTag = message.forwarded_from ? '<div class="forwarded-tag">↪ Videresendt fra ' + escapeHtml(message.forwarded_from) + '</div>' : '';
 
@@ -2628,7 +2628,7 @@
       function renderLinkPreview(preview) {
         if (!preview) return '';
         let html = '<div class="link-preview-card">';
-        if (preview.image) html += '<img class="lp-image" src="' + escapeHtml(preview.image) + '" alt="" onerror="this.remove()" />';
+        if (preview.image) html += '<img class="lp-image" src="' + escapeHtml(preview.image) + '" alt="" />';
         if (preview.title) html += '<div class="lp-title">' + escapeHtml(preview.title) + '</div>';
         if (preview.description) html += '<div class="lp-desc">' + escapeHtml(preview.description) + '</div>';
         try { html += '<div class="lp-url">' + escapeHtml(new URL(preview.url).hostname) + '</div>'; } catch {}
@@ -2832,6 +2832,24 @@
         if (!e.target.closest('#effectBtn') && !e.target.closest('#effectPicker')) {
           document.getElementById('effectPicker')?.classList.remove('open');
         }
+        const replyRef = e.target.closest('.reply-ref');
+        if (replyRef) {
+          const msgId = replyRef.dataset.replyTo;
+          if (msgId) window.scrollToMessage(msgId);
+        }
+        const storyItem = e.target.closest('[data-story-id]');
+        if (storyItem) {
+          const storyId = storyItem.dataset.storyId;
+          if (storyId && window._viewStory) window._viewStory(storyId);
+        }
+        const createStoryBtn = e.target.closest('[data-action="create-story"]');
+        if (createStoryBtn && window._createStory) window._createStory();
+        if (e.target.closest('.copy-invite-btn')) {
+          const input = e.target.closest('.copy-invite-btn').previousElementSibling;
+          if (input) {
+            navigator.clipboard.writeText(input.value).then(() => toast('Kopiert!')).catch(() => {});
+          }
+        }
       });
 
       // ── Keyboard Shortcuts ──
@@ -2881,7 +2899,7 @@
           await fetch('/push/subscribe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ subscription: sub }) });
         } catch (e) {}
       }
-      if (Notification.permission === 'granted') initPushNotifications();
+      if ('Notification' in window && Notification.permission === 'granted') initPushNotifications();
 
       // ── Call Recording ──
       let callRecorder = null;
@@ -2956,6 +2974,8 @@
 
       // ── Pin action in message context menu ──
       const origContextHandler = (message, item) => {
+        if (item._pinHandlerAttached) return;
+        item._pinHandlerAttached = true;
         item.addEventListener('contextmenu', (e) => {
           e.preventDefault();
           if (message.deleted) return;
@@ -3182,14 +3202,12 @@
         const preset = THEME_PRESETS[themeName];
         if (!preset) return;
         document.body.classList.remove('theme-light');
+        Object.keys(THEME_PRESETS.dark.vars).forEach(prop => {
+          document.body.style.removeProperty(prop);
+        });
         Object.entries(preset.vars).forEach(([prop, value]) => {
           document.body.style.setProperty(prop, value);
         });
-        if (themeName === 'dark' || !Object.keys(preset.vars).length) {
-          Object.keys(THEME_PRESETS.dark.vars).forEach(prop => {
-            document.body.style.removeProperty(prop);
-          });
-        }
         if (themeName === 'light') {
           document.body.classList.add('theme-light');
         }
@@ -4091,8 +4109,11 @@
             return _origFetch.apply(this, args);
           };
         }
-        await _origSendMsg();
-        if (origSilent) window.fetch = _origFetch;
+        try {
+          await _origSendMsg();
+        } finally {
+          if (origSilent) window.fetch = _origFetch;
+        }
       };
 
       // ── Show location messages on map ──
@@ -4152,16 +4173,16 @@
         const myStories = stories.filter(s => s.username === me);
         const otherStories = stories.filter(s => s.username !== me);
         let html = '';
-        html += '<div onclick="window._createStory()" style="display:flex;flex-direction:column;align-items:center;cursor:pointer;flex-shrink:0;width:56px;" title="Ny story">';
+        html += '<div data-action="create-story" style="display:flex;flex-direction:column;align-items:center;cursor:pointer;flex-shrink:0;width:56px;" title="Ny story">';
         html += '<div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#7a3bff,#cf6fef);display:flex;align-items:center;justify-content:center;font-size:1.3rem;border:2px solid var(--c-primary);">＋</div>';
         html += '<span style="font-size:.65rem;color:var(--c-text-muted);margin-top:2px;">Story</span></div>';
         if (myStories.length) {
-          html += '<div onclick="window._viewStory(\'' + myStories[0].id + '\')" style="display:flex;flex-direction:column;align-items:center;cursor:pointer;flex-shrink:0;width:56px;">';
+          html += '<div data-story-id="' + escapeHtml(myStories[0].id) + '" style="display:flex;flex-direction:column;align-items:center;cursor:pointer;flex-shrink:0;width:56px;">';
           html += '<div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#cf6fef,#7a3bff);display:flex;align-items:center;justify-content:center;font-size:1.1rem;border:2px solid #cf6fef;">👤</div>';
           html += '<span style="font-size:.65rem;color:var(--c-text-muted);margin-top:2px;">Din</span></div>';
         }
         otherStories.forEach(s => {
-          html += '<div onclick="window._viewStory(\'' + s.id + '\')" style="display:flex;flex-direction:column;align-items:center;cursor:pointer;flex-shrink:0;width:56px;">';
+          html += '<div data-story-id="' + escapeHtml(s.id) + '" style="display:flex;flex-direction:column;align-items:center;cursor:pointer;flex-shrink:0;width:56px;">';
           html += '<div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#1c6d4f,#1c3060);display:flex;align-items:center;justify-content:center;font-size:1.1rem;border:2px solid #7a3bff;">👤</div>';
           html += '<span style="font-size:.65rem;color:var(--c-text-muted);margin-top:2px;">' + escapeHtml(s.username).substring(0, 6) + '</span></div>';
         });
@@ -4252,12 +4273,12 @@
         if (!username) return toast('Skriv brukernavn');
         try {
           const res = await loadJSON('/contacts', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username, name: name||username }) });
-          if (res.success) { toast('Kontakt lagt til!'); document.querySelector('div[style]')?.remove(); window._showContacts(); }
+          if (res.success) { toast('Kontakt lagt til!'); document.querySelector('.modal-overlay')?.remove(); window._showContacts(); }
           else toast(res.message);
         } catch(e) { toast('Feil'); }
       };
       window._removeContact = async function(username) {
-        try { await loadJSON('/contacts/' + username, { method:'DELETE' }); toast('Fjernet'); document.querySelector('div[style]')?.remove(); window._showContacts(); } catch(e) {}
+        try { await loadJSON('/contacts/' + username, { method:'DELETE' }); toast('Fjernet'); document.querySelector('.modal-overlay')?.remove(); window._showContacts(); } catch(e) {}
       };
       window._openChatFromContact = function(username) {
         const userItem = document.querySelector('.item[data-user="' + username + '"]');
@@ -4312,7 +4333,6 @@
       await loadContactsPanel();
 
       // Add translate language picker to settings
-      const storedLang = localStorage.getItem('translateLang') || 'no';
       window._setTranslateLang = function(lang) { localStorage.setItem('translateLang', lang); toast('Oversettelsesspråk: ' + lang); };
 
       // ──────────────────────────────────────────────
@@ -4467,7 +4487,7 @@
             if (inviteData.success && inviteData.inviteLink) {
               infoHtml += '<div class="info-section"><div class="info-section-title">INVITASJONSLINK</div>'
                 + '<div style="display:flex;gap:6px;"><input value="' + escapeHtml(inviteData.inviteLink) + '" readonly style="flex:1;padding:8px;border:1px solid var(--c-border);border-radius:8px;background:var(--c-surface);color:var(--c-text);font-size:.78rem;" />'
-                + '<button onclick="navigator.clipboard.writeText(this.previousElementSibling.value);toast(\'Kopiert!\');" class="btn btn-small btn-primary">📋</button></div></div>';
+                + '<button class="btn btn-small btn-primary copy-invite-btn">📋</button></div></div>';
             }
           } else if (activeChat.type === 'channel') {
             infoHtml = '<div class="info-avatar" style="background:linear-gradient(135deg,#6d4f1c,#1c6d4f);">📢</div>'
@@ -4544,7 +4564,10 @@
         }
         bulkToolbar.classList.add('visible');
         messagesBox.querySelectorAll('.msg').forEach(msg => {
-          msg.addEventListener('click', toggleBulkSelect);
+          if (!msg._bulkListenerAttached) {
+            msg._bulkListenerAttached = true;
+            msg.addEventListener('click', toggleBulkSelect);
+          }
         });
       }
       function exitBulkMode() {
@@ -4664,7 +4687,7 @@
                 const item = document.querySelector('.item[data-user="' + target + '"]');
                 if (item) item.click();
               } else if (type === 'group') {
-                const item = document.querySelector('.item[data-group="' + target + '"]');
+                const item = document.querySelector('.item[data-group-id="' + CSS.escape(target) + '"]');
                 if (item) item.click();
               }
             });
@@ -4739,11 +4762,11 @@
         const hash = window.location.hash.substring(1);
         if (hash.startsWith('chat/')) {
           const user = decodeURIComponent(hash.substring(5));
-          const item = document.querySelector('.item[data-user="' + user + '"]');
+          const item = document.querySelector('.item[data-user="' + CSS.escape(user) + '"]');
           if (item) setTimeout(() => item.click(), 100);
         } else if (hash.startsWith('group/')) {
           const gid = decodeURIComponent(hash.substring(6));
-          const item = document.querySelector('.item[data-group="' + gid + '"]');
+          const item = document.querySelector('.item[data-group-id="' + CSS.escape(gid) + '"]');
           if (item) setTimeout(() => item.click(), 100);
         }
       }
@@ -4772,7 +4795,7 @@
       function linkifyText(text) {
         return escapeHtml(text).replace(
           /(https?:\/\/[^\s<&]+)/g,
-          '<a href="$1" target="_blank" rel="noopener noreferrer" style="color:#7a3bff;text-decoration:underline;word-break:break-all;">$1</a>'
+          (match) => '<a href="' + match.replace(/"/g, '%22') + '" target="_blank" rel="noopener noreferrer" style="color:#7a3bff;text-decoration:underline;word-break:break-all;">' + match + '</a>'
         );
       }
 
@@ -4817,18 +4840,19 @@
       // SWIPE-TO-REPLY: PASSIVE:FALSE + CONFLICT FIX
       // ──────────────────────────────────────────────
       function initSwipeToReply() {
-        let startX = 0, currentMsg = null, swiping = false;
+        let startX = 0, startY = 0, currentMsg = null, swiping = false;
         messagesBox.addEventListener('touchstart', (e) => {
           const msg = e.target.closest('.msg');
           if (!msg) return;
           startX = e.touches[0].clientX;
+          startY = e.touches[0].clientY;
           currentMsg = msg;
           swiping = false;
         }, { passive: true });
         messagesBox.addEventListener('touchmove', (e) => {
           if (!currentMsg) return;
           const dx = e.touches[0].clientX - startX;
-          const dy = Math.abs(e.touches[0].clientY - (e.touches[0].clientY || 0));
+          const dy = Math.abs(e.touches[0].clientY - startY);
           if (dx > 20) swiping = true;
           if (swiping && dx > 30 && dx < 150) {
             e.preventDefault();

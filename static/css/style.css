@@ -506,6 +506,14 @@ body.theme-light .skeleton-msg { background:linear-gradient(90deg,#e5e7eb 25%,#f
 @keyframes slideIn { from { transform:translateX(100%); } to { transform:translateX(0); } }
 @keyframes slideOut { from { transform:translateX(0); opacity:1; } to { transform:translateX(100%); opacity:0; } }
 
+/* ── Link preview ── */
+.lp-image { max-width:200px; max-height:120px; border-radius:8px; object-fit:cover; }
+.lp-image:not([src]), .lp-image[src=""] { display:none; }
+
+/* ── Reply ref clickable ── */
+.reply-ref { cursor:pointer; }
+.reply-ref:hover { opacity:.8; }
+
 /* ── Reduced motion ── */
 @media (prefers-reduced-motion:reduce) {
   *, *::before, *::after { animation-duration:0.01ms !important; animation-iteration-count:1 !important; transition-duration:0.01ms !important; }

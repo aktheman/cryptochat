@@ -534,6 +534,7 @@ def chat_page():
         username=session.get('username'),
         turn_url=os.environ.get('TURN_URL', ''),
         turn_user=os.environ.get('TURN_USER', ''),
+        turn_pass=os.environ.get('TURN_PASS', ''),
     )
 
 # ──────────────────────────────────────────────
@@ -1854,6 +1855,7 @@ def admin_stats():
             'total_groups': len(groups),
             'active_sessions': active_sessions,
             'admin_users': sum(1 for u in users.values() if u.get('is_admin', False)),
+            'current_admin': session.get('username', ''),
         }
     })
 

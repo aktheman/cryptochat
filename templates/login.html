@@ -30,11 +30,11 @@
       <!-- Register -->
       <form id="form-register" class="form active">
         <div class="field">
-          <label>Brukernavn</label>
+          <label for="reg-user">Brukernavn</label>
           <input type="text" id="reg-user" autocomplete="username" placeholder="Velg et brukernavn" required>
         </div>
         <div class="field">
-          <label>Passord</label>
+          <label for="reg-pass">Passord</label>
           <input type="password" id="reg-pass" autocomplete="new-password" placeholder="Opprett et sterkt passord" required>
           <div class="field-hint">Minst 10 tegn med store og små bokstaver, tall og spesialtegn (!@#$%...)</div>
         </div>
@@ -44,11 +44,11 @@
       <!-- Login -->
       <form id="form-login" class="form">
         <div class="field">
-          <label>Brukernavn</label>
+          <label for="login-user">Brukernavn</label>
           <input type="text" id="login-user" autocomplete="username" placeholder="Skriv inn brukernavn" required>
         </div>
         <div class="field">
-          <label>Passord</label>
+          <label for="login-pass">Passord</label>
           <input type="password" id="login-pass" autocomplete="current-password" placeholder="Skriv inn passord" required>
         </div>
         <button type="submit" class="btn btn-primary">Logg inn</button>
@@ -60,15 +60,15 @@
       <!-- Recovery -->
       <form id="form-recovery" class="form">
         <div class="field">
-          <label>Brukernavn</label>
+          <label for="rec-user">Brukernavn</label>
           <input type="text" id="rec-user" autocomplete="username" placeholder="Skriv inn brukernavn" required>
         </div>
         <div class="field">
-          <label>Gjenopprettingskode</label>
+          <label for="rec-code">Gjenopprettingskode</label>
           <input type="text" id="rec-code" placeholder="XXXX-XXXX" class="recovery-code-input" required>
         </div>
         <div class="field">
-          <label>Nytt passord</label>
+          <label for="rec-pass">Nytt passord</label>
           <input type="password" id="rec-pass" autocomplete="new-password" placeholder="Opprett nytt passord" required>
           <div class="field-hint">Minst 10 tegn med store og små bokstaver, tall og spesialtegn</div>
         </div>

@@ -6,7 +6,8 @@
     partnerKeys: localStorage.getItem('partnerKeys') ? JSON.parse(localStorage.getItem('partnerKeys')) : {},
     theme: localStorage.getItem('theme') || 'dark',
     turnUrl: ds.turnUrl || '',
-    turnUser: ds.turnUser || ''
+    turnUser: ds.turnUser || '',
+    turnPass: ds.turnPass || ''
   };
 
   let deferredPrompt;
