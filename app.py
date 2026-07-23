@@ -59,7 +59,7 @@ def set_security_headers(response):
     response.headers['Content-Security-Policy'] = (
         "default-src 'self'; "
         "script-src 'self'; "
-        "style-src 'self' 'unsafe-inline'; "
+        "style-src 'self'; "
         "font-src 'self' data:; "
         "img-src 'self' data: blob: https:; "
         "media-src 'self' blob: data:; "
@@ -608,7 +608,7 @@ def register():
     }
     save_json(SESSIONS_FILE, sessions)
     touch_presence(username)
-    return jsonify({'success': True, 'recovery_codes': recovery_codes_plain})
+    return jsonify({'success': True})
 
 @app.route('/auth/login', methods=['POST'])
 @rate_limit(max_requests=10, window_seconds=120)
@@ -4136,7 +4136,14 @@ def service_worker_test():
 @app.route('/uploads/<path:filename>')
 @require_login
 def uploaded_file(filename):
-    return send_from_directory(app.config['UPLOAD_FOLDER'], filename, as_attachment=False)
+    safe_name = secure_filename(filename)
+    if not safe_name:
+        return jsonify({'success': False, 'message': 'Ugyldig filnavn.'}), 400
+    abs_root = os.path.abspath(app.config['UPLOAD_FOLDER'])
+    abs_target = os.path.abspath(os.path.join(abs_root, safe_name))
+    if not abs_target.startswith(abs_root + os.sep):
+        return jsonify({'success': False, 'message': 'Ugyldig filsti.'}), 400
+    return send_from_directory(abs_root, safe_name, as_attachment=False)
 
 if __name__ == '__main__':
     app.run(debug=os.environ.get('FLASK_DEBUG', 'false').lower() in ('true', '1'), host='0.0.0.0', port=5000)

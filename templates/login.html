@@ -5,497 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>CryptoChat</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💬</text></svg>">
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    :root {
-      --bg: #09090b;
-      --card: rgba(255,255,255,0.03);
-      --card-border: rgba(255,255,255,0.06);
-      --input-bg: rgba(255,255,255,0.04);
-      --input-border: rgba(255,255,255,0.08);
-      --input-focus: #8b5cf6;
-      --accent: #8b5cf6;
-      --accent-dark: #7c3aed;
-      --accent-glow: rgba(139,92,246,0.15);
-      --text: #fafafa;
-      --text-secondary: #a1a1aa;
-      --text-muted: #52525b;
-      --error: #ef4444;
-      --error-bg: rgba(239,68,68,0.08);
-      --success: #22c55e;
-      --success-bg: rgba(34,197,94,0.08);
-      --warn: #eab308;
-      --warn-bg: rgba(234,179,8,0.08);
-    }
-
-    html { height: 100%; }
-    body {
-      min-height: 100%;
-      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 24px;
-      overflow-x: hidden;
-      -webkit-font-smoothing: antialiased;
-    }
-
-    /* ── Ambient background ── */
-    .ambient {
-      position: fixed;
-      inset: 0;
-      overflow: hidden;
-      pointer-events: none;
-      z-index: 0;
-    }
-
-    .ambient-orb {
-      position: absolute;
-      border-radius: 50%;
-      filter: blur(120px);
-      opacity: 0.4;
-    }
-
-    .ambient-orb.a {
-      width: 600px; height: 600px;
-      background: #7c3aed;
-      top: -250px; right: -150px;
-      opacity: 0.12;
-      animation: drift 25s ease-in-out infinite;
-    }
-
-    .ambient-orb.b {
-      width: 500px; height: 500px;
-      background: #3b82f6;
-      bottom: -200px; left: -100px;
-      opacity: 0.08;
-      animation: drift 20s ease-in-out infinite reverse;
-    }
-
-    .ambient-orb.c {
-      width: 300px; height: 300px;
-      background: #8b5cf6;
-      top: 50%; left: 50%;
-      transform: translate(-50%, -50%);
-      opacity: 0.05;
-      animation: drift 30s ease-in-out infinite;
-    }
-
-    @keyframes drift {
-      0%, 100% { transform: translate(0, 0); }
-      25% { transform: translate(40px, -30px); }
-      50% { transform: translate(-20px, 40px); }
-      75% { transform: translate(30px, 20px); }
-    }
-
-    /* ── Layout ── */
-    .container {
-      position: relative;
-      z-index: 1;
-      width: 100%;
-      max-width: 420px;
-    }
-
-    /* ── Logo ── */
-    .logo {
-      text-align: center;
-      margin: 0 0 32px;
-      animation: fadeUp 0.5s ease both;
-    }
-
-    .logo-icon {
-      width: 64px;
-      height: 64px;
-      margin: 0 auto 20px;
-      background: linear-gradient(135deg, #8b5cf6, #6366f1);
-      border-radius: 18px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 30px;
-      box-shadow:
-        0 0 0 1px rgba(255,255,255,0.1),
-        0 8px 40px rgba(139,92,246,0.25),
-        inset 0 1px 0 rgba(255,255,255,0.15);
-      transition: transform 0.3s ease, box-shadow 0.3s ease;
-    }
-
-    .logo-icon:hover {
-      transform: scale(1.05) rotate(-2deg);
-      box-shadow:
-        0 0 0 1px rgba(255,255,255,0.12),
-        0 12px 48px rgba(139,92,246,0.35),
-        inset 0 1px 0 rgba(255,255,255,0.15);
-    }
-
-    .logo h1 {
-      font-size: 1.5rem;
-      font-weight: 700;
-      letter-spacing: -0.5px;
-      color: var(--text);
-    }
-
-    .logo p {
-      font-size: 0.9rem;
-      color: var(--text-secondary);
-      margin-top: 6px;
-    }
-
-    @keyframes fadeUp {
-      from { opacity: 0; transform: translateY(12px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-
-    /* ── Card ── */
-    .card {
-      background: var(--card);
-      border: 1px solid var(--card-border);
-      border-radius: 16px;
-      padding: 28px;
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      box-shadow: 0 4px 24px rgba(0,0,0,0.2);
-      animation: fadeUp 0.5s ease 0.1s both;
-    }
-
-    /* ── Tabs ── */
-    .tabs {
-      display: flex;
-      gap: 2px;
-      background: rgba(255,255,255,0.03);
-      border: 1px solid var(--card-border);
-      border-radius: 10px;
-      padding: 3px;
-      margin-bottom: 28px;
-    }
-
-    .tab {
-      flex: 1;
-      padding: 9px 12px;
-      border: none;
-      background: transparent;
-      color: var(--text-muted);
-      font-size: 0.875rem;
-      font-weight: 500;
-      border-radius: 8px;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      position: relative;
-    }
-
-    .tab:hover {
-      color: var(--text-secondary);
-    }
-
-    .tab.active {
-      background: rgba(255,255,255,0.06);
-      color: var(--text);
-      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-    }
-
-    /* ── Forms ── */
-    .form {
-      display: none;
-      animation: fadeIn 0.25s ease;
-    }
-
-    .form.active { display: block; }
-
-    @keyframes fadeIn {
-      from { opacity: 0; }
-      to { opacity: 1; }
-    }
-
-    /* ── Input ── */
-    .field {
-      margin-bottom: 18px;
-    }
-
-    .field label {
-      display: block;
-      font-size: 0.8125rem;
-      font-weight: 500;
-      color: var(--text-secondary);
-      margin-bottom: 8px;
-    }
-
-    .field input {
-      width: 100%;
-      padding: 11px 14px;
-      background: var(--input-bg);
-      border: 1px solid var(--input-border);
-      border-radius: 10px;
-      color: var(--text);
-      font-size: 0.9375rem;
-      outline: none;
-      transition: all 0.2s ease;
-    }
-
-    .field input::placeholder {
-      color: var(--text-muted);
-    }
-
-    .field input:focus {
-      border-color: var(--input-focus);
-      box-shadow: 0 0 0 3px var(--accent-glow), 0 0 20px rgba(139,92,246,0.08);
-      background: rgba(255,255,255,0.05);
-    }
-
-    .field-hint {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-      margin-top: 8px;
-      line-height: 1.5;
-    }
-
-    /* ── Button ── */
-    .btn {
-      width: 100%;
-      padding: 11px 20px;
-      border: none;
-      border-radius: 10px;
-      font-size: 0.9375rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .btn-primary {
-      background: linear-gradient(135deg, #8b5cf6, #6366f1);
-      color: #fff;
-      box-shadow: 0 2px 12px rgba(139,92,246,0.25), inset 0 1px 0 rgba(255,255,255,0.15);
-      margin-top: 4px;
-    }
-
-    .btn-primary:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 4px 20px rgba(139,92,246,0.35), inset 0 1px 0 rgba(255,255,255,0.15);
-    }
-
-    .btn-primary:active {
-      transform: translateY(0);
-      box-shadow: 0 1px 8px rgba(139,92,246,0.2);
-    }
-
-    .btn-primary:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-      transform: none;
-    }
-
-    /* ── Links ── */
-    .form-footer {
-      text-align: center;
-      margin-top: 18px;
-    }
-
-    .link-btn {
-      background: none;
-      border: none;
-      color: var(--accent);
-      font-size: 0.8125rem;
-      font-weight: 500;
-      cursor: pointer;
-      padding: 4px;
-      transition: color 0.15s;
-    }
-
-    .link-btn:hover {
-      color: #a78bfa;
-    }
-
-    /* ── Feedback ── */
-    .feedback {
-      display: none;
-      margin-top: 18px;
-      padding: 11px 14px;
-      border-radius: 10px;
-      font-size: 0.8125rem;
-      font-weight: 500;
-      text-align: center;
-      animation: fadeIn 0.2s ease;
-    }
-
-    .feedback.show { display: block; }
-
-    .feedback.error {
-      background: var(--error-bg);
-      color: var(--error);
-      border: 1px solid rgba(239,68,68,0.15);
-    }
-
-    .feedback.success {
-      background: var(--success-bg);
-      color: var(--success);
-      border: 1px solid rgba(34,197,94,0.15);
-    }
-
-    .feedback.loading {
-      background: rgba(255,255,255,0.03);
-      color: var(--text-secondary);
-      border: 1px solid var(--card-border);
-    }
-
-    /* ── Recovery codes ── */
-    .codes-view {
-      display: none;
-      animation: fadeIn 0.25s ease;
-    }
-
-    .codes-view.show { display: block; }
-
-    .codes-header {
-      margin-bottom: 20px;
-    }
-
-    .codes-header h3 {
-      font-size: 1.05rem;
-      font-weight: 600;
-      color: var(--text);
-      margin-bottom: 6px;
-    }
-
-    .codes-header p {
-      font-size: 0.8125rem;
-      color: var(--text-secondary);
-      line-height: 1.5;
-    }
-
-    .codes-box {
-      background: rgba(0,0,0,0.3);
-      border: 1px solid var(--card-border);
-      border-radius: 10px;
-      padding: 14px;
-      margin-bottom: 16px;
-    }
-
-    .code-item {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 10px 12px;
-      background: rgba(255,255,255,0.02);
-      border: 1px solid rgba(255,255,255,0.04);
-      border-radius: 8px;
-      margin-bottom: 6px;
-      font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
-      font-size: 0.9375rem;
-      color: var(--text);
-      letter-spacing: 1.5px;
-      transition: background 0.15s, border-color 0.15s;
-    }
-
-    .code-item:hover {
-      background: rgba(255,255,255,0.04);
-      border-color: rgba(255,255,255,0.08);
-    }
-
-    .code-item:last-child { margin-bottom: 0; }
-
-    .code-dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: var(--accent);
-      opacity: 0.5;
-      flex-shrink: 0;
-    }
-
-    .warn-box {
-      display: flex;
-      align-items: flex-start;
-      gap: 10px;
-      padding: 12px 14px;
-      background: var(--warn-bg);
-      border: 1px solid rgba(234,179,8,0.12);
-      border-radius: 10px;
-      margin-bottom: 16px;
-    }
-
-    .warn-icon {
-      font-size: 0.875rem;
-      margin-top: 1px;
-      flex-shrink: 0;
-    }
-
-    .warn-text {
-      font-size: 0.78rem;
-      color: var(--warn);
-      line-height: 1.5;
-    }
-
-    .copy-btn {
-      width: 100%;
-      padding: 11px 16px;
-      background: rgba(255,255,255,0.04);
-      border: 1px solid var(--card-border);
-      border-radius: 10px;
-      color: var(--text);
-      font-size: 0.875rem;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-    }
-
-    .copy-btn:hover {
-      background: rgba(255,255,255,0.06);
-      border-color: rgba(255,255,255,0.12);
-    }
-
-    .copy-btn.done {
-      background: var(--success-bg);
-      border-color: rgba(34,197,94,0.2);
-      color: var(--success);
-    }
-
-    /* ── Footer ── */
-    .page-footer {
-      text-align: center;
-      margin-top: 24px;
-      animation: fadeUp 0.5s ease 0.2s both;
-    }
-
-    .page-footer p {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-    }
-
-    .page-footer .dot {
-      width: 4px;
-      height: 4px;
-      border-radius: 50%;
-      background: var(--text-muted);
-      opacity: 0.5;
-    }
-
-    /* ── Mobile ── */
-    @media (max-width: 440px) {
-      body { padding: 16px; }
-      .card { padding: 22px; }
-      .logo-icon { width: 56px; height: 56px; font-size: 26px; border-radius: 15px; }
-      .logo h1 { font-size: 1.3rem; }
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      *, *::before, *::after {
-        animation-duration: 0.01ms !important;
-        transition-duration: 0.01ms !important;
-      }
-    }
-  </style>
+  <link rel="stylesheet" href="/static/css/login.css">
 </head>
 <body>
   <div class="ambient">
@@ -504,7 +14,7 @@
     <div class="ambient-orb c"></div>
   </div>
 
-  <div class="container">
+  <div class="login-container">
     <div class="logo">
       <div class="logo-icon">💬</div>
       <h1>CryptoChat</h1>
@@ -513,8 +23,8 @@
 
     <div class="card">
       <div class="tabs">
-        <button class="tab active" onclick="switchTab('register')">Opprett konto</button>
-        <button class="tab" onclick="switchTab('login')">Logg inn</button>
+        <button class="tab active" data-tab="register">Opprett konto</button>
+        <button class="tab" data-tab="login">Logg inn</button>
       </div>
 
       <!-- Register -->
@@ -543,7 +53,7 @@
         </div>
         <button type="submit" class="btn btn-primary">Logg inn</button>
         <div class="form-footer">
-          <button type="button" class="link-btn" onclick="switchTab('recovery')">Glemt passord?</button>
+          <button type="button" class="link-btn" data-tab="recovery">Glemt passord?</button>
         </div>
       </form>
 
@@ -555,7 +65,7 @@
         </div>
         <div class="field">
           <label>Gjenopprettingskode</label>
-          <input type="text" id="rec-code" placeholder="XXXX-XXXX" style="text-transform:uppercase;letter-spacing:2px" required>
+          <input type="text" id="rec-code" placeholder="XXXX-XXXX" class="recovery-code-input" required>
         </div>
         <div class="field">
           <label>Nytt passord</label>
@@ -564,7 +74,7 @@
         </div>
         <button type="submit" class="btn btn-primary">Tilbakestill passord</button>
         <div class="form-footer">
-          <button type="button" class="link-btn" onclick="switchTab('login')">Tilbake til innlogging</button>
+          <button type="button" class="link-btn" data-tab="login">Tilbake til innlogging</button>
         </div>
       </form>
 
@@ -579,11 +89,11 @@
           <span class="warn-icon">⚠️</span>
           <span class="warn-text">Hver kode kan kun brukes én gang. Du kan generere nye koder fra innstillinger etter innlogging.</span>
         </div>
-        <button type="button" class="copy-btn" id="copy-btn" onclick="copyCodes()">
+        <button type="button" class="copy-btn" id="copy-btn">
           <span id="copy-icon">📋</span> Kopier alle koder
         </button>
-        <div class="form-footer" style="margin-top:14px">
-          <button type="button" class="link-btn" onclick="switchTab('login')">Logg inn</button>
+        <div class="form-footer form-footer-compact">
+          <button type="button" class="link-btn" data-tab="login">Logg inn</button>
         </div>
       </div>
 

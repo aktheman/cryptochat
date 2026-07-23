@@ -14,57 +14,25 @@
   <link rel="apple-touch-icon" href="/static/img/icon-192.png" />
   <link rel="stylesheet" href="/static/css/style.css?v=13" />
 </head>
-<body>
+<body data-username="{{ username }}" data-turn-url="{{ turn_url }}" data-turn-user="{{ turn_user }}">
   <div id="app" class="app">
-    <div style="display:flex;align-items:center;justify-content:center;height:100vh;color:#9a9cb8;">
-      <div style="text-align:center;">
-        <div style="font-size:2.5rem;margin-bottom:12px;">🔐</div>
-        <div style="font-weight:600;color:#cf6fef;margin-bottom:4px;">CryptoChat</div>
-        <div style="font-size:.85rem;">Laster...</div>
+    <div class="loading-screen">
+      <div class="loading-inner">
+        <div class="loading-icon">🔐</div>
+        <div class="loading-brand">CryptoChat</div>
+        <div class="loading-label">Laster...</div>
       </div>
     </div>
   </div>
-  <div id="installBanner" style="display:none;position:fixed;bottom:0;left:0;right:0;background:#1c1030;border-top:1px solid #7a3bff;padding:12px 16px;align-items:center;justify-content:space-between;z-index:99999;">
-    <span style="color:#f3f1ff;font-size:.9rem;">Installer CryptoChat</span>
-    <div style="display:flex;gap:8px;">
+  <div id="installBanner" class="install-banner">
+    <span class="install-banner-label">Installer CryptoChat</span>
+    <div class="install-banner-actions">
       <button id="installAcceptBtn" class="btn btn-primary btn-small">Installer</button>
       <button id="installDismissBtn" class="btn btn-ghost btn-small">Avvis</button>
     </div>
   </div>
 
-  <script>
-    window.__APP__ = {
-      username: {{ username | tojson }},
-      partnerKeys: localStorage.getItem('partnerKeys') ? JSON.parse(localStorage.getItem('partnerKeys')) : {},
-      theme: localStorage.getItem('theme') || 'dark',
-      turnUrl: {{ turn_url | tojson }},
-      turnUser: {{ turn_user | tojson }}
-    };
-    let deferredPrompt;
-    window.addEventListener('beforeinstallprompt', (e) => {
-      e.preventDefault();
-      deferredPrompt = e;
-      if (!localStorage.getItem('installDismissed')) {
-        const banner = document.getElementById('installBanner');
-        if (banner) banner.style.display = 'flex';
-      }
-    });
-    document.addEventListener('DOMContentLoaded', () => {
-      const acceptBtn = document.getElementById('installAcceptBtn');
-      const dismissBtn = document.getElementById('installDismissBtn');
-      if (acceptBtn) acceptBtn.addEventListener('click', () => {
-        if (deferredPrompt) { deferredPrompt.prompt(); deferredPrompt.userChoice.then(() => { deferredPrompt = null; }); }
-        document.getElementById('installBanner').style.display = 'none';
-      });
-      if (dismissBtn) dismissBtn.addEventListener('click', () => {
-        localStorage.setItem('installDismissed', '1');
-        document.getElementById('installBanner').style.display = 'none';
-      });
-    });
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.getRegistrations().then(r => r.forEach(x => x.unregister()));
-    }
-  </script>
+  <script src="/static/js/bootstrap.js"></script>
   <script src="/static/js/crypto.js" defer></script>
   <script src="/static/js/chat.js?v=12" defer></script>
 </body>

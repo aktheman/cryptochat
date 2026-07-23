@@ -1,13 +1,14 @@
 let pendingCodes = [];
 
 function switchTab(tab) {
-  document.querySelectorAll('.tab').forEach((el, i) => {
-    el.classList.toggle('active', (tab === 'register' && i === 0) || (tab === 'login' && i === 1));
-  });
+  if (!tab) return;
+  const map = {register: 0, login: 1, recovery: 2};
+  const idx = map[tab];
+  if (idx === undefined) return;
+  document.querySelectorAll('.tab').forEach((el, i) => el.classList.toggle('active', i === idx));
   document.querySelectorAll('.form').forEach(f => f.classList.remove('active'));
   document.getElementById('codes-view').classList.remove('show');
   document.getElementById('feedback').className = 'feedback';
-
   if (tab === 'register') document.getElementById('form-register').classList.add('active');
   else if (tab === 'login') document.getElementById('form-login').classList.add('active');
   else if (tab === 'recovery') document.getElementById('form-recovery').classList.add('active');
@@ -36,19 +37,16 @@ function showCodes(codes) {
   hideFeedback();
 }
 
-function copyCodes() {
+async function copyCodes() {
   const btn = document.getElementById('copy-btn');
   const icon = document.getElementById('copy-icon');
-  navigator.clipboard.writeText(pendingCodes.join('\n')).then(() => {
-    icon.textContent = '✓';
-    btn.classList.add('done');
-    btn.querySelector('#copy-icon').nextSibling.textContent = ' Kopiert!';
-    setTimeout(() => {
-      icon.textContent = '📋';
-      btn.classList.remove('done');
-      btn.querySelector('#copy-icon').nextSibling.textContent = ' Kopier alle koder';
-    }, 2000);
-  });
+  await navigator.clipboard.writeText(pendingCodes.join('\n'));
+  icon.textContent = '✓';
+  btn.classList.add('done');
+  setTimeout(() => {
+    icon.textContent = '📋';
+    btn.classList.remove('done');
+  }, 2000);
 }
 
 async function api(url, data) {
@@ -104,6 +102,13 @@ document.getElementById('form-recovery').onsubmit = async (e) => {
     setTimeout(() => switchTab('login'), 1500);
   } catch (err) { showFeedback(err.message, 'error'); }
 };
+
+document.addEventListener('click', (e) => {
+  const tabBtn = e.target.closest('[data-tab]');
+  if (tabBtn) switchTab(tabBtn.getAttribute('data-tab'));
+
+  if (e.target.id === 'copy-btn') copyCodes();
+});
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(r => r.forEach(x => x.unregister()));

@@ -634,16 +634,12 @@ class TestCsrf:
 
 
 class TestRecovery:
-    def test_register_returns_recovery_codes(self, client):
+    def test_register_does_not_leak_recovery_codes(self, client):
         r = client.post('/auth/register', json={'username': 'alice', 'password': 'Passw0rd!23'})
         data = r.get_json()
         assert r.status_code == 200
         assert data['success'] is True
-        assert 'recovery_codes' in data
-        assert len(data['recovery_codes']) == 5
-        for code in data['recovery_codes']:
-            assert len(code) == 9  # XXXX-XXXX
-            assert code[4] == '-'
+        assert 'recovery_codes' not in data
 
     def test_recovery_resets_password(self, client):
         r = client.post('/auth/register', json={'username': 'alice', 'password': 'Passw0rd!23'})

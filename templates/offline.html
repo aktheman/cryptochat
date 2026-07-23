@@ -8,15 +8,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>CryptoChat - Frakoblet</title>
   <link rel="stylesheet" href="/static/css/style.css?v=13" />
-  <style>
-    body { background:#0f1424; color:#e7e8f3; }
-    .offline-wrap { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px; }
-    .offline-card { background:#111322; border:1px solid #151d30; border-radius:16px; padding:24px; max-width:420px; width:100%; text-align:center; }
-    .offline-icon { font-size:48px; margin-bottom:12px; }
-    .offline-title { margin:0 0 8px; color:#cf6fef; font-size:1.3rem; }
-    .offline-body { color:#9ca3c7; font-size:.9rem; margin-bottom:18px; }
-    .btn { background:#1c1030; color:#f3f1ff; border:1px solid #7a3bff; padding:10px 16px; border-radius:10px; cursor:pointer; min-height:44px; font-weight:600; }
-  </style>
+  <link rel="stylesheet" href="/static/css/offline.css" />
 </head>
 <body>
   <div class="offline-wrap">
@@ -24,8 +16,9 @@
       <div class="offline-icon">📡</div>
       <h1 class="offline-title">Frakoblet</h1>
       <p class="offline-body">Du ser ut til å være frakoblet internett. Noen funksjoner kan være utilgjengelige.</p>
-      <button class="btn" onclick="location.reload()">Prøv igjen</button>
+      <button class="offline-btn" id="retryBtn">Prøv igjen</button>
     </div>
   </div>
+  <script src="/static/js/offline.js"></script>
 </body>
 </html>
