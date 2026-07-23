@@ -412,7 +412,7 @@
     try {
       await window.__CRYPTO__.getOrCreateIdentity();
     } catch (e) {
-      console.warn('E2EE identity init failed', e);
+      console.debug('E2EE identity init failed', e);
     }
   }
 
@@ -577,11 +577,6 @@
       const app = document.getElementById('app');
       if (!app) throw new Error('Missing #app');
 
-      const offlineLink = document.createElement('link');
-      offlineLink.rel = 'stylesheet';
-      offlineLink.href = '/static/css/style.css?v=14';
-      document.head.appendChild(offlineLink);
-
       app.innerHTML = `
         <header class="header">
           <div class="header-left">
@@ -641,7 +636,7 @@
                 <button id="verifyBtn" class="btn btn-small btn-ghost verify-btn" style="display:none" title="Sikkerhetsnummer" aria-label="Verifiser samtale">🛡️</button>
                 <button id="exportBtn" class="btn btn-small btn-ghost" title="Eksporter samtale" aria-label="Eksporter chat" style="display:none">💾</button>
                 <button id="wallpaperBtn" class="btn btn-small btn-ghost" title="Bakgrunn" aria-label="Velg bakgrunn" style="display:none">🖼️</button>
-                <button id="muteBtn" class="btn btn-small btn-ghost" title="DempVarsler" style="display:none">🔔</button>
+                <button id="muteBtn" class="btn btn-small btn-ghost" title="Demp varsler" style="display:none">🔔</button>
                 <button id="chatSearchBtn" class="btn btn-small btn-ghost" title="Soek i chat" aria-label="Soek i chat" style="display:none">🔍</button>
                 <button id="inviteBtn" class="btn btn-small btn-ghost" title="Del invitasjon" style="display:none" aria-label="Del gruppeinvitasjon">🔗</button>
                 <button id="lockBtn" class="btn btn-small btn-ghost" title="E2EE-status" style="display:none" aria-label="Krypteringsstatus">🔓</button>
@@ -1417,7 +1412,6 @@
         clearTimeout(typingTimeout);
         isTyping = false;
         chatTitle.innerHTML = avatarHtml(user, 28) + '<span style="margin-left:8px;">' + escapeHtml(getDisplayName(user)) + '</span>';
-        setMobileChat(true);
         history.pushState({ chat: user, type: 'user' }, '', '#chat/' + user);
         const key = await getPeerPublicKeyPem(user);
         activeChat.peerPublicKey = key;
@@ -1812,7 +1806,7 @@
           { icon: '📌', label: 'Fest', action: async () => {
             if (!activeChat) return;
             try {
-              await loadJSON('/pins/' + activeChat.type + '/' + activeChat.target + '/' + msgId, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+              await loadJSON('/pins/' + activeChat.type + '/' + encodeURIComponent(activeChat.target) + '/' + encodeURIComponent(msgId), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
               toast('Melding festet', 'success');
             } catch(e) { toast('Kunne ikke feste'); }
           }},
@@ -2613,6 +2607,7 @@
 
       // ── Link Previews ──
       const linkPreviewCache = {};
+      const LINK_PREVIEW_CACHE_MAX = 100;
       async function fetchLinkPreview(text) {
         const urlMatch = text.match(/https?:\/\/[^\s<>"')]+/);
         if (!urlMatch) return null;
@@ -2620,7 +2615,12 @@
         if (linkPreviewCache[url]) return linkPreviewCache[url];
         try {
           const data = await loadJSON('/link-preview?url=' + encodeURIComponent(url));
-          if (data.preview) { linkPreviewCache[url] = data.preview; return data.preview; }
+          if (data.preview) {
+            const keys = Object.keys(linkPreviewCache);
+            if (keys.length >= LINK_PREVIEW_CACHE_MAX) delete linkPreviewCache[keys[0]];
+            linkPreviewCache[url] = data.preview;
+            return data.preview;
+          }
         } catch (e) {}
         return null;
       }
@@ -2854,11 +2854,6 @@
 
       // ── Keyboard Shortcuts ──
       document.addEventListener('keydown', (e) => {
-        if (e.ctrlKey && e.key === 'k') {
-          e.preventDefault();
-          const searchInput = document.getElementById('searchInput');
-          if (searchInput) searchInput.focus();
-        }
         if (e.key === 'Escape') {
           const modal = document.querySelector('.modal-overlay');
           if (modal) { modal.remove(); return; }
@@ -3015,7 +3010,7 @@
       const _origFinishAppend = finishAppend;
       finishAppend = function(message, chatId, isMe, renderedText) {
         _origFinishAppend(message, chatId, isMe, renderedText);
-        const item = messagesBox.querySelector('[data-message-id="' + message.id + '"]');
+        const item = messagesBox.querySelector('[data-message-id="' + CSS.escape(message.id) + '"]');
         if (item && !message.deleted) origContextHandler(message, item);
       };
 
@@ -3276,7 +3271,7 @@
               if (Object.keys(encryptedKeys).length > 0) {
                 await fetch('/groups/' + encodeURIComponent(resData.group.id) + '/keys', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keys: encryptedKeys }) });
               }
-            } catch (e2) { console.warn('Group E2EE key distribution failed', e2); }
+            } catch (e2) { console.debug('Group E2EE key distribution failed', e2); }
           }
           toast('Gruppe opprettet', 'success');
           const data = await loadJSON('/groups');
@@ -3627,14 +3622,6 @@
       }
 
       let stickerSearchTimeout = null;
-      const gifSearchInput = document.createElement('input');
-      gifSearchInput.className = 'input-text';
-      gifSearchInput.placeholder = 'Søk GIFs...';
-      gifSearchInput.style.cssText = 'width:100%;margin-bottom:6px;font-size:.82rem;display:none;';
-      gifSearchInput.addEventListener('input', () => {
-        clearTimeout(stickerSearchTimeout);
-        stickerSearchTimeout = setTimeout(() => renderStickerContent(gifSearchInput.value.trim()), 400);
-      });
 
       document.addEventListener('click', (e) => {
         if (stickerPicker && !stickerPicker.contains(e.target) && e.target !== stickerBtn) stickerPicker.classList.remove('open');
@@ -3879,11 +3866,7 @@
               toast('Forlatt gruppe', 'success');
               modal.remove();
               activeChat = null;
-              document.getElementById('app').innerHTML = '';
-              const data = await loadJSON('/groups');
-              groups.length = 0;
-              groups.push(...(data.groups || []));
-              renderGroups();
+              closeChat();
             } catch (e) { toast(e.message || 'Kunne ikke forlate'); }
           });
         }
@@ -4142,6 +4125,7 @@
               + '<div class="meta">' + (isMe ? '<span class="read">' + (message.read ? '<span class="read-receipt read">✓✓</span>' : '<span class="read-receipt unread">✓</span>') + '</span>' : '') + '</div>';
             messagesBox.appendChild(item);
             if (!userScrolledUp) messagesBox.scrollTop = messagesBox.scrollHeight;
+            _origFinishAppend2(message, chatId, isMe, renderedText);
             return;
           } catch (e) {}
         }
@@ -4206,14 +4190,20 @@
           const stories = data.stories || [];
           const story = stories.find(s => s.id === storyId);
           if (!story) return;
+          const safeColor = (c, fallback) => /^#[0-9a-fA-F]{3,8}$/.test(c) ? c : fallback;
+          const bgColor = safeColor(story.bgColor, '#1c1030');
+          const textColor = safeColor(story.textColor, '#f3f1ff');
           const overlay = document.createElement('div');
           overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;z-index:999999;';
-          overlay.innerHTML = '<div style="background:' + (story.bgColor || '#1c1030') + ';color:' + (story.textColor || '#f3f1ff') + ';border-radius:16px;padding:40px;max-width:400px;width:90%;text-align:center;position:relative;">' +
-            '<button onclick="this.closest(\'div[style]\').remove()" style="position:absolute;top:8px;right:12px;background:none;border:none;color:inherit;font-size:1.3rem;cursor:pointer;">✕</button>' +
+          overlay.className = 'modal-overlay story-overlay';
+          overlay.innerHTML = '<div class="story-card" style="background:' + bgColor + ';color:' + textColor + ';border-radius:16px;padding:40px;max-width:400px;width:90%;text-align:center;position:relative;">' +
+            '<button class="story-close-btn" style="position:absolute;top:8px;right:12px;background:none;border:none;color:inherit;font-size:1.3rem;cursor:pointer;">✕</button>' +
             '<div style="font-size:.8rem;color:var(--c-text-muted);margin-bottom:12px;">' + escapeHtml(story.username) + ' · ' + formatTime(story.created) + '</div>' +
             '<div style="font-size:1.2rem;line-height:1.5;">' + escapeHtml(story.content) + '</div>' +
             '<div style="font-size:.75rem;color:var(--c-text-muted);margin-top:16px;">👁 ' + (story.views?.length || 0) + ' visninger</div></div>';
-          overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+          overlay.addEventListener('click', (e) => {
+            if (e.target === overlay || e.target.closest('.story-close-btn')) overlay.remove();
+          });
           document.body.appendChild(overlay);
           await loadJSON('/stories/' + storyId + '/view', { method:'POST', headers:{'Content-Type':'application/json'}, body:'{}' });
         } catch(e) {}
@@ -4278,10 +4268,10 @@
         } catch(e) { toast('Feil'); }
       };
       window._removeContact = async function(username) {
-        try { await loadJSON('/contacts/' + username, { method:'DELETE' }); toast('Fjernet'); document.querySelector('.modal-overlay')?.remove(); window._showContacts(); } catch(e) {}
+        try { await loadJSON('/contacts/' + encodeURIComponent(username), { method:'DELETE' }); toast('Fjernet'); document.querySelector('.modal-overlay')?.remove(); window._showContacts(); } catch(e) {}
       };
       window._openChatFromContact = function(username) {
-        const userItem = document.querySelector('.item[data-user="' + username + '"]');
+        const userItem = document.querySelector('.item[data-user="' + CSS.escape(username) + '"]');
         if (userItem) userItem.click();
       };
 
@@ -4551,7 +4541,7 @@
               await fetch('/messages/' + encodeURIComponent(id), { method: 'DELETE' }).catch(()=>{});
             }
             selectedMessages.forEach(id => {
-              const el = messagesBox.querySelector('[data-msg-id="' + id + '"]');
+              const el = messagesBox.querySelector('[data-msg-id="' + CSS.escape(id) + '"]');
               if (el) el.remove();
             });
             toast(selectedMessages.size + ' meldinger slettet');
@@ -4684,7 +4674,7 @@
               const type = el.dataset.type;
               const target = el.dataset.target;
               if (type === 'user') {
-                const item = document.querySelector('.item[data-user="' + target + '"]');
+                const item = document.querySelector('.item[data-user="' + CSS.escape(target) + '"]');
                 if (item) item.click();
               } else if (type === 'group') {
                 const item = document.querySelector('.item[data-group-id="' + CSS.escape(target) + '"]');
@@ -4835,44 +4825,6 @@
         posY = Math.max(8, posY);
         _origShowQuickActions(msgEl, posX, posY);
       };
-
-      // ──────────────────────────────────────────────
-      // SWIPE-TO-REPLY: PASSIVE:FALSE + CONFLICT FIX
-      // ──────────────────────────────────────────────
-      function initSwipeToReply() {
-        let startX = 0, startY = 0, currentMsg = null, swiping = false;
-        messagesBox.addEventListener('touchstart', (e) => {
-          const msg = e.target.closest('.msg');
-          if (!msg) return;
-          startX = e.touches[0].clientX;
-          startY = e.touches[0].clientY;
-          currentMsg = msg;
-          swiping = false;
-        }, { passive: true });
-        messagesBox.addEventListener('touchmove', (e) => {
-          if (!currentMsg) return;
-          const dx = e.touches[0].clientX - startX;
-          const dy = Math.abs(e.touches[0].clientY - startY);
-          if (dx > 20) swiping = true;
-          if (swiping && dx > 30 && dx < 150) {
-            e.preventDefault();
-            currentMsg.style.transform = 'translateX(' + Math.min(dx - 30, 80) + 'px)';
-            currentMsg.style.opacity = Math.max(0.5, 1 - dx / 300);
-          }
-        }, { passive: false });
-        messagesBox.addEventListener('touchend', (e) => {
-          if (!currentMsg) return;
-          const dx = e.changedTouches[0].clientX - startX;
-          currentMsg.style.transform = '';
-          currentMsg.style.opacity = '';
-          if (dx > 80) {
-            const msgId = currentMsg.dataset.msgId;
-            if (msgId) startReply(msgId);
-          }
-          currentMsg = null;
-          swiping = false;
-        });
-      }
 
       // ── In-Chat Search ──
       let searchMatches = [];

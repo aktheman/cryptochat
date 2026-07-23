@@ -6,6 +6,7 @@
   async function api(path, opts) {
     try {
       const r = await fetch(path, opts);
+      if (!r.ok) return { success: false, message: 'Feil ' + r.status };
       return await r.json();
     } catch (e) { return { success: false, message: 'Nettverksfeil' }; }
   }

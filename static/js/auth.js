@@ -29,7 +29,7 @@ function showCodes(codes) {
   const list = document.getElementById('codes-list');
   list.innerHTML = '';
   codes.forEach(c => {
-    list.innerHTML += '<div class="code-item"><span class="code-dot"></span>' + c + '</div>';
+    list.innerHTML += '<div class="code-item"><span class="code-dot"></span>' + c.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</div>';
   });
   document.querySelectorAll('.form').forEach(f => f.classList.remove('active'));
   document.getElementById('codes-view').classList.add('show');
@@ -40,7 +40,7 @@ function showCodes(codes) {
 async function copyCodes() {
   const btn = document.getElementById('copy-btn');
   const icon = document.getElementById('copy-icon');
-  await navigator.clipboard.writeText(pendingCodes.join('\n'));
+  try { await navigator.clipboard.writeText(pendingCodes.join('\n')); } catch(e) { return; }
   icon.textContent = '✓';
   btn.classList.add('done');
   setTimeout(() => {

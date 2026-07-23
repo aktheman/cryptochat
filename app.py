@@ -151,6 +151,7 @@ MUTED_CHATS_FILE = DATA_DIR / 'muted_chats.json'
 ARCHIVE_FILE = DATA_DIR / 'archive.json'
 CONTACTS_FILE = DATA_DIR / 'contacts.json'
 STORIES_FILE = DATA_DIR / 'stories.json'
+SLOWMODE_FILE = DATA_DIR / 'slowmode.json'
 
 # ──────────────────────────────────────────────
 # Helpers
@@ -892,8 +893,6 @@ def get_user_key_endpoint(username):
     if not user:
         return jsonify({'success': False, 'message': 'Bruker ikke funnet.'}), 404
     resp = jsonify({'success': True, 'username': username, 'publicKey': user.get('identity_public_key')})
-    resp.headers['Access-Control-Allow-Origin'] = request.headers.get('Origin') or ''
-    resp.headers['Vary'] = 'Origin'
     return resp
 
 # ──────────────────────────────────────────────
@@ -2281,7 +2280,6 @@ def cleanup_typing_indicators():
         save_json(TYPING_FILE, typing)
 
 def _background_worker():
-    import threading
     while True:
         time.sleep(60)
         try:
@@ -2740,7 +2738,6 @@ def send_location():
 # ──────────────────────────────────────────────
 # Slow Mode (group admin setting)
 # ──────────────────────────────────────────────
-SLOWMODE_FILE = DATA_DIR / 'slowmode.json'
 
 @app.route('/groups/<group_id>/slowmode', methods=['POST'])
 @rate_limit(max_requests=20, window_seconds=120)
@@ -4044,6 +4041,9 @@ def delete_story(story_id):
     me = session['username']
     stories = load_json(STORIES_FILE, {})
     user_stories = stories.get(me, [])
+    found = any(s['id'] == story_id for s in user_stories)
+    if not found:
+        return jsonify({'success': False, 'message': 'Story ikke funnet.'}), 404
     stories[me] = [s for s in user_stories if s['id'] != story_id]
     save_json(STORIES_FILE, stories)
     return jsonify({'success': True})
