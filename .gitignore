@@ -12,3 +12,4 @@ data/
 !uploads/.gitkeep
 tests/test_secret.key
 secrets/
+cookies.txt
