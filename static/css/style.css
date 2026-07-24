@@ -202,7 +202,7 @@ body.theme-light .toast { background:#ffffff; color:#111827; border-color:#e5e7e
 .msg-action-btn:hover { background:#2a2d48; color:#e9eaff; }
 .reaction-badge { display:inline-flex; align-items:center; gap:3px; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.1); padding:2px 7px; border-radius:10px; font-size:.73rem; cursor:pointer; transition:background .15s; }
 .reaction-badge:hover { background:rgba(255,255,255,.14); }
-.reaction-badge.reacted { background:rgba(122,59,255,.2); border-color:var(--c-accent); }
+.reaction-badge.reacted { background:rgba(122,59,255,.2); border-color:var(--c-accent, #7a3bff); }
 .reaction-picker { position:absolute; bottom:100%; right:0; background:#111322; border:1px solid #2a2d48; border-radius:10px; padding:6px; display:flex; gap:2px; z-index:100; box-shadow:0 4px 20px rgba(0,0,0,.4); animation:fadeIn .15s ease; }
 .reaction-picker button { background:transparent; border:none; font-size:1.2rem; padding:4px 6px; border-radius:6px; cursor:pointer; transition:background .1s; }
 .reaction-picker button:hover { background:#1a2240; }
@@ -524,8 +524,9 @@ body.theme-light .skeleton-msg { background:linear-gradient(90deg,#e5e7eb 25%,#f
 /* ── Legacy index page ── */
 .form-hidden { display:none; }
 
+.sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+
 /* ── Install banner ── */
-#installBanner { animation:slideUp .3s ease; }
 
 /* ── Loading screen ── */
 .loading-screen { display:flex; align-items:center; justify-content:center; height:100vh; color:#9a9cb8; }

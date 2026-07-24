@@ -18,13 +18,17 @@
             </div>
 
             <form id="loginForm">
+                <label for="loginUsername" class="sr-only">Brukernavn</label>
                 <input type="text" id="loginUsername" placeholder="Brukernavn" required autocomplete="username">
+                <label for="loginPassword" class="sr-only">Passord</label>
                 <input type="password" id="loginPassword" placeholder="Passord" required autocomplete="current-password">
                 <button type="submit" class="btn-primary">Logg inn</button>
             </form>
 
             <form id="registerForm" class="form-hidden">
+                <label for="registerUsername" class="sr-only">Brukernavn</label>
                 <input type="text" id="registerUsername" placeholder="Brukernavn (minst 3 tegn)" required autocomplete="username">
+                <label for="registerPassword" class="sr-only">Passord</label>
                 <input type="password" id="registerPassword" placeholder="Passord (minst 4 tegn)" required autocomplete="new-password">
                 <button type="submit" class="btn-primary">Registrer</button>
             </form>

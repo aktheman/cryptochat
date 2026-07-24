@@ -1936,7 +1936,7 @@
         if (message.type === 'file' && !message.deleted) {
           const isImage = /\.(png|jpe?g|gif|webp)$/i.test(message.filename || '');
           if (isImage) {
-            fileHtml = '<div class="inline-image"><img src="/uploads/' + escapeHtml(message.filename) + '" alt=" bilde" onerror="this.parentElement.innerHTML=\'<div class=badge>📎 '+escapeHtml(message.filename||'fil')+'</div>\'" /></div>';
+            fileHtml = '<div class="inline-image"><img src="/uploads/' + encodeURIComponent(message.filename) + '" alt="' + escapeHtml(message.filename || 'bilde') + '" /></div>';
           } else {
             const audioExts = ['.webm', '.mp3', '.ogg', '.wav', '.opus', '.m4a'];
             const isVoice = message.filename && audioExts.some(ext => message.filename.toLowerCase().endsWith(ext));
@@ -2247,6 +2247,12 @@
         replyingTo = null;
         document.getElementById('replyBar').style.display = 'none';
       });
+
+      messagesBox.addEventListener('error', (e) => {
+        if (e.target.tagName === 'IMG' && e.target.parentElement) {
+          e.target.parentElement.innerHTML = '<div class="badge">📎 ' + (e.target.alt || 'bilde') + '</div>';
+        }
+      }, true);
 
       messagesBox.addEventListener('click', (e) => {
         const btn = e.target.closest('.reply-msg-btn');
@@ -4721,9 +4727,9 @@
       window._showChannelSubscribers = async function(channelId) {
         const overlay = document.createElement('div');
         overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:999999;';
-        overlay.innerHTML = '<div style="background:var(--c-bg);border:1px solid var(--c-border);border-radius:16px;padding:24px;width:360px;max-width:95vw;max-height:70vh;overflow-y:auto;"><div style="display:flex;justify-content:space-between;margin-bottom:16px;"><h3 style="margin:0;color:var(--c-text);">📢 Abonnenter</h3><button onclick="this.closest(\'div[style]\').parentElement.remove()" style="background:none;border:none;color:var(--c-text);font-size:1.2rem;cursor:pointer;">✕</button></div><div id="channelSubList" style="color:var(--c-text-muted);text-align:center;">Laster...</div></div>';
+        overlay.innerHTML = '<div class="channel-subscribers-panel" style="background:var(--c-bg);border:1px solid var(--c-border);border-radius:16px;padding:24px;width:360px;max-width:95vw;max-height:70vh;overflow-y:auto;"><div style="display:flex;justify-content:space-between;margin-bottom:16px;"><h3 style="margin:0;color:var(--c-text);">📢 Abonnenter</h3><button class="channel-sub-close" style="background:none;border:none;color:var(--c-text);font-size:1.2rem;cursor:pointer;">✕</button></div><div id="channelSubList" style="color:var(--c-text-muted);text-align:center;">Laster...</div></div>';
         document.body.appendChild(overlay);
-        overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+        overlay.addEventListener('click', (e) => { if (e.target === overlay || e.target.closest('.channel-sub-close')) overlay.remove(); });
         try {
           const data = await loadJSON('/channels/' + encodeURIComponent(channelId));
           const subs = data.channel?.subscribers || [];

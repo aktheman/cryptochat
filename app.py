@@ -1,4 +1,4 @@
-import os, json, base64, secrets, hashlib, hmac, time, re, collections, threading
+import os, json, base64, secrets, hashlib, hmac, time, re, threading
 import ipaddress
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -398,13 +398,6 @@ def generate_identity_keypair():
         'private': base64.urlsafe_b64encode(priv_bytes).decode(),
         'public': base64.urlsafe_b64encode(pub_bytes).decode(),
     }
-
-def derive_shared_keycurve25519(my_priv_b64, their_pub_b64):
-    my_priv = x25519.X25519PrivateKey.from_private_bytes(base64.urlsafe_b64decode(my_priv_b64))
-    their_pub = x25519.X25519PublicKey.from_public_bytes(base64.urlsafe_b64decode(their_pub_b64))
-    shared = my_priv.exchange(their_pub)
-    derived = HKDF(algorithm=hashes.SHA256(), length=32, salt=secrets.token_bytes(16), info=b'cryptochat-v1').derive(shared)
-    return derived
 
 def _encrypt_2fa_secret(plaintext: str) -> str:
     key = app.secret_key[:32]
@@ -1275,6 +1268,11 @@ def create_group():
 def get_group_messages(group_id):
     if 'username' not in session:
         return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
+    me = session['username']
+    groups = load_json(GROUPS_FILE, [])
+    group = next((g for g in groups if g['id'] == group_id), None)
+    if not group or me not in group.get('members', []):
+        return jsonify({'success': False, 'message': 'Ingen tilgang.'}), 403
     messages = load_json(MESSAGES_FILE, [])
     group_key = get_or_create_group_key(group_id)
     filtered = []
@@ -1308,7 +1306,7 @@ def get_group_messages(group_id):
             filtered.append({
                 'id': m.get('id'),
                 'sender': m['sender'],
-                'text': f'[Dekrypteringsfeil: {str(e)}]',
+                'text': '[Dekrypteringsfeil]',
                 'type': m.get('type', 'text'),
                 'timestamp': m['timestamp'],
                 'filename': m.get('filename'),
@@ -1340,8 +1338,8 @@ def delete_group(group_id):
     group = next((g for g in groups if g['id'] == group_id), None)
     if not group:
         return jsonify({'success': False, 'message': 'Gruppen finnes ikke.'}), 404
-    if session['username'] != group.get('created_by') and session['username'] not in group.get('members', []):
-        return jsonify({'success': False, 'message': 'Ingen tilgang.'}), 403
+    if session['username'] != group.get('created_by') and session['username'] not in group.get('admins', []):
+        return jsonify({'success': False, 'message': 'Kun eiere og adminer kan slette.'}), 403
     groups = [g for g in groups if g['id'] != group_id]
     save_json(GROUPS_FILE, groups)
     return jsonify({'success': True, 'message': 'Gruppen er slettet.'})
@@ -2329,12 +2327,13 @@ def forward_message(message_id):
     if target_type == 'user':
         pk = pair_key(me, target)
     else:
-        pk = f"group::{target}"
+        pk = None
     fwd = {
         'id': hashlib.sha256(f"fwd:{message_id}:{target}:{datetime.utcnow().isoformat()}".encode()).hexdigest(),
         'pair_key': pk,
         'sender': me,
         'recipient': target,
+        'group_id': target if target_type != 'user' else None,
         'ciphertext': orig.get('ciphertext', ''),
         'type': orig.get('type', 'text'),
         'timestamp': datetime.utcnow().isoformat(),
@@ -2472,7 +2471,7 @@ def export_chat(chat_type, chat_id):
         pk = pair_key(me, chat_id)
         filtered = [m for m in messages if m.get('pair_key') == pk]
     elif chat_type == 'group':
-        filtered = [m for m in messages if m.get('pair_key') == f"group::{chat_id}"]
+        filtered = [m for m in messages if m.get('group_id') == chat_id]
     else:
         return jsonify({'success': False, 'message': 'Ugyldig type.'}), 400
     filtered.sort(key=lambda m: m.get('timestamp', ''))
@@ -2725,7 +2724,11 @@ def send_location():
     group_id = sanitize_input(data.get('group_id', ''), 30)
     if lat is None or lng is None:
         return jsonify({'success': False, 'message': 'Manglende koordinater.'}), 400
-    loc_data = json.dumps({'lat': float(lat), 'lng': float(lng), 'label': label})
+    try:
+        lat_f, lng_f = float(lat), float(lng)
+    except (ValueError, TypeError):
+        return jsonify({'success': False, 'message': 'Ugyldige koordinater.'}), 400
+    loc_data = json.dumps({'lat': lat_f, 'lng': lng_f, 'label': label})
     if group_id:
         pk = f"group::{group_id}"
         target = group_id
@@ -3646,7 +3649,7 @@ def search_v2():
         else:
             if is_dm:
                 pk = m.get('pair_key', '')
-                if me not in pk.split('::'):
+                if me not in pk.split(':::'):
                     continue
             elif is_group:
                 continue
