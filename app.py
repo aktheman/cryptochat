@@ -35,7 +35,7 @@ app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE='Lax',
     PERMANENT_SESSION_LIFETIME=timedelta(minutes=30),
-    CSRF_ENABLED=bool(os.environ.get('CSRF_ENABLED', 'false').lower() in ('true', '1', 'yes')),
+    CSRF_ENABLED=bool(os.environ.get('CSRF_ENABLED', 'true').lower() in ('true', '1', 'yes')),
     CSRF_TRUSTED_ORIGINS=[o.strip() for o in os.environ.get('CSRF_TRUSTED_ORIGINS', '').split(',') if o.strip()],
 )
 app.config.update(
@@ -541,6 +541,7 @@ def verify_recovery_code(code_input, stored_hashes):
 # ──────────────────────────────────────────────
 @app.route('/auth/register', methods=['POST'])
 @rate_limit(max_requests=5, window_seconds=300)
+@require_csrf
 def register():
     data = request.get_json(force=True, silent=True) or {}
     username = (data.get('username') or '').strip().lower()
@@ -588,6 +589,7 @@ def register():
 
 @app.route('/auth/login', methods=['POST'])
 @rate_limit(max_requests=10, window_seconds=120)
+@require_csrf
 def login():
     data = request.get_json(force=True, silent=True) or {}
     username = (data.get('username') or '').strip().lower()
@@ -659,6 +661,7 @@ def list_sessions():
 @app.route('/sessions/<session_id>/revoke', methods=['POST'])
 @rate_limit(max_requests=20, window_seconds=120)
 @require_login
+@require_csrf
 def revoke_session(session_id):
     username = session['username']
     if session_id == session.get('session_token'):
@@ -699,6 +702,7 @@ def disable_2fa():
 
 @app.route('/auth/recovery', methods=['POST'])
 @rate_limit(max_requests=5, window_seconds=300)
+@require_csrf
 def recover_password():
     data = request.get_json(force=True, silent=True) or {}
     username = (data.get('username') or '').strip().lower()
@@ -730,6 +734,7 @@ def recover_password():
 @app.route('/auth/session/pin', methods=['POST'])
 @rate_limit(max_requests=5, window_seconds=60)
 @require_login
+@require_csrf
 def session_pin():
     data = request.get_json(force=True, silent=True) or {}
     pin = (data.get('pin') or '').strip()
@@ -767,6 +772,7 @@ def regenerate_recovery_codes():
 @app.route('/presence/batch', methods=['POST'])
 @rate_limit(max_requests=60, window_seconds=60)
 @require_login
+@require_csrf
 def presence_batch():
     data = request.get_json(force=True, silent=True) or {}
     users = data.get('users', [])
@@ -829,6 +835,7 @@ def set_theme():
 
 @app.route('/settings/notifications', methods=['POST'])
 @rate_limit(max_requests=30, window_seconds=120)
+@require_csrf
 def settings_notifications():
     username = session.get('username')
     if not username:
@@ -1097,6 +1104,7 @@ def search_files():
 
 @app.route('/read_receipts/<partner>', methods=['POST'])
 @rate_limit(max_requests=60, window_seconds=60)
+@require_csrf
 def mark_read(partner):
     if 'username' not in session:
         return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
@@ -1148,6 +1156,7 @@ def create_notification(username, type_, message, data=None):
 @app.route('/notifications', methods=['POST'])
 @rate_limit(max_requests=30, window_seconds=120)
 @require_login
+@require_csrf
 def add_notification():
     me = session['username']
     payload = request.get_json(force=True, silent=True) or {}
@@ -1161,6 +1170,7 @@ def add_notification():
 @app.route('/notifications/read', methods=['POST'])
 @rate_limit(max_requests=30, window_seconds=120)
 @require_login
+@require_csrf
 def mark_notifications_read():
     username = session.get('username')
     if not username:
@@ -1188,6 +1198,7 @@ def mark_notifications_read():
 @app.route('/groups/<group_id>/keys', methods=['POST'])
 @rate_limit(max_requests=20, window_seconds=120)
 @require_login
+@require_csrf
 def upload_group_keys(group_id):
     me = session['username']
     data = request.get_json(force=True, silent=True) or {}
@@ -1331,6 +1342,7 @@ def get_group_messages(group_id):
 
 @app.route('/groups/<group_id>', methods=['DELETE'])
 @rate_limit(max_requests=10, window_seconds=300)
+@require_csrf
 def delete_group(group_id):
     if 'username' not in session:
         return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
@@ -1346,6 +1358,7 @@ def delete_group(group_id):
 
 @app.route('/groups/<group_id>/send', methods=['POST'])
 @rate_limit(max_requests=30, window_seconds=120)
+@require_csrf
 def send_group_message(group_id):
     if 'username' not in session:
         return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
@@ -1393,6 +1406,7 @@ def send_group_message(group_id):
 # ──────────────────────────────────────────────
 @app.route('/typing', methods=['POST'])
 @rate_limit(max_requests=60, window_seconds=60)
+@require_csrf
 def set_typing():
     username = session.get('username')
     if not username:
@@ -1432,6 +1446,7 @@ def get_typing(target):
 # ──────────────────────────────────────────────
 @app.route('/reactions', methods=['POST'])
 @rate_limit(max_requests=60, window_seconds=60)
+@require_csrf
 def add_reaction():
     username = session.get('username')
     if not username:
@@ -1627,6 +1642,7 @@ def list_users_with_profiles():
 # ──────────────────────────────────────────────
 @app.route('/calls/init', methods=['POST'])
 @rate_limit(max_requests=20, window_seconds=120)
+@require_csrf
 def init_call():
     username = session.get('username')
     if not username:
@@ -1678,6 +1694,7 @@ def get_incoming_call():
     return jsonify({'success': True, 'call': None})
 
 @app.route('/calls/offer', methods=['POST'])
+@require_csrf
 def send_offer():
     username = session.get('username')
     if not username:
@@ -1708,6 +1725,7 @@ def get_offer(call_id):
 
 @app.route('/calls/accept', methods=['POST'])
 @rate_limit(max_requests=20, window_seconds=120)
+@require_csrf
 def accept_call():
     username = session.get('username')
     if not username:
@@ -1738,6 +1756,7 @@ def get_answer(call_id):
     return jsonify({'success': True, 'sdp': call.get('answer_sdp'), 'status': call.get('status')})
 
 @app.route('/calls/ice', methods=['POST'])
+@require_csrf
 def send_ice():
     username = session.get('username')
     if not username:
@@ -1769,6 +1788,7 @@ def get_ice(call_id):
 
 @app.route('/calls/hangup', methods=['POST'])
 @rate_limit(max_requests=60, window_seconds=60)
+@require_csrf
 def hangup_call():
     username = session.get('username')
     if not username:
@@ -1797,6 +1817,7 @@ def call_status(call_id):
     return jsonify({'success': True, 'status': call.get('status', 'ended')})
 
 @app.route('/calls/end-stale', methods=['POST'])
+@require_csrf
 def end_stale_calls():
     username = session.get('username')
     if not username:
@@ -1860,6 +1881,7 @@ def admin_list_users():
 @app.route('/admin/users/<username>/toggle-admin', methods=['POST'])
 @rate_limit(max_requests=10, window_seconds=300)
 @require_admin
+@require_csrf
 def admin_toggle_admin(username):
     admin_user = session.get('username')
     if username == admin_user:
@@ -1874,6 +1896,7 @@ def admin_toggle_admin(username):
 @app.route('/admin/users/<username>/ban', methods=['POST'])
 @rate_limit(max_requests=10, window_seconds=300)
 @require_admin
+@require_csrf
 def admin_ban_user(username):
     admin_user = session.get('username')
     if username == admin_user:
@@ -1889,6 +1912,7 @@ def admin_ban_user(username):
 @app.route('/admin/users/<username>/unban', methods=['POST'])
 @rate_limit(max_requests=10, window_seconds=300)
 @require_admin
+@require_csrf
 def admin_unban_user(username):
     users = load_json(USERS_FILE, {})
     if username not in users:
@@ -1900,6 +1924,7 @@ def admin_unban_user(username):
 @app.route('/admin/users/<username>/delete', methods=['POST'])
 @rate_limit(max_requests=10, window_seconds=300)
 @require_admin
+@require_csrf
 def admin_delete_user(username):
     admin_user = session.get('username')
     if username == admin_user:
@@ -1952,6 +1977,7 @@ def export_key():
 
 @app.route('/key/import', methods=['POST'])
 @rate_limit(max_requests=10, window_seconds=600)
+@require_csrf
 def import_key():
     username = session.get('username')
     if not username:
@@ -2022,6 +2048,7 @@ def get_safety_number(username):
 @app.route('/verify/<username>', methods=['POST'])
 @rate_limit(max_requests=10, window_seconds=120)
 @require_login
+@require_csrf
 def verify_user(username):
     me = session['username']
     if not get_user(username):
@@ -2039,6 +2066,7 @@ def verify_user(username):
 @app.route('/verify/<username>', methods=['DELETE'])
 @rate_limit(max_requests=10, window_seconds=120)
 @require_login
+@require_csrf
 def unverify_user(username):
     me = session['username']
     verifications = load_json(VERIFICATION_FILE, {})
@@ -2064,6 +2092,7 @@ def verify_status(username):
 @app.route('/verify/batch', methods=['POST'])
 @rate_limit(max_requests=10, window_seconds=300)
 @require_login
+@require_csrf
 def verify_batch():
     me = session['username']
     data = request.get_json(force=True, silent=True) or {}
@@ -2101,6 +2130,7 @@ def get_pins(chat_type, chat_id):
 
 @app.route('/pins/<chat_type>/<chat_id>/<message_id>', methods=['POST'])
 @require_login
+@require_csrf
 def pin_message(chat_type, chat_id, message_id):
     me = session['username']
     if chat_type == 'user':
@@ -2125,6 +2155,7 @@ def pin_message(chat_type, chat_id, message_id):
 @app.route('/pins/<chat_type>/<chat_id>/<message_id>', methods=['DELETE'])
 @require_login
 @rate_limit(max_requests=60, window_seconds=60)
+@require_csrf
 def unpin_message(chat_type, chat_id, message_id):
     me = session['username']
     if chat_type == 'user':
@@ -2152,6 +2183,7 @@ def unpin_message(chat_type, chat_id, message_id):
 @app.route('/schedule', methods=['POST'])
 @rate_limit(max_requests=20, window_seconds=300)
 @require_login
+@require_csrf
 def schedule_message():
     me = session['username']
     data = request.get_json(force=True, silent=True) or {}
@@ -2194,6 +2226,7 @@ def list_scheduled():
 
 @app.route('/schedule/<schedule_id>', methods=['DELETE'])
 @require_login
+@require_csrf
 def cancel_scheduled(schedule_id):
     me = session['username']
     scheduled = load_json(SCHEDULED_FILE, [])
@@ -2353,6 +2386,7 @@ def forward_message(message_id):
 @app.route('/saved', methods=['POST'])
 @rate_limit(max_requests=30, window_seconds=60)
 @require_login
+@require_csrf
 def save_message():
     me = session['username']
     data = request.get_json(force=True, silent=True) or {}
@@ -2497,6 +2531,7 @@ POLLS_FILE = DATA_DIR / 'polls.json'
 @app.route('/polls', methods=['POST'])
 @rate_limit(max_requests=20, window_seconds=120)
 @require_login
+@require_csrf
 def create_poll():
     me = session['username']
     data = request.get_json(force=True, silent=True) or {}
@@ -2553,6 +2588,7 @@ def get_poll(poll_id):
 @app.route('/polls/<poll_id>/vote', methods=['POST'])
 @rate_limit(max_requests=60, window_seconds=60)
 @require_login
+@require_csrf
 def vote_poll(poll_id):
     me = session['username']
     data = request.get_json(force=True, silent=True) or {}
@@ -2575,6 +2611,7 @@ def vote_poll(poll_id):
 @app.route('/polls/<poll_id>/close', methods=['POST'])
 @rate_limit(max_requests=20, window_seconds=300)
 @require_login
+@require_csrf
 def close_poll(poll_id):
     me = session['username']
     polls = load_json(POLLS_FILE, {})
@@ -2714,6 +2751,7 @@ def search_gifs():
 @app.route('/send/location', methods=['POST'])
 @rate_limit(max_requests=30, window_seconds=120)
 @require_login
+@require_csrf
 def send_location():
     me = session['username']
     data = request.get_json(force=True, silent=True) or {}
@@ -2757,6 +2795,7 @@ def send_location():
 @app.route('/groups/<group_id>/slowmode', methods=['POST'])
 @rate_limit(max_requests=20, window_seconds=120)
 @require_login
+@require_csrf
 def set_slowmode(group_id):
     me = session['username']
     data = request.get_json(force=True, silent=True) or {}
@@ -2785,6 +2824,7 @@ def get_slowmode(group_id):
 # ──────────────────────────────────────────────
 @app.route('/groups/<group_id>/admins', methods=['POST'])
 @require_login
+@require_csrf
 def set_group_admin(group_id):
     me = session['username']
     data = request.get_json(force=True, silent=True) or {}
@@ -2816,6 +2856,7 @@ def set_group_admin(group_id):
 
 @app.route('/groups/<group_id>/admins/<username>', methods=['DELETE'])
 @require_login
+@require_csrf
 def remove_group_admin(group_id, username):
     me = session['username']
     groups = load_json(GROUPS_FILE, [])
@@ -2868,6 +2909,7 @@ def get_group_members(group_id):
 @app.route('/groups/<group_id>/members', methods=['POST'])
 @rate_limit(max_requests=20, window_seconds=120)
 @require_login
+@require_csrf
 def add_group_member(group_id):
     me = session['username']
     data = request.get_json(force=True, silent=True) or {}
@@ -2894,6 +2936,7 @@ def add_group_member(group_id):
 @app.route('/groups/<group_id>/members/<username>', methods=['DELETE'])
 @rate_limit(max_requests=20, window_seconds=120)
 @require_login
+@require_csrf
 def remove_group_member(group_id, username):
     me = session['username']
     groups = load_json(GROUPS_FILE, [])
@@ -2922,6 +2965,7 @@ def remove_group_member(group_id, username):
 @app.route('/groups/<group_id>/leave', methods=['POST'])
 @rate_limit(max_requests=20, window_seconds=120)
 @require_login
+@require_csrf
 def leave_group(group_id):
     me = session['username']
     groups = load_json(GROUPS_FILE, [])
@@ -2949,6 +2993,7 @@ def leave_group(group_id):
 @app.route('/groups/<group_id>/keys/rotate', methods=['POST'])
 @rate_limit(max_requests=10, window_seconds=300)
 @require_login
+@require_csrf
 def rotate_group_key(group_id):
     me = session['username']
     groups = load_json(GROUPS_FILE, [])
@@ -2974,6 +3019,7 @@ def rotate_group_key(group_id):
 @app.route('/sync/keys', methods=['POST'])
 @rate_limit(max_requests=20, window_seconds=120)
 @require_login
+@require_csrf
 def sync_upload_key():
     me = session['username']
     data = request.get_json(force=True, silent=True) or {}
@@ -3004,6 +3050,7 @@ def sync_get_keys():
 @app.route('/sync/keys/<device_id>', methods=['DELETE'])
 @rate_limit(max_requests=20, window_seconds=120)
 @require_login
+@require_csrf
 def sync_remove_key(device_id):
     me = session['username']
     users = load_json(USERS_FILE, {})
@@ -3044,6 +3091,7 @@ def change_password():
 @app.route('/admin/rotate-secret', methods=['POST'])
 @require_login
 @require_admin
+@require_csrf
 def rotate_secret_key():
     me = session['username']
     new_key = secrets.token_bytes(32)
@@ -3116,6 +3164,7 @@ def get_wallpaper_presets():
 @app.route('/wallpaper/<chat_type>/<chat_id>', methods=['POST'])
 @rate_limit(max_requests=20, window_seconds=120)
 @require_login
+@require_csrf
 def set_wallpaper(chat_type, chat_id):
     me = session['username']
     data = request.get_json(force=True, silent=True) or {}
@@ -3148,6 +3197,7 @@ def get_wallpaper(chat_type, chat_id):
 @app.route('/push/subscribe', methods=['POST'])
 @rate_limit(max_requests=10, window_seconds=300)
 @require_login
+@require_csrf
 def push_subscribe():
     me = session['username']
     data = request.get_json(force=True, silent=True) or {}
@@ -3167,6 +3217,7 @@ def push_subscribe():
 @app.route('/push/unsubscribe', methods=['POST'])
 @rate_limit(max_requests=10, window_seconds=300)
 @require_login
+@require_csrf
 def push_unsubscribe():
     me = session['username']
     data = request.get_json(force=True, silent=True) or {}
@@ -3335,6 +3386,7 @@ def get_pinned_chats():
 @app.route('/pinned-chats', methods=['POST'])
 @rate_limit(max_requests=30, window_seconds=120)
 @require_login
+@require_csrf
 def toggle_pinned_chat():
     me = session['username']
     data = request.get_json(force=True, silent=True) or {}
@@ -3400,6 +3452,7 @@ def get_folders():
 @app.route('/folders', methods=['POST'])
 @rate_limit(max_requests=20, window_seconds=120)
 @require_login
+@require_csrf
 def save_folders():
     me = session['username']
     data = request.get_json(force=True, silent=True) or {}
@@ -3425,6 +3478,7 @@ def list_channels():
 @app.route('/channels', methods=['POST'])
 @rate_limit(max_requests=10, window_seconds=300)
 @require_login
+@require_csrf
 def create_channel():
     me = session['username']
     data = request.get_json(force=True, silent=True) or {}
@@ -3451,6 +3505,7 @@ def create_channel():
 @app.route('/channels/<channel_id>/send', methods=['POST'])
 @rate_limit(max_requests=30, window_seconds=120)
 @require_login
+@require_csrf
 def send_channel_message(channel_id):
     me = session['username']
     data = request.get_json(force=True, silent=True) or {}
@@ -3508,6 +3563,7 @@ def get_channel_messages(channel_id):
 @app.route('/channels/<channel_id>/subscribe', methods=['POST'])
 @rate_limit(max_requests=20, window_seconds=120)
 @require_login
+@require_csrf
 def subscribe_channel(channel_id):
     me = session['username']
     channels = load_json(CHANNELS_FILE, [])
@@ -3523,6 +3579,7 @@ def subscribe_channel(channel_id):
 @app.route('/channels/<channel_id>/unsubscribe', methods=['POST'])
 @rate_limit(max_requests=20, window_seconds=120)
 @require_login
+@require_csrf
 def unsubscribe_channel(channel_id):
     me = session['username']
     channels = load_json(CHANNELS_FILE, [])
@@ -3570,6 +3627,7 @@ def resolve_invite(token):
 @app.route('/invite/<token>/join', methods=['POST'])
 @rate_limit(max_requests=10, window_seconds=60)
 @require_login
+@require_csrf
 def join_via_invite(token):
     me = session['username']
     links = load_json(INVITE_LINKS_FILE, {})
@@ -3592,6 +3650,7 @@ def join_via_invite(token):
 @app.route('/settings/mute', methods=['POST'])
 @rate_limit(max_requests=20, window_seconds=120)
 @require_login
+@require_csrf
 def toggle_mute_chat():
     me = session['username']
     data = request.get_json(force=True, silent=True) or {}
@@ -3743,6 +3802,7 @@ def admin_dashboard_data():
 @app.route('/translate', methods=['POST'])
 @rate_limit(max_requests=30, window_seconds=60)
 @require_login
+@require_csrf
 def translate_message():
     data = request.get_json(force=True, silent=True) or {}
     text = sanitize_input(data.get('text', ''), 5000)
@@ -3817,6 +3877,7 @@ def get_contacts():
 @app.route('/contacts', methods=['POST'])
 @rate_limit(max_requests=20, window_seconds=120)
 @require_login
+@require_csrf
 def add_contact():
     me = session['username']
     data = request.get_json(force=True, silent=True) or {}
@@ -3839,6 +3900,7 @@ def add_contact():
 @app.route('/contacts/<username>', methods=['DELETE'])
 @rate_limit(max_requests=20, window_seconds=120)
 @require_login
+@require_csrf
 def remove_contact(username):
     me = session['username']
     contacts = load_json(CONTACTS_FILE, {})
@@ -3868,6 +3930,7 @@ def update_contact(username):
 @app.route('/contacts/sync', methods=['POST'])
 @rate_limit(max_requests=20, window_seconds=120)
 @require_login
+@require_csrf
 def sync_contacts():
     me = session['username']
     data = request.get_json(force=True, silent=True) or {}
@@ -3891,6 +3954,7 @@ LIVE_LOCATION_FILE = DATA_DIR / 'live_locations.json'
 @app.route('/location/live', methods=['POST'])
 @rate_limit(max_requests=30, window_seconds=120)
 @require_login
+@require_csrf
 def start_live_location():
     me = session['username']
     data = request.get_json(force=True, silent=True) or {}
@@ -3960,6 +4024,7 @@ def get_live_location(share_id):
 @app.route('/location/live/<share_id>', methods=['DELETE'])
 @rate_limit(max_requests=20, window_seconds=120)
 @require_login
+@require_csrf
 def stop_live_location(share_id):
     me = session['username']
     live = load_json(LIVE_LOCATION_FILE, {})
@@ -4007,6 +4072,7 @@ def get_stories():
 @app.route('/stories', methods=['POST'])
 @rate_limit(max_requests=20, window_seconds=120)
 @require_login
+@require_csrf
 def create_story():
     me = session['username']
     data = request.get_json(force=True, silent=True) or {}
@@ -4045,6 +4111,7 @@ def create_story():
 @app.route('/stories/<story_id>/view', methods=['POST'])
 @rate_limit(max_requests=60, window_seconds=60)
 @require_login
+@require_csrf
 def view_story(story_id):
     me = session['username']
     stories = load_json(STORIES_FILE, {})
@@ -4061,6 +4128,7 @@ def view_story(story_id):
 @app.route('/stories/<story_id>', methods=['DELETE'])
 @rate_limit(max_requests=20, window_seconds=120)
 @require_login
+@require_csrf
 def delete_story(story_id):
     me = session['username']
     stories = load_json(STORIES_FILE, {})
@@ -4087,6 +4155,7 @@ def get_blocked():
 @app.route('/block/<username>', methods=['POST'])
 @rate_limit(max_requests=20, window_seconds=120)
 @require_login
+@require_csrf
 def block_user(username):
     me = session['username']
     if username == me:
@@ -4101,6 +4170,7 @@ def block_user(username):
 @app.route('/block/<username>', methods=['DELETE'])
 @rate_limit(max_requests=20, window_seconds=120)
 @require_login
+@require_csrf
 def unblock_user(username):
     me = session['username']
     blocked = load_json(BLOCKED_FILE, {})

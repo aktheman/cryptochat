@@ -22,6 +22,7 @@ from db import _get_conn, invalidate_cache
 def client():
     app.config['TESTING'] = True
     app.config['SESSION_COOKIE_SECURE'] = False
+    app.config['CSRF_ENABLED'] = False
     with app.test_client() as client:
         yield client
 
@@ -741,3 +742,170 @@ class TestLastMessages:
     def test_last_messages_unauthenticated(self, client):
         r = client.get('/last-messages')
         assert r.status_code == 401
+
+
+class TestGroupMembership:
+    def _create_group(self, client, name='g', members=None):
+        r = client.post('/groups', json={'name': name, 'members': members or []})
+        return r.get_json()['group']['id']
+
+    def test_non_member_cannot_read_group_messages(self, client):
+        _register(client, 'alice')
+        group_id = self._create_group(client, 'secret', ['alice'])
+        client.post(f'/groups/{group_id}/send', json={'ciphertext': 'hello', 'type': 'text'})
+        client2 = _new_client()
+        _register(client2, 'eve')
+        r = client2.get(f'/groups/{group_id}/messages')
+        assert r.status_code == 403
+
+    def test_member_can_read_group_messages(self, client):
+        _register(client, 'alice')
+        group_id = self._create_group(client, 'chat', ['alice', 'bob'])
+        client.post(f'/groups/{group_id}/send', json={'ciphertext': 'hello', 'type': 'text'})
+        r = client.get(f'/groups/{group_id}/messages')
+        assert r.status_code == 200
+        assert len(r.get_json()['messages']) == 1
+
+
+class TestDeleteGroupPermissions:
+    def _create_group(self, client, name='g', members=None):
+        r = client.post('/groups', json={'name': name, 'members': members or []})
+        return r.get_json()['group']['id']
+
+    def test_member_cannot_delete_group(self, client):
+        _register(client, 'alice')
+        group_id = self._create_group(client, 'g', ['alice'])
+        client2 = _new_client()
+        _register(client2, 'bob')
+        client.post(f'/groups/{group_id}/members', json={'username': 'bob'})
+        r = client2.delete(f'/groups/{group_id}')
+        assert r.status_code == 403
+
+    def test_creator_can_delete_group(self, client):
+        _register(client, 'alice')
+        group_id = self._create_group(client, 'g', ['alice'])
+        r = client.delete(f'/groups/{group_id}')
+        assert r.status_code == 200
+
+
+class TestPinAuthorization:
+    def _create_group(self, client, name='g', members=None):
+        r = client.post('/groups', json={'name': name, 'members': members or []})
+        return r.get_json()['group']['id']
+
+    def test_non_member_cannot_pin_in_group(self, client):
+        _register(client, 'alice')
+        group_id = self._create_group(client, 'g', ['alice'])
+        client.post(f'/groups/{group_id}/send', json={'ciphertext': 'hi', 'type': 'text'})
+        msgs = client.get(f'/groups/{group_id}/messages').get_json()['messages']
+        msg_id = msgs[0]['id']
+        client2 = _new_client()
+        _register(client2, 'eve')
+        r = client2.post(f'/pins/group/{group_id}/{msg_id}')
+        assert r.status_code == 403
+
+    def test_member_can_pin_in_group(self, client):
+        _register(client, 'alice')
+        group_id = self._create_group(client, 'g', ['alice'])
+        client.post(f'/groups/{group_id}/send', json={'ciphertext': 'hi', 'type': 'text'})
+        msgs = client.get(f'/groups/{group_id}/messages').get_json()['messages']
+        msg_id = msgs[0]['id']
+        r = client.post(f'/pins/group/{group_id}/{msg_id}')
+        assert r.status_code == 200
+
+
+class TestAvatarAuth:
+    def test_unauthenticated_cannot_get_avatar(self, client):
+        _register(client, 'alice')
+        client.post('/profile', json={'displayName': 'Alice', 'avatar': 'data:image/png;base64,abc'})
+        client2 = _new_client()
+        r = client2.get('/profile/avatar/alice')
+        assert r.status_code == 401
+
+    def test_authenticated_can_get_avatar(self, client):
+        _register(client, 'alice')
+        client.post('/profile', json={'displayName': 'Alice', 'avatar': 'data:image/png;base64,abc'})
+        r = client.get('/profile/avatar/alice')
+        assert r.status_code == 200
+
+
+class TestLiveLocationOwnership:
+    def test_non_owner_cannot_read_live_location(self, client):
+        _register(client, 'alice')
+        r = client.post('/location/live', json={'lat': 60.0, 'lng': 10.0, 'target': 'bob', 'targetType': 'user', 'duration': 60})
+        share_id = r.get_json().get('shareId')
+        client2 = _new_client()
+        _register(client2, 'eve')
+        r = client2.get(f'/location/live/{share_id}')
+        assert r.status_code == 403
+
+    def test_owner_can_read_live_location(self, client):
+        _register(client, 'alice')
+        r = client.post('/location/live', json={'lat': 60.0, 'lng': 10.0, 'target': 'bob', 'targetType': 'user', 'duration': 60})
+        share_id = r.get_json().get('shareId')
+        r = client.get(f'/location/live/{share_id}')
+        assert r.status_code == 200
+
+
+class TestExportChatGroups:
+    def test_export_group_chat_uses_group_id(self, client):
+        _register(client, 'alice')
+        r = client.post('/groups', json={'name': 'g', 'members': ['alice']})
+        group_id = r.get_json()['group']['id']
+        client.post(f'/groups/{group_id}/send', json={'ciphertext': 'hello world', 'type': 'text'})
+        r = client.get(f'/export/group/{group_id}')
+        assert r.status_code == 200
+        assert 'text/plain' in r.content_type
+        assert b'hello world' in r.data
+
+
+class TestSendLocationValidation:
+    def test_send_location_invalid_coords(self, client):
+        _register(client, 'alice')
+        _register(client, 'bob')
+        r = client.post('/send/location', json={'recipient': 'bob', 'lat': 'not_a_number', 'lng': 10.0})
+        assert r.status_code == 400
+
+    def test_send_location_valid_coords(self, client):
+        _register(client, 'alice')
+        _register(client, 'bob')
+        r = client.post('/send/location', json={'recipient': 'bob', 'lat': 60.5, 'lng': 10.5})
+        assert r.status_code == 200
+
+
+class TestCsrfProtection:
+    def test_csrf_blocks_mutation_without_origin(self, client):
+        app.config['CSRF_ENABLED'] = True
+        app.config['CSRF_TRUSTED_ORIGINS'] = ['http://localhost:5000']
+        try:
+            _register(client, 'alice')
+            _login(client, 'alice')
+            r = client.post('/send', json={'recipient': 'bob', 'ciphertext': 'hi', 'type': 'text'}, headers={'Origin': 'http://evil.example'})
+            assert r.status_code == 400
+        finally:
+            app.config['CSRF_ENABLED'] = False
+            app.config['CSRF_TRUSTED_ORIGINS'] = []
+
+    def test_csrf_allows_trusted_origin(self, client):
+        app.config['CSRF_ENABLED'] = True
+        app.config['CSRF_TRUSTED_ORIGINS'] = ['http://localhost:5000']
+        try:
+            _register(client, 'alice')
+            _login(client, 'alice')
+            r = client.post('/send', json={'recipient': 'bob', 'ciphertext': 'hi', 'type': 'text'}, headers={'Origin': 'http://localhost:5000'})
+            assert r.status_code == 200
+        finally:
+            app.config['CSRF_ENABLED'] = False
+            app.config['CSRF_TRUSTED_ORIGINS'] = []
+
+    def test_csrf_allows_no_origin(self, client):
+        app.config['CSRF_ENABLED'] = True
+        app.config['CSRF_TRUSTED_ORIGINS'] = ['http://localhost:5000']
+        try:
+            _register(client, 'alice')
+            _login(client, 'alice')
+            r = client.post('/send', json={'recipient': 'bob', 'ciphertext': 'hi', 'type': 'text'})
+            assert r.status_code == 200
+        finally:
+            app.config['CSRF_ENABLED'] = False
+            app.config['CSRF_TRUSTED_ORIGINS'] = []
