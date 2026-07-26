@@ -569,7 +569,9 @@
       app.innerHTML = `
         <header class="header">
           <div class="header-left">
-            <button id="mobileBackBtn" class="btn btn-small btn-ghost" style="display:none" aria-label="Tilbake">←</button>
+            <button id="mobileBackBtn" class="back-btn" style="display:none" aria-label="Tilbake">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+            </button>
             <h1 class="brand">CryptoChat</h1>
             <button id="logoutBtn" class="btn btn-small btn-ghost">Logg ut</button>
           </div>
@@ -610,9 +612,18 @@
           </aside>
           <main class="chat-main" role="main">
             <header class="chat-header" role="banner">
-              <div>
+              <div class="chat-title-wrap">
+                <button id="chatBackBtn" class="back-btn" aria-label="Tilbake" style="display:none">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+                </button>
                 <div id="chatTitle" class="chat-title" aria-live="polite">Velg en samtale</div>
                 <div id="chatMeta" class="chat-meta" aria-live="polite"></div>
+              </div>
+              <div id="selectionToolbar" class="selection-toolbar" style="display:none">
+                <button id="selDeleteBtn" class="btn btn-small btn-ghost" title="Slett valgte">🗑️</button>
+                <button id="selForwardBtn" class="btn btn-small btn-ghost" title="Videresend">↪</button>
+                <button id="selCancelBtn" class="btn btn-small btn-ghost" title="Avbryt">✕</button>
+                <span id="selCount" class="sel-count"></span>
               </div>
               <div class="chat-actions">
                 <input id="searchPartner" class="input-text" placeholder="Kontakt for soek" autocomplete="off" aria-label="Soek paa kontakt" />
@@ -752,6 +763,8 @@
       let _notificationAudio = null;
       window.__lastSeenTimes = {};
       let currentFolder = 'all';
+      const selectedMessages = new Set();
+      let selectionMode = false;
       let pinnedChats = [];
       let mutedChats = [];
       let channels = [];
@@ -1029,9 +1042,12 @@
       function setMobileChat(open) {
         document.body.classList.toggle('chat-open', !!open);
         const backBtn = document.getElementById('mobileBackBtn');
+        const chatBackBtn = document.getElementById('chatBackBtn');
         if (backBtn) backBtn.style.display = open ? '' : 'none';
+        if (chatBackBtn) chatBackBtn.style.display = open ? 'flex' : 'none';
         if (!open) {
           document.querySelectorAll('.item').forEach(el => el.classList.remove('active'));
+          exitSelectionMode();
         }
       }
 
@@ -1052,6 +1068,42 @@
         document.getElementById('lockBtn').style.display = 'none';
         document.getElementById('lockBtn').textContent = '🔓';
         document.querySelectorAll('.item').forEach(el => el.classList.remove('active'));
+      }
+
+      function toggleMessageSelection(msgEl, msgId) {
+        if (!selectionMode) {
+          selectionMode = true;
+          selectedMessages.clear();
+        }
+        if (selectedMessages.has(msgId)) {
+          selectedMessages.delete(msgId);
+          msgEl.classList.remove('selected');
+        } else {
+          selectedMessages.add(msgId);
+          msgEl.classList.add('selected');
+        }
+        if (selectedMessages.size === 0) exitSelectionMode();
+        else updateSelectionToolbar();
+      }
+
+      function exitSelectionMode() {
+        selectionMode = false;
+        selectedMessages.clear();
+        document.querySelectorAll('.msg.selected').forEach(el => el.classList.remove('selected'));
+        const toolbar = document.getElementById('selectionToolbar');
+        if (toolbar) toolbar.style.display = 'none';
+        const chatActions = document.querySelector('.chat-actions');
+        if (chatActions) chatActions.style.display = '';
+      }
+
+      function updateSelectionToolbar() {
+        const toolbar = document.getElementById('selectionToolbar');
+        const chatActions = document.querySelector('.chat-actions');
+        const count = document.getElementById('selCount');
+        if (!toolbar) return;
+        toolbar.style.display = 'flex';
+        if (chatActions) chatActions.style.display = 'none';
+        if (count) count.textContent = selectedMessages.size + ' valgt';
       }
 
       async function showUnlockModal() {
@@ -1121,7 +1173,7 @@
           const key = window.__allUsers?.find ? window.__allUsers.find(x => (x && x.username) === name) : undefined;
           const hasKey = (typeof key === 'object' && key && key.identity_public_key);
           const lockIcon = hasKey ? '<span class="e2ee" title="E2EE">🔒</span>' : '';
-          item.innerHTML = '<div class="avatar-wrap">' + avatarHtml(name) + (presence[name] ? '<div class="presence"></div>' : '') + '</div><div style="flex:1;min-width:0;"><div class="name">' + escapeHtml(displayName) + lockIcon + verifyIcon + pinIcon + '</div><div class="preview-row"><div class="preview">' + escapeHtml(preview) + lastSeenText + '</div>' + (msgTime ? '<span class="preview-time">' + escapeHtml(msgTime) + '</span>' : '') + '</div></div>' + badge;
+          item.innerHTML = '<div class="avatar-wrap">' + avatarHtml(name) + (presence[name] ? '<div class="presence"></div>' : '') + '</div><div class="item-info"><div class="item-top"><span class="name">' + escapeHtml(displayName) + lockIcon + verifyIcon + pinIcon + '</span>' + (msgTime ? '<span class="preview-time">' + escapeHtml(msgTime) + '</span>' : '') + '</div><div class="preview">' + escapeHtml(preview) + lastSeenText + '</div></div>' + badge;
           item.addEventListener('click', () => { activateItem(usersList, item); openChat(name); });
           usersList.appendChild(item);
         });
@@ -1139,7 +1191,7 @@
           const hasKey = !!(g && g.encryptedKey);
           const lockIcon = hasKey ? '<span class="e2ee" title="E2EE">🔒</span>' : '';
           const inviteIcon = g.invite_token ? '<span class="e2ee" title="Invitasjon aktiv">🔗</span>' : '';
-          item.innerHTML = '<div class="avatar-wrap">' + avatarHtml(g.name) + '</div><div style="flex:1;min-width:0;"><div class="name">' + escapeHtml(g.name) + lockIcon + inviteIcon + '</div><div class="preview-row"><div class="preview">' + escapeHtml(preview || ((g.members || []).length + ' medlemmer')) + '</div>' + (groupMsgTime ? '<span class="preview-time">' + escapeHtml(groupMsgTime) + '</span>' : '') + '</div></div><button class="btn btn-small btn-ghost delete-group" data-id="' + escapeHtml(g.id) + '">Slett</button>';
+          item.innerHTML = '<div class="avatar-wrap">' + avatarHtml(g.name) + '</div><div class="item-info"><div class="item-top"><span class="name">' + escapeHtml(g.name) + lockIcon + inviteIcon + '</span>' + (groupMsgTime ? '<span class="preview-time">' + escapeHtml(groupMsgTime) + '</span>' : '') + '</div><div class="preview">' + escapeHtml(preview || ((g.members || []).length + ' medlemmer')) + '</div></div><button class="btn btn-small btn-ghost delete-group" data-id="' + escapeHtml(g.id) + '">Slett</button>';
           item.addEventListener('click', (e) => { if (e.target.closest('.delete-group')) return; activateItem(groupsList, item); openGroup(g.id); });
           const del = item.querySelector('.delete-group');
           if (del) del.addEventListener('click', async () => { await deleteGroup(g.id); });
@@ -1914,8 +1966,9 @@
           item.classList.add('touching');
           _longPressTimer = setTimeout(() => {
             item.classList.remove('touching');
-            const touch = e.touches[0];
-            showQuickActions(item, touch.clientX, touch.clientY);
+            if (message.id) {
+              toggleMessageSelection(item, message.id);
+            }
           }, 500);
         });
         item.addEventListener('touchend', () => { item.classList.remove('touching'); clearTimeout(_longPressTimer); });
@@ -4900,6 +4953,26 @@
       if (document.getElementById('mobileBackBtn')) {
         document.getElementById('mobileBackBtn').addEventListener('click', () => closeChat());
       }
+      if (document.getElementById('chatBackBtn')) {
+        document.getElementById('chatBackBtn').addEventListener('click', () => closeChat());
+      }
+      const selCancelBtn = document.getElementById('selCancelBtn');
+      if (selCancelBtn) selCancelBtn.addEventListener('click', () => exitSelectionMode());
+      const selDeleteBtn = document.getElementById('selDeleteBtn');
+      if (selDeleteBtn) selDeleteBtn.addEventListener('click', async () => {
+        const ids = [...selectedMessages];
+        if (!ids.length) return;
+        if (!confirm('Slett ' + ids.length + ' melding(er)?')) return;
+        for (const id of ids) { await deleteMessage(id); }
+        exitSelectionMode();
+      });
+      const selForwardBtn = document.getElementById('selForwardBtn');
+      if (selForwardBtn) selForwardBtn.addEventListener('click', () => {
+        const ids = [...selectedMessages];
+        if (!ids.length) return;
+        forwardMsg(ids[0]);
+        exitSelectionMode();
+      });
     } catch (e) {
       document.getElementById('app').innerHTML = '<pre style="color:#ff8888;background:#0f1424;padding:16px;">' + escapeHtml(e.stack || e.message) + '</pre>';
     }

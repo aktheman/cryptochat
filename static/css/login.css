@@ -1,18 +1,18 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --bg: #09090b;
+  --bg: #0f1826;
   --card: rgba(255,255,255,0.03);
   --card-border: rgba(255,255,255,0.06);
-  --input-bg: rgba(255,255,255,0.04);
-  --input-border: rgba(255,255,255,0.08);
-  --input-focus: #8b5cf6;
-  --accent: #8b5cf6;
-  --accent-dark: #7c3aed;
-  --accent-glow: rgba(139,92,246,0.15);
+  --input-bg: #1a2538;
+  --input-border: #2b3a50;
+  --input-focus: #5b8def;
+  --accent: #5b8def;
+  --accent-dark: #4a7ad4;
+  --accent-glow: rgba(91,141,239,0.15);
   --text: #fafafa;
-  --text-secondary: #a1a1aa;
-  --text-muted: #52525b;
+  --text-secondary: #9ca3c7;
+  --text-muted: #5e6687;
   --error: #ef4444;
   --error-bg: rgba(239,68,68,0.08);
   --success: #22c55e;
@@ -53,7 +53,7 @@ body {
 
 .ambient-orb.a {
   width: 600px; height: 600px;
-  background: #7c3aed;
+  background: #2b5278;
   top: -250px; right: -150px;
   opacity: 0.12;
   animation: drift 25s ease-in-out infinite;
@@ -61,7 +61,7 @@ body {
 
 .ambient-orb.b {
   width: 500px; height: 500px;
-  background: #3b82f6;
+  background: #5b8def;
   bottom: -200px; left: -100px;
   opacity: 0.08;
   animation: drift 20s ease-in-out infinite reverse;
@@ -69,7 +69,7 @@ body {
 
 .ambient-orb.c {
   width: 300px; height: 300px;
-  background: #8b5cf6;
+  background: #4a7ad4;
   top: 50%; left: 50%;
   transform: translate(-50%, -50%);
   opacity: 0.05;
@@ -102,7 +102,7 @@ body {
   width: 64px;
   height: 64px;
   margin: 0 auto 20px;
-  background: linear-gradient(135deg, #8b5cf6, #6366f1);
+  background: linear-gradient(135deg, #5b8def, #2b5278);
   border-radius: 18px;
   display: flex;
   align-items: center;
@@ -110,7 +110,7 @@ body {
   font-size: 30px;
   box-shadow:
     0 0 0 1px rgba(255,255,255,0.1),
-    0 8px 40px rgba(139,92,246,0.25),
+    0 8px 40px rgba(91,141,239,0.25),
     inset 0 1px 0 rgba(255,255,255,0.15);
   transition: transform 0.3s ease, box-shadow 0.3s ease;
 }
@@ -183,7 +183,7 @@ body {
 }
 
 .tab.active {
-  background: rgba(255,255,255,0.06);
+  background: rgba(91,141,239,0.12);
   color: var(--text);
   box-shadow: 0 1px 3px rgba(0,0,0,0.2);
 }
@@ -232,7 +232,7 @@ body {
 
 .field input:focus {
   border-color: var(--input-focus);
-  box-shadow: 0 0 0 3px var(--accent-glow), 0 0 20px rgba(139,92,246,0.08);
+  box-shadow: 0 0 0 3px var(--accent-glow), 0 0 20px rgba(91,141,239,0.08);
   background: rgba(255,255,255,0.05);
 }
 
@@ -263,20 +263,20 @@ body {
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, #8b5cf6, #6366f1);
+  background: linear-gradient(135deg, #5b8def, #2b5278);
   color: #fff;
-  box-shadow: 0 2px 12px rgba(139,92,246,0.25), inset 0 1px 0 rgba(255,255,255,0.15);
+  box-shadow: 0 2px 12px rgba(91,141,239,0.25), inset 0 1px 0 rgba(255,255,255,0.15);
   margin-top: 4px;
 }
 
 .btn-primary:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 20px rgba(139,92,246,0.35), inset 0 1px 0 rgba(255,255,255,0.15);
+  box-shadow: 0 4px 20px rgba(91,141,239,0.35), inset 0 1px 0 rgba(255,255,255,0.15);
 }
 
 .btn-primary:active {
   transform: translateY(0);
-  box-shadow: 0 1px 8px rgba(139,92,246,0.2);
+  box-shadow: 0 1px 8px rgba(91,141,239,0.2);
 }
 
 .btn-primary:disabled {
@@ -308,7 +308,7 @@ body {
 }
 
 .link-btn:hover {
-  color: #a78bfa;
+  color: #7ba3f0;
 }
 
 /* ── Feedback ── */
@@ -403,7 +403,7 @@ body {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--accent);
+  background: #5b8def;
   opacity: 0.5;
   flex-shrink: 0;
 }
