@@ -394,19 +394,8 @@
         });
       }
 
-      function arrayBufferToBase64(buffer) {
-        const bytes = new Uint8Array(buffer);
-        let binary = '';
-        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-        return btoa(binary);
-      }
-
-      function base64ToArrayBuffer(base64) {
-        const binary = atob(base64);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-        return bytes.buffer;
-      }
+      const arrayBufferToBase64 = (buf) => window.__CRYPTO__.arrayBufferToBase64(buf);
+      const base64ToArrayBuffer = (b64) => window.__CRYPTO__.base64ToArrayBuffer(b64);
 
   async function ensureIdentity() {
     try {
@@ -727,7 +716,7 @@
 
       let activeChat = null;
       let replyingTo = null;
-      let interval = null;
+
       let userScrolledUp = false;
       let lastMessages = {};
       let groupLastMessages = {};
@@ -2098,6 +2087,7 @@
             if (activeChat.type === 'channel') {
               const url = '/channels/' + encodeURIComponent(activeChat.target) + '/send';
               const body = { ciphertext: text, type: 'text' };
+              if (silentMode) body.silent = true;
               if (replyingTo) body.reply_to = replyingTo.id;
               await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
               const messagesBox = document.getElementById('messages');
@@ -2112,6 +2102,7 @@
             } else if (activeChat.type === 'user' || activeChat.type === 'group') {
               const url = activeChat.type === 'group' ? '/groups/' + encodeURIComponent(activeChat.target) + '/send' : '/send';
               const body = { ciphertext: text };
+              if (silentMode) body.silent = true;
               if (activeChat.type === 'user') {
                 const ciphertext = await encryptForPeer(text, activeChat.peerPublicKey);
                 body.ciphertext = ciphertext;
@@ -2318,9 +2309,14 @@
         form.append('file', blob, filename);
         if (activeChat.type === 'user') form.append('recipient', activeChat.target); else form.append('groupId', activeChat.target);
         try {
-          const url = activeChat.type === 'group' ? '/groups/' + encodeURIComponent(activeChat.target) + '/send' : '/upload';
           if (activeChat.type === 'group') {
-            await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ciphertext: filename, type: 'voice', filename }) });
+            const uploadForm = new FormData();
+            uploadForm.append('file', blob, filename);
+            uploadForm.append('groupId', activeChat.target);
+            const uploadRes = await fetch('/upload', { method: 'POST', body: uploadForm });
+            const uploadData = await uploadRes.json();
+            const uploadedFilename = uploadData.filename || filename;
+            await fetch('/groups/' + encodeURIComponent(activeChat.target) + '/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ciphertext: uploadedFilename, type: 'voice', filename: uploadedFilename }) });
           } else {
             await fetch('/upload', { method: 'POST', body: form });
           }
@@ -2575,7 +2571,8 @@
           if (picker.classList.contains('open')) { renderEmojiGrid(); searchInput.focus(); }
         });
 
-        searchInput.addEventListener('input', () => renderEmojiGrid(searchInput.value.trim()));
+        let _emojiSearchTimer = null;
+        searchInput.addEventListener('input', () => { clearTimeout(_emojiSearchTimer); _emojiSearchTimer = setTimeout(() => renderEmojiGrid(searchInput.value.trim()), 150); });
         document.addEventListener('click', (e) => { if (!picker.contains(e.target) && e.target !== toggleBtn) picker.classList.remove('open'); });
       }
 
@@ -3205,9 +3202,12 @@
         const preset = THEME_PRESETS[themeName];
         if (!preset) return;
         document.body.classList.remove('theme-light');
-        Object.keys(THEME_PRESETS.dark.vars).forEach(prop => {
-          document.body.style.removeProperty(prop);
-        });
+        const propsToClear = [];
+        for (let i = 0; i < document.body.style.length; i++) {
+          const prop = document.body.style[i];
+          if (prop.startsWith('--c-')) propsToClear.push(prop);
+        }
+        propsToClear.forEach(prop => document.body.style.removeProperty(prop));
         Object.entries(preset.vars).forEach(([prop, value]) => {
           document.body.style.setProperty(prop, value);
         });
@@ -3431,10 +3431,17 @@
       } catch {}
       document.getElementById('adminBtn').addEventListener('click', () => { window.open('/admin/pages', '_blank'); });
 
-      interval = setInterval(() => {
+      const _pollFast = setInterval(() => {
         if (activeChat?.type === 'user') loadChat(activeChat.target);
         if (activeChat?.type === 'group') loadGroup(activeChat.target);
         checkTypingIndicator().catch(() => {});
+      }, 2500);
+      const _pollMedium = setInterval(() => {
+        loadUnreadCounts().catch(() => {});
+        updatePresence().catch(() => {});
+        checkIncomingCalls().catch(() => {});
+      }, 5000);
+      const _pollSlow = setInterval(() => {
         loadJSON('/users/all').then(data => {
           (data.users || []).forEach(u => { if (u && u.username) userProfiles[u.username] = u; });
           users.length = 0;
@@ -3447,16 +3454,13 @@
           fetchVerificationStatus(activeChat.target).then(() => updateVerifyButton()).catch(() => {});
         }
         loadJSON('/groups').then(data => { groups.length = 0; groups.push(...(data.groups || [])); renderGroups(); }).catch(() => {});
-        updatePresence().catch(() => {});
-        checkIncomingCalls().catch(() => {});
-        loadUnreadCounts().catch(() => {});
         loadJSON('/last-messages').then(data => {
           if (data.users) Object.assign(lastMessages, data.users);
           if (data.groups) Object.assign(groupLastMessages, data.groups);
           renderUsers();
           renderGroups();
         }).catch(() => {});
-      }, 2500);
+      }, 15000);
 
       window.addEventListener('beforeunload', () => { if (currentCall) hangUp(); });
 
@@ -4081,29 +4085,7 @@
         }
       });
 
-      // Patch sendMessage to include silent flag
-      const _origSendMsg = sendMessage;
-      sendMessage = async function() {
-        const origSilent = silentMode;
-        const _origFetch = window.fetch;
-        if (origSilent) {
-          window.fetch = function(...args) {
-            if (typeof args[0] === 'string' && args[0].includes('/send') && args[1]?.body) {
-              try {
-                const body = JSON.parse(args[1].body);
-                body.silent = true;
-                args[1].body = JSON.stringify(body);
-              } catch (e) {}
-            }
-            return _origFetch.apply(this, args);
-          };
-        }
-        try {
-          await _origSendMsg();
-        } finally {
-          if (origSilent) window.fetch = _origFetch;
-        }
-      };
+      // (silent flag now injected directly in sendMessage body)
 
       // ── Show location messages on map ──
       function renderLocationHtml(locData) {
@@ -4790,8 +4772,7 @@
       // CLICKABLE LINKS IN MESSAGES
       // ──────────────────────────────────────────────
       function linkifyText(text) {
-        const escaped = escapeHtml(text);
-        return escaped.replace(
+        return text.replace(
           /(https?:\/\/[^\s<]+)/g,
           (match) => '<a href="' + match.replace(/"/g, '%22') + '" target="_blank" rel="noopener noreferrer" style="color:#7a3bff;text-decoration:underline;word-break:break-all;">' + match + '</a>'
         );

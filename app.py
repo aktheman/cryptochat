@@ -1,6 +1,7 @@
 import os, json, base64, secrets, hashlib, hmac, time, re, threading
+import hmac as _hmac_mod
 import ipaddress
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from functools import wraps
 from urllib.parse import urlparse
@@ -11,7 +12,6 @@ from flask import (
 )
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
-from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import x25519
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -150,12 +150,13 @@ ARCHIVE_FILE = DATA_DIR / 'archive.json'
 CONTACTS_FILE = DATA_DIR / 'contacts.json'
 STORIES_FILE = DATA_DIR / 'stories.json'
 SLOWMODE_FILE = DATA_DIR / 'slowmode.json'
+REPORTS_FILE = DATA_DIR / 'reports.json'
 
 # ──────────────────────────────────────────────
 # Helpers
 # ──────────────────────────────────────────────
 def now_iso():
-    return datetime.utcnow().isoformat() + 'Z'
+    return datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
 
 def fpair(a, b):
     return tuple(sorted([a, b]))
@@ -483,8 +484,12 @@ def require_csrf(f):
         if request.method in ('POST', 'PUT', 'PATCH', 'DELETE'):
             if not app.config.get('CSRF_ENABLED', False):
                 return f(*args, **kwargs)
+            token = request.headers.get('X-CSRF-Token') or (request.get_json(force=True, silent=True) or {}).get('_csrf_token')
             origin = request.headers.get('Origin') or request.headers.get('Referer', '')
-            if origin:
+            if token:
+                if not hmac.compare_digest(token, session.get('csrf_token', '')):
+                    return jsonify({'success': False, 'message': 'Ugyldig CSRF-token.'}), 400
+            elif origin:
                 allowed = app.config.get('CSRF_TRUSTED_ORIGINS', [])
                 if allowed and not any(origin.startswith(o.rstrip('/')) for o in allowed):
                     return jsonify({'success': False, 'message': 'Ugyldig forespørselskilde.'}), 400
@@ -532,7 +537,7 @@ def verify_recovery_code(code_input, stored_hashes):
     code_formatted = f"{code[:4]}-{code[4:8]}"
     code_hash = hashlib.sha256(code_formatted.encode()).hexdigest()
     for i, h in enumerate(stored_hashes):
-        if h == code_hash:
+        if _hmac_mod.compare_digest(code_hash, h):
             return True, i
     return False, -1
 
@@ -571,6 +576,7 @@ def register():
     }
     save_json(USERS_FILE, users)
     session['username'] = username
+    session['csrf_token'] = secrets.token_hex(32)
     session_id = secrets.token_hex(16)
     session['session_token'] = session_id
     audit('registered', actor=username, target=username)
@@ -610,6 +616,7 @@ def login():
             audit('login_failed', actor=username, target=username, meta='bad_2fa')
             return jsonify({'success': False, 'message': 'Ugyldig 2FA-kode.'}), 401
     session['username'] = username
+    session['csrf_token'] = secrets.token_hex(32)
     session_id = secrets.token_hex(16)
     session['session_token'] = session_id
     sessions = load_json(SESSIONS_FILE, {})
@@ -671,12 +678,19 @@ def revoke_session(session_id):
 
 @app.route('/auth/2fa/enable', methods=['POST'])
 @rate_limit(max_requests=5, window_seconds=600)
+@require_login
 @require_csrf
 def enable_2fa():
     username = session.get('username')
-    if not username:
-        return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    totp_code = (data.get('code') or '').strip()
     secret = pyotp.random_base32()
+    if totp_code:
+        totp = pyotp.TOTP(secret)
+        if not totp.verify(totp_code, valid_window=1):
+            return jsonify({'success': False, 'message': 'Ugyldig kode. Skann QR-koden først og prøv igjen.'}), 400
+    else:
+        secret = pyotp.random_base32()
     totp = pyotp.TOTP(secret)
     uri = totp.provisioning_uri(name=username, issuer_name='CryptoChat')
     users = load_json(USERS_FILE, {})
@@ -688,11 +702,10 @@ def enable_2fa():
 
 @app.route('/auth/2fa/disable', methods=['POST'])
 @rate_limit(max_requests=5, window_seconds=600)
+@require_login
 @require_csrf
 def disable_2fa():
     username = session.get('username')
-    if not username:
-        return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
     users = load_json(USERS_FILE, {})
     users[username]['twofa_enabled'] = False
     users[username]['twofa_secret_hash'] = None
@@ -746,7 +759,7 @@ def session_pin():
     if not user:
         return jsonify({'success': False, 'message': 'Bruker ikke funnet.'}), 404
     expected = user.get('session_pin')
-    if expected and expected == hashlib.sha256(pin.encode()).hexdigest()[:16]:
+    if expected and _hmac_mod.compare_digest(hashlib.sha256(pin.encode()).hexdigest()[:32], expected[:32]):
         session['unlocked'] = True
         return jsonify({'success': True})
     return jsonify({'success': False, 'message': 'Feil PIN.'}), 401
@@ -792,40 +805,38 @@ def presence_batch():
 # ──────────────────────────────────────────────
 @app.route('/key/publish', methods=['POST'])
 @rate_limit(max_requests=20, window_seconds=120)
+@require_login
 @require_csrf
 def publish_public_key():
-    if 'username' not in session:
-        return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
+    username = session['username']
     data = request.get_json(force=True, silent=True) or {}
     public_key = (data.get('publicKeyPem') or '').strip()
     if not public_key:
         return jsonify({'success': False, 'message': 'Manglende offentlig nøkkel.'}), 400
     users = load_json(USERS_FILE, {})
-    if session['username'] in users:
-        users[session['username']]['identity_public_key'] = public_key
+    if username in users:
+        users[username]['identity_public_key'] = public_key
         save_json(USERS_FILE, users)
-        audit('key_published', actor=session['username'], target=session['username'])
+        audit('key_published', actor=username, target=username)
     return jsonify({'success': True})
 
 # ──────────────────────────────────────────────
 # Theme & settings
 # ──────────────────────────────────────────────
 @app.route('/theme', methods=['GET'])
+@require_login
 def get_theme():
-    username = session.get('username')
-    if not username:
-        return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
+    username = session['username']
     users = load_json(USERS_FILE, {})
     theme = users.get(username, {}).get('theme', 'dark')
     return jsonify({'success': True, 'theme': theme})
 
 @app.route('/theme', methods=['POST'])
 @rate_limit(max_requests=20, window_seconds=120)
+@require_login
 @require_csrf
 def set_theme():
-    username = session.get('username')
-    if not username:
-        return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
+    username = session['username']
     data = request.get_json(force=True, silent=True) or {}
     theme = data.get('theme', 'dark')
     users = load_json(USERS_FILE, {})
@@ -835,11 +846,10 @@ def set_theme():
 
 @app.route('/settings/notifications', methods=['POST'])
 @rate_limit(max_requests=30, window_seconds=120)
+@require_login
 @require_csrf
 def settings_notifications():
-    username = session.get('username')
-    if not username:
-        return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
+    username = session['username']
     data = request.get_json(force=True, silent=True) or {}
     enabled = convert_to_bool(data.get('enabled', True), True)
     users = load_json(USERS_FILE, {})
@@ -1610,7 +1620,7 @@ def set_profile_pin():
     if not username:
         return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
     users = load_json(USERS_FILE, {})
-    users[username]['session_pin'] = hashlib.sha256(pin.encode()).hexdigest()[:16]
+    users[username]['session_pin'] = hashlib.sha256(pin.encode()).hexdigest()[:32]
     save_json(USERS_FILE, users)
     audit('session_pin_set', actor=username, target=username)
     return jsonify({'success': True})
@@ -1904,9 +1914,15 @@ def admin_ban_user(username):
     users = load_json(USERS_FILE, {})
     if username not in users:
         return jsonify({'success': False, 'message': 'Bruker ikke funnet.'}), 404
+    data = request.get_json(force=True, silent=True) or {}
+    reason = sanitize_input(data.get('reason', ''), 500)
     users[username]['banned'] = True
+    users[username]['banned_reason'] = reason
+    users[username]['banned_at'] = now_iso()
+    users[username]['banned_by'] = admin_user
     save_json(USERS_FILE, users)
     invalidate_all_sessions(username)
+    audit('user_banned', actor=admin_user, target=username, meta=reason)
     return jsonify({'success': True})
 
 @app.route('/admin/users/<username>/unban', methods=['POST'])
@@ -1967,21 +1983,19 @@ def admin_page():
 # Key export/import
 # ──────────────────────────────────────────────
 @app.route('/key/export')
+@require_login
 def export_key():
-    username = session.get('username')
-    if not username:
-        return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
+    username = session['username']
     data = request.args.get('data') or ''
     key = base64.urlsafe_b64encode(base64.b64decode(data)).decode() if data else ''
     return jsonify({'success': True, 'key': key})
 
 @app.route('/key/import', methods=['POST'])
 @rate_limit(max_requests=10, window_seconds=600)
+@require_login
 @require_csrf
 def import_key():
-    username = session.get('username')
-    if not username:
-        return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
+    username = session['username']
     data = request.get_json(force=True, silent=True) or {}
     key = (data.get('key') or '').strip()
     if not key:
@@ -1992,10 +2006,9 @@ def import_key():
     return jsonify({'success': True, 'key': key})
 
 @app.route('/me/key')
+@require_login
 def my_key():
-    username = session.get('username')
-    if not username:
-        return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
+    username = session['username']
     users = load_json(USERS_FILE, {})
     user = users.get(username, {})
     return jsonify({'success': True, 'publicKey': user.get('public_key', ''), 'importedKey': user.get('imported_key', '')})
@@ -2505,6 +2518,10 @@ def export_chat(chat_type, chat_id):
         pk = pair_key(me, chat_id)
         filtered = [m for m in messages if m.get('pair_key') == pk]
     elif chat_type == 'group':
+        groups = load_json(GROUPS_FILE, [])
+        group = next((g for g in groups if g['id'] == chat_id), None)
+        if not group or me not in group.get('members', []):
+            return jsonify({'success': False, 'message': 'Ingen tilgang.'}), 403
         filtered = [m for m in messages if m.get('group_id') == chat_id]
     else:
         return jsonify({'success': False, 'message': 'Ugyldig type.'}), 400
@@ -3912,6 +3929,7 @@ def remove_contact(username):
 @app.route('/contacts/<username>', methods=['PUT'])
 @rate_limit(max_requests=20, window_seconds=120)
 @require_login
+@require_csrf
 def update_contact(username):
     me = session['username']
     data = request.get_json(force=True, silent=True) or {}
@@ -4206,6 +4224,74 @@ def check_blocked(username):
     they_blocked = me in blocked.get(username, [])
     return jsonify({'success': True, 'iBlocked': i_blocked, 'theyBlocked': they_blocked})
 
+# ──────────────────────────────────────────────
+# Message Reporting
+# ──────────────────────────────────────────────
+@app.route('/report', methods=['POST'])
+@rate_limit(max_requests=10, window_seconds=600)
+@require_login
+@require_csrf
+def report_message():
+    me = session['username']
+    data = request.get_json(force=True, silent=True) or {}
+    message_id = (data.get('message_id') or '').strip()
+    reason = sanitize_input(data.get('reason', ''), 500)
+    report_type = sanitize_input(data.get('type', 'other'), 50)
+    if not message_id:
+        return jsonify({'success': False, 'message': 'Manglende meldings-ID.'}), 400
+    messages = load_json(MESSAGES_FILE, [])
+    msg = next((m for m in messages if m.get('id') == message_id), None)
+    if not msg:
+        return jsonify({'success': False, 'message': 'Melding ikke funnet.'}), 404
+    reports = load_json(REPORTS_FILE, [])
+    reports.append({
+        'id': secrets.token_hex(8),
+        'reporter': me,
+        'message_id': message_id,
+        'sender': msg.get('sender', ''),
+        'recipient': msg.get('recipient', ''),
+        'group_id': msg.get('group_id', ''),
+        'type': report_type,
+        'reason': reason,
+        'created': now_iso(),
+        'status': 'pending',
+    })
+    save_json(REPORTS_FILE, reports)
+    audit('message_reported', actor=me, target=message_id, meta=report_type)
+    return jsonify({'success': True})
+
+@app.route('/admin/reports', methods=['GET'])
+@require_admin
+def admin_list_reports():
+    reports = load_json(REPORTS_FILE, [])
+    status_filter = (request.args.get('status') or '').strip()
+    if status_filter:
+        reports = [r for r in reports if r.get('status') == status_filter]
+    reports.sort(key=lambda x: x.get('created', ''), reverse=True)
+    return jsonify({'success': True, 'reports': reports[:200]})
+
+@app.route('/admin/reports/<report_id>/resolve', methods=['POST'])
+@rate_limit(max_requests=20, window_seconds=300)
+@require_admin
+@require_csrf
+def admin_resolve_report(report_id):
+    me = session['username']
+    data = request.get_json(force=True, silent=True) or {}
+    action = sanitize_input(data.get('action', ''), 100)
+    notes = sanitize_input(data.get('notes', ''), 500)
+    reports = load_json(REPORTS_FILE, [])
+    for r in reports:
+        if r.get('id') == report_id:
+            r['status'] = 'resolved'
+            r['resolved_by'] = me
+            r['resolved_at'] = now_iso()
+            r['action'] = action
+            r['notes'] = notes
+            save_json(REPORTS_FILE, reports)
+            audit('report_resolved', actor=me, target=report_id, meta=action)
+            return jsonify({'success': True})
+    return jsonify({'success': False, 'message': 'Rapport ikke funnet.'}), 404
+
 @app.route('/health')
 def health_check():
     try:
@@ -4220,7 +4306,7 @@ def health_check():
         'success': True,
         'status': 'healthy' if db_ok else 'degraded',
         'db': 'ok' if db_ok else 'error',
-        'version': '3.0.0',
+        'version': '3.1.0',
         'uptime': time.time() - app._start_time if hasattr(app, '_start_time') else 0,
         'cache_size': len(_cache),
     })
@@ -4275,3 +4361,4 @@ app.live_location_file = LIVE_LOCATION_FILE
 app.wallpapers_file = DATA_DIR / 'wallpapers.json'
 app.slowmode_file = SLOWMODE_FILE
 app.polls_file = DATA_DIR / 'polls.json'
+app.reports_file = REPORTS_FILE

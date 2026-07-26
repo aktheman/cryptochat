@@ -137,7 +137,9 @@ window.__CRYPTO__ = (() => {
     getMyKeyPair,
     saveMyKeyPair,
     getOrCreateIdentity,
-    getSharedKey
+    getSharedKey,
+    arrayBufferToBase64,
+    base64ToArrayBuffer
   };
 
   return crypto;
