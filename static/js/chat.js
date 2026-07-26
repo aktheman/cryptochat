@@ -591,11 +591,15 @@
         </header>
         <div class="app-row">
           <aside class="sidebar" role="navigation" aria-label="Kontakter">
-            <div id="folderTabs" class="folder-tabs" role="tablist" style="display:flex;gap:0;padding:0 0 8px;overflow-x:auto;border-bottom:1px solid var(--c-border);margin-bottom:8px;"></div>
+            <div class="sidebar-search">
+              <svg class="sidebar-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+              <input id="sidebarSearch" class="sidebar-search-input" type="text" placeholder="Soek" autocomplete="off" aria-label="Soek i kontakter" />
+            </div>
+            <div id="folderTabs" class="folder-tabs" role="tablist"></div>
             <div class="section">
               <div class="section-title">MELDINGER</div>
               <div id="savedMsgItem" class="item saved-messages-item" role="option" tabindex="0" aria-label="Lagrede meldinger" style="cursor:pointer;margin-bottom:6px;">
-                <div class="avatar-wrap"><div class="avatar" style="background:linear-gradient(135deg,#cf6fef,#7a3bff);">📌</div></div>
+                <div class="avatar-wrap"><div class="avatar" style="background:linear-gradient(135deg,#3390ec,#5b8def);">📌</div></div>
                 <div><div class="name">Lagrede meldinger</div><div class="preview">Dine notater og bokmerker</div></div>
               </div>
               <div id="usersList" class="list" role="listbox" aria-label="Kontakter"></div>
@@ -1251,23 +1255,56 @@
           const data = await loadJSON('/folders');
           const tabs = document.getElementById('folderTabs');
           if (!tabs) return;
-          const folders = data.folders || [{id:'all',name:'Alle'}];
+          const userFolders = data.folders || [];
+          const defaultFolders = [
+            { id: 'all', name: 'Alle' },
+            { id: 'personal', name: 'Personlige' },
+            { id: 'groups', name: 'Grupper' },
+            { id: 'channels', name: 'Kanaler' },
+          ];
+          const folders = userFolders.length > 1 ? userFolders : defaultFolders;
           tabs.innerHTML = '';
           folders.forEach(f => {
             const btn = document.createElement('button');
             btn.className = 'folder-tab' + (f.id === currentFolder ? ' active' : '');
-            btn.textContent = f.name;
             btn.dataset.folder = f.id;
+            const count = f.count ? '<span class="folder-count">' + f.count + '</span>' : '';
+            btn.innerHTML = escapeHtml(f.name) + count;
             btn.addEventListener('click', () => {
               currentFolder = f.id;
               document.querySelectorAll('.folder-tab').forEach(t => t.classList.toggle('active', t.dataset.folder === f.id));
-              renderUsers();
-              renderGroups();
-              renderChannels();
+              filterSidebar();
             });
             tabs.appendChild(btn);
           });
         } catch(e) {}
+      }
+
+      function filterSidebar() {
+        const sections = document.querySelectorAll('.sidebar .section');
+        const savedItem = document.getElementById('savedMsgItem');
+        if (currentFolder === 'all') {
+          sections.forEach(s => s.style.display = '');
+          if (savedItem) savedItem.style.display = '';
+          renderUsers(); renderGroups(); renderChannels();
+          return;
+        }
+        if (savedItem) savedItem.style.display = (currentFolder === 'personal' || currentFolder === 'all') ? '' : 'none';
+        sections.forEach(s => {
+          const title = s.querySelector('.section-title');
+          if (!title) return;
+          const text = title.textContent.trim();
+          if (currentFolder === 'personal') {
+            s.style.display = (text === 'MELDINGER') ? '' : 'none';
+          } else if (currentFolder === 'groups') {
+            s.style.display = (text === 'GRUPPER') ? '' : 'none';
+          } else if (currentFolder === 'channels') {
+            s.style.display = (text === 'KANALER') ? '' : 'none';
+          } else {
+            s.style.display = '';
+          }
+        });
+        renderUsers(); renderGroups(); renderChannels();
       }
 
       async function loadPinnedChats() {
@@ -4967,6 +5004,17 @@
         forwardMsg(ids[0]);
         exitSelectionMode();
       });
+
+      const sidebarSearch = document.getElementById('sidebarSearch');
+      if (sidebarSearch) {
+        sidebarSearch.addEventListener('input', () => {
+          const q = sidebarSearch.value.toLowerCase().trim();
+          document.querySelectorAll('#usersList .item, #groupsList .item, #channelsList .item').forEach(el => {
+            const name = (el.dataset.user || el.dataset.groupId || el.querySelector('.name')?.textContent || '').toLowerCase();
+            el.style.display = q && !name.includes(q) ? 'none' : '';
+          });
+        });
+      }
     } catch (e) {
       document.getElementById('app').innerHTML = '<pre style="color:#ff8888;background:#0f1424;padding:16px;">' + escapeHtml(e.stack || e.message) + '</pre>';
     }

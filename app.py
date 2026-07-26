@@ -4306,7 +4306,7 @@ def health_check():
         'success': True,
         'status': 'healthy' if db_ok else 'degraded',
         'db': 'ok' if db_ok else 'error',
-        'version': '3.1.0',
+        'version': '3.2.0',
         'uptime': time.time() - app._start_time if hasattr(app, '_start_time') else 0,
         'cache_size': len(_cache),
     })
