@@ -4,27 +4,27 @@
   const _featureCSS = document.createElement('style');
   _featureCSS.textContent = `
     :root, body {
-      --c-bg: #0b0c12; --c-surface: #0f1424; --c-surface-2: #141a2b;
-      --c-surface-hover: #1a2240; --c-chat-bg: #0f1826;
-      --c-border: #151d30; --c-border-item: #1d2440; --c-border-focus: #3d35ff;
-      --c-text: #e7e8f3; --c-text-chat: #f3f1ff; --c-text-meta: #9ca3c7;
-      --c-text-muted: #7c7e9a; --c-text-name: #e9eaff; --c-text-preview: #8b8dab;
-      --c-sender: #ff8fab; --c-brand: #cf6fef; --c-accent: #7a3bff;
-      --c-accent2: #cf6fef; --c-accent5: #5b5cf5; --c-success: #22c55e;
-      --c-sent-bg: #1c1030; --c-sent-border: #7a3bff; --c-sent-text: #f3f1ff;
-      --c-received-bg: #16203a; --c-received-border: #2d3a6a; --c-received-text: #e9eaff;
-      --c-input-bg: #0a0c18; --c-input-border: #232540; --c-input-text: #f0f0ff;
-      --c-badge-bg: #1a1c30; --c-badge-border: #2a2d48; --c-badge-text: #cfcfef;
-      --c-btn-ghost-border: #2a2d48;
-      --c-toast-bg: #1a1c30; --c-toast-text: #d8d8fd;
+      --c-bg: #0e1621; --c-surface: #17213b; --c-surface-2: #1e2c3a;
+      --c-surface-hover: rgba(255,255,255,0.06); --c-chat-bg: #0e1621;
+      --c-border: #0e1621; --c-border-item: #1e2c3a; --c-border-focus: #3390ec;
+      --c-text: #ffffff; --c-text-chat: #ffffff; --c-text-meta: #6d8094;
+      --c-text-muted: #6d8094; --c-text-name: #ffffff; --c-text-preview: #6d8094;
+      --c-sender: #ff8fab; --c-brand: #3390ec; --c-accent: #3390ec;
+      --c-accent2: #5b8def; --c-accent5: #5b8def; --c-success: #22c55e;
+      --c-sent-bg: #2b5278; --c-sent-border: #2b5278; --c-sent-text: #ffffff;
+      --c-received-bg: #182533; --c-received-border: #182533; --c-received-text: #ffffff;
+      --c-input-bg: #242f3d; --c-input-border: #242f3d; --c-input-text: #ffffff;
+      --c-badge-bg: #1e2c3a; --c-badge-border: #1e2c3a; --c-badge-text: #ffffff;
+      --c-btn-ghost-border: #1e2c3a;
+      --c-toast-bg: #1c2436; --c-toast-text: #d8d8fd;
       --c-toast-err-bg: #3d1212; --c-toast-err-text: #ffb3b3;
       --c-toast-ok-bg: #14301a; --c-toast-ok-text: #a3ffb3;
       --c-overlay: rgba(0,0,0,0.6);
     }
     body.theme-light {
-      --c-bg: #f4f6f9; --c-surface: #ffffff; --c-surface-2: #ffffff;
-      --c-surface-hover: #f3f4f6; --c-chat-bg: #f4f6f9;
-      --c-border: #e5e7eb; --c-border-item: #e5e7eb; --c-border-focus: #3d35ff;
+      --c-bg: #e8ecf1; --c-surface: #ffffff; --c-surface-2: #f0f2f5;
+      --c-surface-hover: rgba(0,0,0,0.06); --c-chat-bg: #e8ecf1;
+      --c-border: #d6d9de; --c-border-item: #d6d9de; --c-border-focus: #3390ec;
       --c-text: #0f172a; --c-text-chat: #0f172a; --c-text-meta: #475569;
       --c-text-muted: #6b7280; --c-text-name: #0f172a; --c-text-preview: #64748b;
       --c-sender: #e11d48; --c-brand: #7c3aed; --c-accent: #7c3aed;
@@ -189,10 +189,10 @@
     @keyframes recPulse { 0%,100% { opacity:1; } 50% { opacity:.6; } }
     .voice-msg { display:flex; align-items:center; gap:8px; }
     .voice-msg audio { max-width:220px; height:36px; }
-    .reply-bar { display:flex; align-items:center; justify-content:space-between; background:#1a2240; border-left:3px solid #7a3bff; padding:8px 12px; border-radius:8px 8px 0 0; font-size:.82rem; color:#9ca3c7; }
+    .reply-bar { display:flex; align-items:center; justify-content:space-between; background:#1a2240; border-left:3px solid #3390ec; padding:8px 12px; border-radius:8px 8px 0 0; font-size:.82rem; color:#9ca3c7; }
     .reply-bar-cancel { background:transparent; border:none; color:#9ca3c7; cursor:pointer; font-size:1rem; padding:2px 6px; }
     .reply-bar-cancel:hover { color:#ffb3b3; }
-    .reply-ref { font-size:.72rem; color:#b0b2cc; border-left:3px solid #7a3bff; padding:4px 8px; margin-bottom:6px; max-height:44px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; cursor:pointer; border-radius:0 6px 6px 0; background:rgba(122,59,255,.06); transition:background .15s; }
+    .reply-ref { font-size:.72rem; color:#b0b2cc; border-left:3px solid #3390ec; padding:4px 8px; margin-bottom:6px; max-height:44px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; cursor:pointer; border-radius:0 6px 6px 0; background:rgba(51,144,236,.06); transition:background .15s; }
     .reply-ref:hover { background:rgba(122,59,255,.14); }
     .reply-msg-btn { background:transparent; border:none; color:var(--c-text-meta); cursor:pointer; font-size:12px; padding:2px 4px; opacity:0.5; transition:opacity .15s; }
     .reply-msg-btn:hover { opacity:1; }
@@ -455,7 +455,7 @@
       }
     },
     dark: {
-      name: 'Dark', dot: '#7a3bff',
+      name: 'Dark', dot: '#3390ec',
       vars: {}
     },
     midnight: {
@@ -703,7 +703,7 @@
                     <button data-effect="stars" title="Stjerner">⭐</button>
                   </div>
                 </span>
-                <button id="sendBtn" class="btn btn-primary" disabled aria-label="Send melding">Send</button>
+                <button id="sendBtn" class="btn btn-primary" disabled aria-label="Send melding"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg></button>
               </div>
               <div id="scheduleBar" class="schedule-bar" style="display:none">
                 <span style="font-size:.78rem;color:var(--c-text-muted)">📅</span>
@@ -1829,23 +1829,25 @@
       }
 
       function showQuickActions(msgEl, x, y) {
-        document.querySelectorAll('.quick-actions-menu').forEach(el => el.remove());
+        document.querySelectorAll('.context-menu').forEach(el => el.remove());
         const msgId = msgEl.dataset.msgId;
         const menu = document.createElement('div');
-        menu.className = 'quick-actions-menu';
-        menu.style.cssText = 'position:fixed;left:' + x + 'px;top:' + y + 'px;background:var(--c-surface);border:1px solid var(--c-border);border-radius:12px;padding:6px;z-index:99999;box-shadow:0 4px 16px rgba(0,0,0,.4);min-width:160px;';
+        menu.className = 'context-menu';
 
-        const me = window.__APP__?.username || '';
         const isOwn = msgEl.classList.contains('sent');
 
-        const actions = [
-          { icon: '↩', label: 'Svar', action: () => { startReply(msgId); } },
-          { icon: '↪', label: 'Videresend', action: () => { forwardMsg(msgId); } },
+        const quickReactions = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+        let html = '<div class="ctx-reactions">' + quickReactions.map(e =>
+          '<button data-emoji="' + e + '">' + e + '</button>'
+        ).join('') + '</div>';
+
+        const actionDefs = [
+          { icon: '↩', label: 'Svar', action: () => startReply(msgId) },
+          { icon: '↪', label: 'Videresend', action: () => forwardMsg(msgId) },
           { icon: '📋', label: 'Kopier', action: () => {
             const text = msgEl.querySelector('.msg-text');
             if (text) { navigator.clipboard.writeText(text.textContent); toast('Kopiert', 'success'); }
           }},
-          { icon: '😀', label: 'Reager', action: () => { showEmojiPicker(msgEl, msgId); }},
           { icon: '📌', label: 'Fest', action: async () => {
             if (!activeChat) return;
             try {
@@ -1859,44 +1861,34 @@
               toast('Lagret', 'success');
             } catch(e) { toast('Kunne ikke lagre'); }
           }},
-          ...(isOwn ? [{ icon: '✏️', label: 'Rediger', action: () => { editMessage(msgId); } }] : []),
-          { icon: '🌐', label: 'Oversett', action: async () => {
-            const textEl = msgEl.querySelector('.msg-text');
-            if (!textEl) return;
-            const orig = textEl.textContent;
-            if (textEl.dataset.translated === 'true') {
-              textEl.textContent = textEl.dataset.origText || orig;
-              textEl.dataset.translated = 'false';
-              return;
-            }
-            toast('Oversetter...');
-            try {
-              const lang = localStorage.getItem('translateLang') || 'no';
-              const res = await loadJSON('/translate', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({text:orig, target:lang}) });
-              if (res.success) {
-                textEl.dataset.origText = orig;
-                textEl.dataset.translated = 'true';
-                textEl.innerHTML = escapeHtml(res.translated) + ' <span style="font-size:.7rem;color:var(--c-text-muted);font-style:italic;">(' + escapeHtml(res.sourceLang) + '→' + escapeHtml(res.targetLang) + ')</span>';
-              } else { toast(res.message || 'Feil'); }
-            } catch(e) { toast('Oversettelse feilet'); }
-          }},
-          { icon: '🗑', label: 'Slett', action: async () => {
-            if (!activeChat) return;
-            showDeleteChoice(msgId, msgEl);
-          }},
+          ...(isOwn ? [{ icon: '✏️', label: 'Rediger', action: () => editMessage(msgId) }] : []),
         ];
 
-        actions.forEach(a => {
-          const btn = document.createElement('div');
-          btn.style.cssText = 'padding:8px 12px;cursor:pointer;font-size:.85rem;color:var(--c-text);border-radius:8px;display:flex;align-items:center;gap:8px;';
-          btn.innerHTML = '<span>' + a.icon + '</span><span>' + a.label + '</span>';
-          btn.addEventListener('mouseenter', () => btn.style.background = 'var(--c-surface-hover)');
-          btn.addEventListener('mouseleave', () => btn.style.background = '');
-          btn.addEventListener('click', (e) => { e.stopPropagation(); menu.remove(); a.action(); });
-          menu.appendChild(btn);
+        actionDefs.forEach(a => {
+          html += '<button class="ctx-item"><span>' + a.icon + '</span><span>' + a.label + '</span></button>';
+        });
+        html += '<div class="ctx-sep"></div>';
+        html += '<button class="ctx-item danger"><span>🗑</span><span>Slett</span></button>';
+
+        menu.innerHTML = html;
+
+        menu.querySelectorAll('.ctx-reactions button').forEach(btn => {
+          btn.addEventListener('click', (e) => { e.stopPropagation(); menu.remove(); toggleReaction(msgId, btn.dataset.emoji); });
+        });
+        menu.querySelectorAll('.ctx-item').forEach((btn, i) => {
+          btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            menu.remove();
+            if (btn.classList.contains('danger')) { showDeleteChoice(msgId, msgEl); return; }
+            if (actionDefs[i]) actionDefs[i].action();
+          });
         });
 
         document.body.appendChild(menu);
+
+        const rect = menu.getBoundingClientRect();
+        if (rect.right > window.innerWidth) menu.style.left = (window.innerWidth - rect.width - 8) + 'px';
+        if (rect.bottom > window.innerHeight) menu.style.top = (window.innerHeight - rect.height - 8) + 'px';
 
         setTimeout(() => {
           const close = (e) => {
@@ -4769,7 +4761,9 @@
           const data = await loadJSON('/channels/' + encodeURIComponent(channelId));
           const subs = data.channel?.subscribers || [];
           document.getElementById('channelSubList').innerHTML = subs.length
-            ? subs.map(s => '<div style="display:flex;align-items:center;gap:8px;padding:8px;"><div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#7a3bff,#cf6fef);display:flex;align-items:center;justify-content:center;font-size:.7rem;">👤</div><span style="color:var(--c-text);font-size:.85rem;">' + escapeHtml(s) + '</span></div>').join('')
+            ? subs.map(s => '<div style="display:flex;align-items:center;gap:8px;padding:8px;"><div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#3390ec,#5b8def);display:flex;align-items:center;justify-content:center;font-size:.7rem;">👤</div><span style="color:var(--c-text);font-size:.85rem;">' + escapeHtml(s) + '</span></div>').join('')
+
+
             : '<div>Ingen abonnenter</div>';
         } catch(e) { document.getElementById('channelSubList').textContent = 'Feil ved lasting'; }
       };
@@ -4827,7 +4821,7 @@
       function linkifyText(text) {
         return text.replace(
           /(https?:\/\/[^\s<]+)/g,
-          (match) => '<a href="' + match.replace(/"/g, '%22') + '" target="_blank" rel="noopener noreferrer" style="color:#7a3bff;text-decoration:underline;word-break:break-all;">' + match + '</a>'
+          (match) => '<a href="' + match.replace(/"/g, '%22') + '" target="_blank" rel="noopener noreferrer" style="color:#5b8def;text-decoration:underline;word-break:break-all;">' + match + '</a>'
         );
       }
 
