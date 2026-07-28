@@ -4620,7 +4620,6 @@
       // BULK MESSAGE SELECTION
       // ──────────────────────────────────────────────
       let bulkMode = false;
-      let selectedMessages = new Set();
       let bulkToolbar = null;
 
       function enterBulkMode() {
