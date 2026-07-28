@@ -10,6 +10,7 @@ from flask import (
     Flask, render_template, request, jsonify, session,
     redirect, url_for, send_from_directory, Response, make_response
 )
+from flask import current_app
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from cryptography.hazmat.primitives import hashes, serialization
@@ -17,16 +18,25 @@ from cryptography.hazmat.primitives.asymmetric import x25519
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.exceptions import InvalidTag
 import pyotp
-from db import load_json, save_json, init_db, migrate_json_files, invalidate_cache, _cache
+from db import load_json, save_json, init_db, migrate_json_files, invalidate_cache, _cache, _get_conn
+from config import *
+from flask_socketio import SocketIO
+from sockets import register_socket_handlers, notify_user
 
 app = Flask(__name__)
-secret_key_path = Path(os.environ.get('SECRET_KEY_FILE', '')) if os.environ.get('SECRET_KEY_FILE') else None
-if secret_key_path and secret_key_path.exists():
-    app.secret_key = secret_key_path.read_bytes()
+secret_key_file = os.environ.get('SECRET_KEY_FILE', '')
+if secret_key_file:
+    key_path = Path(secret_key_file)
+    if key_path.exists():
+        app.secret_key = key_path.read_bytes()
+    else:
+        app.secret_key = os.environ.get('SECRET_KEY')
+        if not app.secret_key:
+            raise SystemExit(f'SECRET_KEY_FILE "{secret_key_file}" finnes ikke, og SECRET_KEY er ikke satt.')
 elif Path('secrets/secret_key').exists():
     app.secret_key = Path('secrets/secret_key').read_bytes()
 else:
-    app.secret_key = secret_key_path or os.environ.get('SECRET_KEY')
+    app.secret_key = os.environ.get('SECRET_KEY')
     if not app.secret_key:
         raise SystemExit('SECRET_KEY eller SECRET_KEY_FILE må settes i produksjon')
 app.config.update(
@@ -48,6 +58,9 @@ init_db()
 migrate_json_files()
 app._start_time = time.time()
 
+socketio = SocketIO(app, cors_allowed_origins='*', async_mode='eventlet')
+register_socket_handlers(socketio)
+
 @app.after_request
 def set_security_headers(response):
     response.headers['X-Content-Type-Options'] = 'nosniff'
@@ -57,8 +70,8 @@ def set_security_headers(response):
     response.headers['Permissions-Policy'] = 'camera=(self), microphone=(self), geolocation=()'
     response.headers['Content-Security-Policy'] = (
         "default-src 'self'; "
-        "script-src 'self'; "
-        "style-src 'self'; "
+        "script-src 'self' https://cdn.socket.io; "
+        "style-src 'self' 'unsafe-inline'; "
         "font-src 'self' data:; "
         "img-src 'self' data: blob: https:; "
         "media-src 'self' blob: data:; "
@@ -119,38 +132,7 @@ def rate_limit(max_requests=30, window_seconds=60):
         return wrapper
     return decorator
 
-BASE_DIR = Path(__file__).resolve().parent
-DATA_DIR = BASE_DIR / 'data'
-DATA_DIR.mkdir(exist_ok=True)
-(DATA_DIR / 'uploads').mkdir(exist_ok=True)
 
-USERS_FILE = DATA_DIR / 'users.json'
-AUDIT_LOG_FILE = DATA_DIR / 'audit.jsonl'
-MESSAGES_FILE = DATA_DIR / 'messages.json'
-KEYS_FILE = DATA_DIR / 'keys.json'
-GROUPS_FILE = DATA_DIR / 'groups.json'
-NOTIFICATIONS_FILE = DATA_DIR / 'notifications.json'
-USER_PRESENCE_FILE = DATA_DIR / 'presence.json'
-READ_RECEIPTS_FILE = DATA_DIR / 'read_receipts.json'
-SESSIONS_FILE = DATA_DIR / 'sessions.json'
-REACTIONS_FILE = DATA_DIR / 'reactions.json'
-TYPING_FILE = DATA_DIR / 'typing.json'
-VERIFICATION_FILE = DATA_DIR / 'verification.json'
-CALLS_FILE = DATA_DIR / 'calls.json'
-PINS_FILE = DATA_DIR / 'pins.json'
-SCHEDULED_FILE = DATA_DIR / 'scheduled.json'
-PUSH_SUBSCRIPTIONS_FILE = DATA_DIR / 'push_subscriptions.json'
-LINK_PREVIEWS_FILE = DATA_DIR / 'link_previews.json'
-PINNED_CHATS_FILE = DATA_DIR / 'pinned_chats.json'
-FOLDERS_FILE = DATA_DIR / 'folders.json'
-CHANNELS_FILE = DATA_DIR / 'channels.json'
-INVITE_LINKS_FILE = DATA_DIR / 'invite_links.json'
-MUTED_CHATS_FILE = DATA_DIR / 'muted_chats.json'
-ARCHIVE_FILE = DATA_DIR / 'archive.json'
-CONTACTS_FILE = DATA_DIR / 'contacts.json'
-STORIES_FILE = DATA_DIR / 'stories.json'
-SLOWMODE_FILE = DATA_DIR / 'slowmode.json'
-REPORTS_FILE = DATA_DIR / 'reports.json'
 
 # ──────────────────────────────────────────────
 # Helpers
@@ -478,6 +460,14 @@ def index():
     return redirect(url_for('chat_page'))
 
 
+def _is_same_origin(origin, req):
+    try:
+        o = urlparse(origin)
+        host = req.host.split(':')[0]
+        return o.hostname in (host, 'localhost', '127.0.0.1', '::1')
+    except Exception:
+        return False
+
 def require_csrf(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
@@ -490,9 +480,12 @@ def require_csrf(f):
                 if not hmac.compare_digest(token, session.get('csrf_token', '')):
                     return jsonify({'success': False, 'message': 'Ugyldig CSRF-token.'}), 400
             elif origin:
-                allowed = app.config.get('CSRF_TRUSTED_ORIGINS', [])
-                if allowed and not any(origin.startswith(o.rstrip('/')) for o in allowed):
-                    return jsonify({'success': False, 'message': 'Ugyldig forespørselskilde.'}), 400
+                if _is_same_origin(origin, request):
+                    pass
+                else:
+                    allowed = app.config.get('CSRF_TRUSTED_ORIGINS', [])
+                    if allowed and not any(origin.startswith(o.rstrip('/')) for o in allowed):
+                        return jsonify({'success': False, 'message': 'Ugyldig forespørselskilde.'}), 400
         return f(*args, **kwargs)
     return wrapper
 
@@ -654,6 +647,107 @@ def logout_all():
         invalidate_all_sessions(username)
     session.clear()
     return jsonify({'success': True})
+
+@app.route('/auth/qr/generate', methods=['POST'])
+@rate_limit(max_requests=10, window_seconds=300)
+def qr_generate():
+    import sqlite3
+    token = secrets.token_urlsafe(32)
+    expires = (datetime.utcnow() + timedelta(minutes=2)).isoformat()
+    try:
+        with _get_conn() as conn:
+            conn.execute('INSERT OR REPLACE INTO kv_store (key, value) VALUES (?, ?)',
+                         (f'qr_login:{token}', json.dumps({'expires': expires, 'status': 'pending', 'username': None})))
+    except Exception:
+        pass
+    import io, base64 as _b64
+    try:
+        import qrcode
+        qr = qrcode.QRCode(box_size=8, border=2)
+        qr.add_data(token)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color='black', back_color='white')
+        buf = io.BytesIO()
+        img.save(buf, format='PNG')
+        qr_b64 = _b64.b64encode(buf.getvalue()).decode()
+    except Exception:
+        qr_b64 = None
+    return jsonify({'success': True, 'token': token, 'expires': expires, 'qr': qr_b64})
+
+@app.route('/auth/qr/status/<token>')
+def qr_status(token):
+    try:
+        with _get_conn() as conn:
+            row = conn.execute('SELECT value FROM kv_store WHERE key = ?', (f'qr_login:{token}',)).fetchone()
+        if not row:
+            return jsonify({'success': False, 'message': 'Token ugyldig.'}), 404
+        data = json.loads(row['value'])
+        expires = parse_iso(data.get('expires'))
+        if expires and datetime.utcnow() > expires:
+            return jsonify({'success': False, 'message': 'Token utløpt.', 'status': 'expired'}), 410
+        return jsonify({'success': True, 'status': data.get('status'), 'username': data.get('username')})
+    except Exception as e:
+        return jsonify({'success': False, 'message': 'Feil.'}), 500
+
+@app.route('/auth/qr/accept', methods=['POST'])
+@rate_limit(max_requests=10, window_seconds=120)
+@require_login
+@require_csrf
+def qr_accept():
+    data = request.get_json(force=True, silent=True) or {}
+    token = (data.get('token') or '').strip()
+    if not token:
+        return jsonify({'success': False, 'message': 'Token mangler.'}), 400
+    username = session.get('username')
+    try:
+        with _get_conn() as conn:
+            row = conn.execute('SELECT value FROM kv_store WHERE key = ?', (f'qr_login:{token}',)).fetchone()
+        if not row:
+            return jsonify({'success': False, 'message': 'Token ugyldig.'}), 404
+        data = json.loads(row['value'])
+        if data.get('status') != 'pending':
+            return jsonify({'success': False, 'message': 'Token er allerede brukt.'}), 400
+        expires = parse_iso(data.get('expires'))
+        if expires and datetime.utcnow() > expires:
+            return jsonify({'success': False, 'message': 'Token utløpt.'}), 410
+        with _get_conn() as conn:
+            conn.execute('INSERT OR REPLACE INTO kv_store (key, value) VALUES (?, ?)',
+                         (f'qr_login:{token}', json.dumps({'expires': data['expires'], 'status': 'accepted', 'username': username})))
+        audit('qr_login_accepted', actor=username)
+        return jsonify({'success': True, 'message': 'QR-innlogging godkjent.'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': 'Feil.'}), 500
+
+@app.route('/auth/qr/login', methods=['POST'])
+@rate_limit(max_requests=5, window_seconds=60)
+def qr_login():
+    data = request.get_json(force=True, silent=True) or {}
+    token = (data.get('token') or '').strip()
+    if not token:
+        return jsonify({'success': False, 'message': 'Token mangler.'}), 400
+    try:
+        with _get_conn() as conn:
+            row = conn.execute('SELECT value FROM kv_store WHERE key = ?', (f'qr_login:{token}',)).fetchone()
+        if not row:
+            return jsonify({'success': False, 'message': 'Token ugyldig.'}), 404
+        data = json.loads(row['value'])
+        if data.get('status') != 'accepted':
+            return jsonify({'success': False, 'message': 'Token ikke godkjent ennå.'}), 400
+        expires = parse_iso(data.get('expires'))
+        if expires and datetime.utcnow() > expires:
+            return jsonify({'success': False, 'message': 'Token utløpt.'}), 410
+        username = data.get('username')
+        if not username:
+            return jsonify({'success': False, 'message': 'Ingen bruker.'}), 400
+        session['username'] = username
+        session['csrf_token'] = secrets.token_hex(32)
+        session_id = secrets.token_hex(16)
+        session['session_token'] = session_id
+        touch_presence(username)
+        audit('qr_login', actor=username)
+        return jsonify({'success': True, 'message': 'Logget inn via QR.', 'username': username})
+    except Exception as e:
+        return jsonify({'success': False, 'message': 'Feil.'}), 500
 
 @app.route('/sessions')
 @require_login
@@ -989,6 +1083,11 @@ def send_message():
     })
     save_json(MESSAGES_FILE, messages)
     audit('message_sent', actor=session['username'], target=recipient, meta=mtype)
+    notify_user(socketio, recipient, 'new_message', {
+        'chatType': 'user',
+        'sender': session['username'],
+        'message': messages[-1],
+    })
     return jsonify({'success': True, 'message': 'Melding sendt.'})
 
 @app.route('/upload', methods=['POST'])
@@ -1409,6 +1508,14 @@ def send_group_message(group_id):
         'e2ee': is_e2ee,
     })
     save_json(MESSAGES_FILE, messages)
+    for member in group.get('members', []):
+        if member != session['username']:
+            notify_user(socketio, member, 'new_message', {
+                'chatType': 'group',
+                'groupId': group_id,
+                'sender': session['username'],
+                'message': messages[-1],
+            })
     return jsonify({'success': True, 'message': 'Melding sendt.'})
 
 # ──────────────────────────────────────────────
@@ -1432,6 +1539,10 @@ def set_typing():
     else:
         typing.get(username, {}).pop(target, None)
     save_json(TYPING_FILE, typing)
+    notify_user(socketio, target, 'typing', {
+        'sender': username,
+        'isTyping': is_typing,
+    })
     return jsonify({'success': True})
 
 @app.route('/typing/<target>', methods=['GET'])
@@ -1682,6 +1793,11 @@ def init_call():
         'ice_candidates': [],
     }
     save_json(CALLS_FILE, calls)
+    notify_user(socketio, target, 'incoming_call', {
+        'call_id': call_id,
+        'caller': username,
+        'type': call_type,
+    })
     return jsonify({'success': True, 'call_id': call_id})
 
 @app.route('/calls/incoming', methods=['GET'])
@@ -1704,6 +1820,7 @@ def get_incoming_call():
     return jsonify({'success': True, 'call': None})
 
 @app.route('/calls/offer', methods=['POST'])
+@rate_limit(max_requests=20, window_seconds=60)
 @require_csrf
 def send_offer():
     username = session.get('username')
@@ -1766,6 +1883,7 @@ def get_answer(call_id):
     return jsonify({'success': True, 'sdp': call.get('answer_sdp'), 'status': call.get('status')})
 
 @app.route('/calls/ice', methods=['POST'])
+@rate_limit(max_requests=60, window_seconds=60)
 @require_csrf
 def send_ice():
     username = session.get('username')
@@ -1827,6 +1945,7 @@ def call_status(call_id):
     return jsonify({'success': True, 'status': call.get('status', 'ended')})
 
 @app.route('/calls/end-stale', methods=['POST'])
+@rate_limit(max_requests=10, window_seconds=60)
 @require_csrf
 def end_stale_calls():
     username = session.get('username')
@@ -2142,6 +2261,7 @@ def get_pins(chat_type, chat_id):
     return jsonify({'success': True, 'pins': result})
 
 @app.route('/pins/<chat_type>/<chat_id>/<message_id>', methods=['POST'])
+@rate_limit(max_requests=30, window_seconds=60)
 @require_login
 @require_csrf
 def pin_message(chat_type, chat_id, message_id):
@@ -2238,6 +2358,7 @@ def list_scheduled():
     return jsonify({'success': True, 'scheduled': my_scheduled})
 
 @app.route('/schedule/<schedule_id>', methods=['DELETE'])
+@rate_limit(max_requests=20, window_seconds=60)
 @require_login
 @require_csrf
 def cancel_scheduled(schedule_id):
@@ -2477,10 +2598,9 @@ def last_messages_preview():
         mtype = m.get('type', 'text')
         if group_id:
             gid = group_id
-            if me not in [u for u in (m.get('members', []) if isinstance(m.get('members'), list) else [])] and m.get('sender') != me:
-                grp = next((g for g in groups if g.get('id') == gid), None)
-                if grp and me not in grp.get('members', []):
-                    continue
+            grp = next((g for g in groups if g.get('id') == gid), None)
+            if grp and me not in grp.get('members', []):
+                continue
             if gid not in last_by_group or ts > last_by_group[gid].get('timestamp', ''):
                 snippet = text[:80] if mtype == 'text' else ('📎 Fil' if mtype == 'file' else '📊 Avstemning' if mtype == 'poll' else '🎙 Lyd' if mtype == 'voice' else '📷 Bilde' if mtype == 'image' else '💬')
                 last_by_group[gid] = {
@@ -2542,9 +2662,6 @@ def export_chat(chat_type, chat_id):
 
 # ──────────────────────────────────────────────
 # Polls
-# ──────────────────────────────────────────────
-POLLS_FILE = DATA_DIR / 'polls.json'
-
 @app.route('/polls', methods=['POST'])
 @rate_limit(max_requests=20, window_seconds=120)
 @require_login
@@ -2840,6 +2957,7 @@ def get_slowmode(group_id):
 # Group Admin Roles
 # ──────────────────────────────────────────────
 @app.route('/groups/<group_id>/admins', methods=['POST'])
+@rate_limit(max_requests=20, window_seconds=120)
 @require_login
 @require_csrf
 def set_group_admin(group_id):
@@ -2872,6 +2990,7 @@ def set_group_admin(group_id):
     return jsonify({'success': True})
 
 @app.route('/groups/<group_id>/admins/<username>', methods=['DELETE'])
+@rate_limit(max_requests=20, window_seconds=120)
 @require_login
 @require_csrf
 def remove_group_admin(group_id, username):
@@ -3106,7 +3225,7 @@ def change_password():
 
 
 @app.route('/admin/rotate-secret', methods=['POST'])
-@require_login
+@rate_limit(max_requests=5, window_seconds=3600)
 @require_admin
 @require_csrf
 def rotate_secret_key():
@@ -3124,9 +3243,6 @@ def rotate_secret_key():
 
 # ──────────────────────────────────────────────
 # Draft Messages
-# ──────────────────────────────────────────────
-DRAFTS_FILE = DATA_DIR / 'drafts.json'
-
 @app.route('/drafts', methods=['POST'])
 @rate_limit(max_requests=60, window_seconds=60)
 @require_login
@@ -3161,9 +3277,6 @@ def get_drafts():
     return jsonify({'success': True, 'drafts': out})
 
 # ──────────────────────────────────────────────
-# Chat Wallpapers
-# ──────────────────────────────────────────────
-WALLPAPERS_FILE = DATA_DIR / 'wallpapers.json'
 WALLPAPER_PRESETS = [
     {'id': 'default', 'name': 'Standard', 'css': ''},
     {'id': 'stars', 'name': 'Stjerner', 'css': 'radial-gradient(2px 2px at 20px 30px, #eee, transparent), radial-gradient(2px 2px at 40px 70px, #ccc, transparent), radial-gradient(1px 1px at 90px 40px, #fff, transparent), radial-gradient(2px 2px at 160px 120px, #ddd, transparent), radial-gradient(1px 1px at 200px 60px, #fff, transparent); background-size: 250px 200px; background-color: #0f1826;'},
@@ -3966,9 +4079,6 @@ def sync_contacts():
 
 # ──────────────────────────────────────────────
 # Live Location Sharing
-# ──────────────────────────────────────────────
-LIVE_LOCATION_FILE = DATA_DIR / 'live_locations.json'
-
 @app.route('/location/live', methods=['POST'])
 @rate_limit(max_requests=30, window_seconds=120)
 @require_login
@@ -4010,6 +4120,7 @@ def start_live_location():
 
 @app.route('/location/live/<share_id>', methods=['PUT'])
 @rate_limit(max_requests=60, window_seconds=60)
+@require_csrf
 @require_login
 def update_live_location(share_id):
     me = session['username']
@@ -4160,9 +4271,6 @@ def delete_story(story_id):
 
 # ──────────────────────────────────────────────
 # Block User
-# ──────────────────────────────────────────────
-BLOCKED_FILE = DATA_DIR / 'blocked_users.json'
-
 @app.route('/blocked', methods=['GET'])
 @require_login
 def get_blocked():
@@ -4199,9 +4307,6 @@ def unblock_user(username):
 
 # ──────────────────────────────────────────────
 # Delete for Me Only
-# ──────────────────────────────────────────────
-DELETED_FOR_ME_FILE = DATA_DIR / 'deleted_for_me.json'
-
 @app.route('/messages/<message_id>/me', methods=['DELETE'])
 @rate_limit(max_requests=30, window_seconds=60)
 @require_login
@@ -4345,7 +4450,7 @@ app.verification_file = VERIFICATION_FILE
 app.calls_file = CALLS_FILE
 app.pins_file = PINS_FILE
 app.scheduled_file = SCHEDULED_FILE
-app.drafts_file = DATA_DIR / 'drafts.json'
+app.drafts_file = DRAFTS_FILE
 app.push_subscriptions_file = PUSH_SUBSCRIPTIONS_FILE
 app.link_previews_file = LINK_PREVIEWS_FILE
 app.pinned_chats_file = PINNED_CHATS_FILE
@@ -4356,9 +4461,10 @@ app.muted_chats_file = MUTED_CHATS_FILE
 app.contacts_file = CONTACTS_FILE
 app.stories_file = STORIES_FILE
 app.blocked_file = BLOCKED_FILE
-app.deleted_for_me_file = DATA_DIR / 'deleted_for_me.json'
+app.deleted_for_me_file = DELETED_FOR_ME_FILE
 app.live_location_file = LIVE_LOCATION_FILE
-app.wallpapers_file = DATA_DIR / 'wallpapers.json'
+app.wallpapers_file = WALLPAPERS_FILE
 app.slowmode_file = SLOWMODE_FILE
-app.polls_file = DATA_DIR / 'polls.json'
+app.archive_file = ARCHIVE_FILE
+app.polls_file = POLLS_FILE
 app.reports_file = REPORTS_FILE

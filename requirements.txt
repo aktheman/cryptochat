@@ -3,3 +3,7 @@ cryptography>=41.0.7
 Werkzeug>=2.3.7
 pyotp>=2.9.0
 gunicorn>=21.2.0
+pytest>=7.4.0
+flask-socketio>=5.3.6
+eventlet>=0.33.3
+qrcode>=7.4

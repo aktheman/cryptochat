@@ -1,0 +1,41 @@
+import os
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent
+DATA_DIR = BASE_DIR / 'data'
+DATA_DIR.mkdir(exist_ok=True)
+(DATA_DIR / 'uploads').mkdir(exist_ok=True)
+
+USERS_FILE = DATA_DIR / 'users.json'
+AUDIT_LOG_FILE = DATA_DIR / 'audit.jsonl'
+MESSAGES_FILE = DATA_DIR / 'messages.json'
+KEYS_FILE = DATA_DIR / 'keys.json'
+GROUPS_FILE = DATA_DIR / 'groups.json'
+NOTIFICATIONS_FILE = DATA_DIR / 'notifications.json'
+USER_PRESENCE_FILE = DATA_DIR / 'presence.json'
+READ_RECEIPTS_FILE = DATA_DIR / 'read_receipts.json'
+SESSIONS_FILE = DATA_DIR / 'sessions.json'
+REACTIONS_FILE = DATA_DIR / 'reactions.json'
+TYPING_FILE = DATA_DIR / 'typing.json'
+VERIFICATION_FILE = DATA_DIR / 'verification.json'
+CALLS_FILE = DATA_DIR / 'calls.json'
+PINS_FILE = DATA_DIR / 'pins.json'
+SCHEDULED_FILE = DATA_DIR / 'scheduled.json'
+PUSH_SUBSCRIPTIONS_FILE = DATA_DIR / 'push_subscriptions.json'
+LINK_PREVIEWS_FILE = DATA_DIR / 'link_previews.json'
+PINNED_CHATS_FILE = DATA_DIR / 'pinned_chats.json'
+FOLDERS_FILE = DATA_DIR / 'folders.json'
+CHANNELS_FILE = DATA_DIR / 'channels.json'
+INVITE_LINKS_FILE = DATA_DIR / 'invite_links.json'
+MUTED_CHATS_FILE = DATA_DIR / 'muted_chats.json'
+ARCHIVE_FILE = DATA_DIR / 'archive.json'
+CONTACTS_FILE = DATA_DIR / 'contacts.json'
+STORIES_FILE = DATA_DIR / 'stories.json'
+SLOWMODE_FILE = DATA_DIR / 'slowmode.json'
+REPORTS_FILE = DATA_DIR / 'reports.json'
+POLLS_FILE = DATA_DIR / 'polls.json'
+DRAFTS_FILE = DATA_DIR / 'drafts.json'
+WALLPAPERS_FILE = DATA_DIR / 'wallpapers.json'
+LIVE_LOCATION_FILE = DATA_DIR / 'live_locations.json'
+BLOCKED_FILE = DATA_DIR / 'blocked_users.json'
+DELETED_FOR_ME_FILE = DATA_DIR / 'deleted_for_me.json'

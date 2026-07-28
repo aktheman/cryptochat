@@ -1,8 +1,10 @@
 let pendingCodes = [];
+let qrPollTimer = null;
+let qrToken = null;
 
 function switchTab(tab) {
   if (!tab) return;
-  const map = {register: 0, login: 1, recovery: 2};
+  const map = {register: 0, login: 1, recovery: 2, qr: 3};
   const idx = map[tab];
   if (idx === undefined) return;
   document.querySelectorAll('.tab').forEach((el, i) => el.classList.toggle('active', i === idx));
@@ -12,12 +14,17 @@ function switchTab(tab) {
   if (tab === 'register') document.getElementById('form-register').classList.add('active');
   else if (tab === 'login') document.getElementById('form-login').classList.add('active');
   else if (tab === 'recovery') document.getElementById('form-recovery').classList.add('active');
+  else if (tab === 'qr') {
+    document.getElementById('form-qr').classList.add('active');
+    startQRLogin();
+  }
 }
 
 function showFeedback(text, type) {
   const el = document.getElementById('feedback');
   el.textContent = text;
   el.className = 'feedback show ' + type;
+  el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 function hideFeedback() {
@@ -50,14 +57,89 @@ async function copyCodes() {
 }
 
 async function api(url, data) {
-  const r = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data)
-  });
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.message || j.error || 'Noe gikk galt');
-  return j;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  try {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+      signal: controller.signal
+    });
+    clearTimeout(timer);
+    if (r.status === 0) throw new Error('Nettverksfeil. Sjekk tilkoblingen.');
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.message || j.error || 'Noe gikk galt (HTTP ' + r.status + ')');
+    return j;
+  } catch (e) {
+    clearTimeout(timer);
+    if (e.name === 'AbortError') throw new Error('Tidsavbrudd. Serveren svarer ikke.');
+    throw e;
+  }
+}
+
+async function startQRLogin() {
+  stopQRPolling();
+  const placeholder = document.getElementById('qrPlaceholder');
+  const qrImage = document.getElementById('qrImage');
+  const qrStatus = document.getElementById('qrStatus');
+  if (!placeholder || !qrImage || !qrStatus) return;
+  placeholder.style.display = 'block';
+  qrImage.style.display = 'none';
+  qrStatus.textContent = 'Genererer kode...';
+  try {
+    const r = await fetch('/auth/qr/generate', { method: 'POST' });
+    const d = await r.json();
+    if (!d.success) { qrStatus.textContent = 'Kunne ikke generere QR-kode.'; return; }
+    qrToken = d.token;
+    if (d.qr) {
+      qrImage.src = 'data:image/png;base64,' + d.qr;
+      qrImage.style.display = 'block';
+      placeholder.style.display = 'none';
+    }
+    qrStatus.textContent = 'Skann QR-koden med en logget inn enhet';
+    qrPollTimer = setInterval(() => pollQRStatus(), 2000);
+  } catch(e) {
+    qrStatus.textContent = 'Feil ved generering av QR-kode.';
+  }
+}
+
+function stopQRPolling() {
+  if (qrPollTimer) {
+    clearInterval(qrPollTimer);
+    qrPollTimer = null;
+  }
+}
+
+async function pollQRStatus() {
+  if (!qrToken) return;
+  try {
+    const r = await fetch('/auth/qr/status/' + encodeURIComponent(qrToken));
+    const d = await r.json();
+    const qrStatus = document.getElementById('qrStatus');
+    if (!qrStatus) return;
+    if (d.status === 'accepted') {
+      stopQRPolling();
+      qrStatus.textContent = 'Godkjent! Logger inn...';
+      const loginR = await fetch('/auth/qr/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: qrToken })
+      });
+      const loginD = await loginR.json();
+      if (loginD.success) {
+        qrStatus.textContent = 'Innlogging vellykket!';
+        setTimeout(() => { location.href = '/chat'; }, 500);
+      } else {
+        qrStatus.textContent = 'Kunne ikke logge inn: ' + (loginD.message || 'Feil');
+      }
+    } else if (d.status === 'expired' || (d.status === 'pending' && d.expired)) {
+      stopQRPolling();
+      qrStatus.textContent = 'Koden er utløpt. Klikk for å prøve på nytt.';
+    }
+  } catch(e) {
+    // silent
+  }
 }
 
 document.getElementById('form-register').onsubmit = async (e) => {
@@ -106,11 +188,25 @@ document.getElementById('form-recovery').onsubmit = async (e) => {
 document.addEventListener('click', (e) => {
   const tabBtn = e.target.closest('[data-tab]');
   if (tabBtn) switchTab(tabBtn.getAttribute('data-tab'));
-
   if (e.target.id === 'copy-btn') copyCodes();
+});
+
+document.getElementById('form-qr')?.addEventListener('click', () => {
+  if (!qrPollTimer && qrToken) startQRLogin();
 });
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(r => r.forEach(x => x.unregister()));
   caches.keys().then(k => k.forEach(x => caches.delete(x)));
 }
+
+function toggleTheme() {
+  const isLight = document.body.classList.toggle('light');
+  localStorage.setItem('theme', isLight ? 'light' : 'dark');
+}
+
+const savedTheme = localStorage.getItem('theme');
+if (savedTheme === 'light') document.body.classList.add('light');
+
+const themeBtn = document.getElementById('themeToggle');
+if (themeBtn) themeBtn.addEventListener('click', toggleTheme);

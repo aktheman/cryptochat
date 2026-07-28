@@ -1898,6 +1898,15 @@
               toast('Lagret', 'success');
             } catch(e) { toast('Kunne ikke lagre'); }
           }},
+          { icon: '🌐', label: 'Oversett', action: async () => {
+            const text = msgEl.querySelector('.msg-text');
+            if (!text) return;
+            const target = localStorage.getItem('translateLang') || 'en';
+            try {
+              const r = await loadJSON('/translate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: text.textContent, target }) });
+              toast('🌐 ' + r.translated, 'success');
+            } catch(e) { toast('Kunne ikke oversette'); }
+          }},
           ...(isOwn ? [{ icon: '✏️', label: 'Rediger', action: () => editMessage(msgId) }] : []),
         ];
 
@@ -2051,6 +2060,7 @@
         const prevDate = prevItem?.dataset?.dateKey;
         const showDateSeparator = !!chatId && !!dateKey && prevDate !== dateKey;
         const shortTime = msgDate ? new Intl.DateTimeFormat('no-NO', { hour:'2-digit', minute:'2-digit' }).format(msgDate) : '';
+        const fullTime = msgDate ? new Intl.DateTimeFormat('no-NO', { year:'numeric', month:'long', day:'numeric', hour:'2-digit', minute:'2-digit' }).format(msgDate) : '';
 
         const replyHtml = message.reply_preview ? '<div class="reply-ref" data-reply-to="' + escapeHtml(message.reply_to || '') + '">&#8617; ' + escapeHtml(message.reply_preview) + '</div>' : '';
         const replyBtnHtml = (!isMe && !message.deleted && message.id) ? '<button class="reply-msg-btn" title="Svar">&#8617;</button>' : '';
@@ -2068,14 +2078,17 @@
         }
 
         item.innerHTML = (
-          '<div class="meta"><span class="sender">' + escapeHtml(senderDisplay) + '</span>' + replyBtnHtml + '<span class="time">' + escapeHtml(shortTime) + '</span></div>'
+          (activeChat?.type === 'group' && !isMe ? '<div class="msg-sender">' + escapeHtml(senderDisplay) + '</div>' : '')
           + fwdTag
           + replyHtml
           + fileHtml
           + pollHtml
           + msgTextHtml
+          + '<div class="msg-footer">'
           + tagHtml
-          + '<div class="meta">' + e2eeIndicator + (isMe ? '<span class="read">' + (message.read ? '<span class="read-receipt read">✓✓</span>' : '<span class="read-receipt unread">✓</span>') + '</span>' : '') + '</div>'
+          + '<span class="time" title="' + escapeHtml(fullTime) + '">' + escapeHtml(shortTime) + '</span>'
+          + (isMe ? '<span class="read">' + (message.read ? '<span class="read-receipt read">✓✓</span>' : '<span class="read-receipt unread">✓</span>') + '</span>' : '')
+          + '</div>'
           + reactionsHtml
           + actionsHtml
           + (message.id && !message.deleted ? '<button class="reaction-trigger" title="Reager">+</button>' : '')
@@ -2617,7 +2630,18 @@
       }
 
       // ── Full Emoji Picker ──
+      function getFrequentEmojis() {
+        try { return JSON.parse(localStorage.getItem('freqEmojis') || '[]'); } catch(e) { return []; }
+      }
+      function addFrequentEmoji(emoji) {
+        let freq = getFrequentEmojis();
+        freq = freq.filter(e => e !== emoji);
+        freq.unshift(emoji);
+        if (freq.length > 30) freq = freq.slice(0, 30);
+        localStorage.setItem('freqEmojis', JSON.stringify(freq));
+      }
       const EMOJI_DATA = {
+        'Frekvent': getFrequentEmojis(),
         'Smiley': ['😀','😃','😄','😁','😆','😅','🤣','😂','🙂','🙃','😉','😊','😇','🥰','😍','🤩','😘','😗','😚','😙','🥲','😋','😛','😜','🤪','😝','🤑','🤗','🤭','🫢','🤫','🤔','🫡','🤐','🤨','😐','😑','😶','🫥','😏','😒','🙄','😬','🤥','😌','😔','😪','🤤','😴','😷','🤒','🤕','🤢','🤮','🥵','🥶','🥴','😵','🤯','🤠','🥳','🥸','😎','🤓','🧐'],
         'Gest': ['👋','🤚','🖐️','✋','🖖','🫱','🫲','🫳','🫴','👌','🤌','🤏','✌️','🤞','🫰','🤟','🤘','🤙','👈','👉','👆','🖕','👇','☝️','🫵','👍','👎','✊','👊','🤛','🤜','👏','🙌','🫶','👐','🤲','🤝','🙏'],
         'Nature': ['🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐻‍❄️','🐨','🐯','🦁','🐮','🐷','🐸','🐵','🙈','🙉','🙊','🐒','🐔','🐧','🐦','🐤','🐣','🐥','🦆','🦅','🦉','🦇','🐺','🐗','🐴','🦄','🐝','🪱','🐛','🦋','🐌','🐞','🐜','🪲','🪳','🦟','🦗','🕷️','🦂','🐢','🐍','🦎','🦖','🦕','🐙','🦑','🦐','🦞','🦀','🐡','🐠','🐟','🐬','🐳','🐋','🦈','🐊'],
@@ -2641,7 +2665,7 @@
         EMOJI_CATEGORIES.forEach(cat => {
           const btn = document.createElement('button');
           btn.className = 'emoji-cat-btn' + (cat === currentEmojiCategory ? ' active' : '');
-          btn.textContent = EMOJI_DATA[cat][0];
+          btn.textContent = cat === 'Frekvent' ? '🕐' : EMOJI_DATA[cat][0];
           btn.title = cat;
           btn.addEventListener('click', () => { currentEmojiCategory = cat; renderEmojiGrid(); });
           categoriesEl.appendChild(btn);
@@ -2650,7 +2674,11 @@
         toggleBtn.addEventListener('click', (e) => {
           e.stopPropagation();
           picker.classList.toggle('open');
-          if (picker.classList.contains('open')) { renderEmojiGrid(); searchInput.focus(); }
+          if (picker.classList.contains('open')) {
+            EMOJI_DATA['Frekvent'] = getFrequentEmojis();
+            renderEmojiGrid();
+            searchInput.focus();
+          }
         });
 
         let _emojiSearchTimer = null;
@@ -2677,6 +2705,7 @@
           btn.textContent = emoji;
           btn.setAttribute('aria-label', emoji);
           btn.addEventListener('click', () => {
+            addFrequentEmoji(emoji);
             if (currentReactionTarget) {
               toggleReaction(currentReactionTarget, emoji);
               currentReactionTarget = null;
@@ -5021,4 +5050,14 @@
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
+
+  setTimeout(() => {
+    const ls = document.querySelector('.loading-screen');
+    if (ls && ls.parentElement) {
+      const app = document.getElementById('app');
+      if (app && app.querySelector('.loading-screen')) {
+        app.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:12px;color:#6d8094;"><div style="font-size:2rem;">⚠️</div><div style="font-weight:600;color:#e7e8f3;">Kunne ikke laste chat</div><div style="font-size:.85rem;">Prøv å oppdatere siden.</div><button onclick="location.reload()" style="margin-top:8px;padding:8px 20px;border:none;border-radius:8px;background:#5b8def;color:#fff;cursor:pointer;font-size:.9rem;">Last inn på nytt</button></div>';
+      }
+    }
+  }, 12000);
 })();

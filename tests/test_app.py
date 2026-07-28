@@ -32,6 +32,7 @@ def clean_data():
     invalidate_cache()
     conn = _get_conn()
     conn.execute('DELETE FROM kv_store')
+    conn.execute('DELETE FROM json_store')
     conn.commit()
     conn.close()
     RATE_LIMIT_STORE.clear()
@@ -42,7 +43,8 @@ def clean_data():
         'link_previews.json', 'pinned_chats.json', 'invite_links.json',
         'muted_chats.json', 'contacts.json', 'stories.json', 'blocked_users.json',
         'deleted_for_me.json', 'live_locations.json', 'wallpapers.json',
-        'slowmode.json', 'drafts.json', 'polls.json',
+        'slowmode.json', 'drafts.json', 'polls.json', 'folders.json',
+        'archive.json',
     }
     for path in [
         app.users_file, app.messages_file, app.keys_file, app.groups_file,
@@ -54,12 +56,14 @@ def clean_data():
         app.muted_chats_file, app.contacts_file, app.stories_file,
         app.blocked_file, app.deleted_for_me_file, app.live_location_file,
         app.wallpapers_file, app.slowmode_file, app.polls_file,
+        app.archive_file,
     ]:
         path.write_text('{}' if path.name in dict_files else '[]', encoding='utf-8')
     yield
     invalidate_cache()
     conn = _get_conn()
     conn.execute('DELETE FROM kv_store')
+    conn.execute('DELETE FROM json_store')
     conn.commit()
     conn.close()
     RATE_LIMIT_STORE.clear()
@@ -909,3 +913,544 @@ class TestCsrfProtection:
         finally:
             app.config['CSRF_ENABLED'] = False
             app.config['CSRF_TRUSTED_ORIGINS'] = []
+
+
+class TestChannels:
+    def test_create_channel(self, client):
+        _register(client, 'alice')
+        r = client.post('/channels', json={'name': 'Nyheter', 'description': 'Viktige oppdateringer'})
+        assert r.status_code == 200
+        data = r.get_json()
+        assert data['success'] is True
+        assert data['channel']['name'] == 'Nyheter'
+
+    def test_create_channel_no_name(self, client):
+        _register(client, 'alice')
+        r = client.post('/channels', json={'description': 'uten navn'})
+        assert r.status_code == 400
+
+    def test_list_channels(self, client):
+        _register(client, 'alice')
+        client.post('/channels', json={'name': 'Nyheter'})
+        r = client.get('/channels')
+        assert r.status_code == 200
+        assert len(r.get_json()['channels']) == 1
+
+    def test_send_channel_message(self, client):
+        _register(client, 'alice')
+        r = client.post('/channels', json={'name': 'Nyheter'})
+        cid = r.get_json()['channel']['id']
+        r = client.post(f'/channels/{cid}/send', json={'ciphertext': 'hello all', 'type': 'text'})
+        assert r.status_code == 200
+
+    def test_subscribe_unsubscribe(self, client):
+        _register(client, 'alice')
+        r = client.post('/channels', json={'name': 'Nyheter'})
+        cid = r.get_json()['channel']['id']
+        client2 = _new_client()
+        _register(client2, 'bob')
+        r = client2.post(f'/channels/{cid}/subscribe')
+        assert r.status_code == 200
+        r = client2.post(f'/channels/{cid}/unsubscribe')
+        assert r.status_code == 200
+
+
+class TestScheduledMessages:
+    def test_schedule_message(self, client):
+        _register(client, 'alice')
+        _register(client, 'bob')
+        r = client.post('/schedule', json={
+            'recipient': 'bob',
+            'ciphertext': 'hello future',
+            'send_at': '2099-01-01T12:00:00Z',
+        })
+        assert r.status_code == 200
+        assert 'id' in r.get_json()
+
+    def test_schedule_past_time(self, client):
+        _register(client, 'alice')
+        r = client.post('/schedule', json={
+            'recipient': 'bob',
+            'ciphertext': 'too late',
+            'send_at': '2020-01-01T12:00:00Z',
+        })
+        assert r.status_code == 400
+
+    def test_schedule_list(self, client):
+        _register(client, 'alice')
+        client.post('/schedule', json={
+            'recipient': 'bob', 'ciphertext': 'hi',
+            'send_at': '2099-01-01T12:00:00Z',
+        })
+        r = client.get('/schedule')
+        assert r.status_code == 200
+        assert len(r.get_json()['scheduled']) == 1
+
+    def test_cancel_scheduled(self, client):
+        _register(client, 'alice')
+        r = client.post('/schedule', json={
+            'recipient': 'bob', 'ciphertext': 'hi',
+            'send_at': '2099-01-01T12:00:00Z',
+        })
+        sid = r.get_json()['id']
+        r = client.delete(f'/schedule/{sid}')
+        assert r.status_code == 200
+        r = client.get('/schedule')
+        assert len(r.get_json()['scheduled']) == 0
+
+
+class TestPinnedMessages:
+    def test_pin_unpin_message(self, client):
+        _register(client, 'alice')
+        _register(client, 'bob')
+        client.post('/send', json={'recipient': 'bob', 'ciphertext': 'pin me', 'type': 'text'})
+        msgs = client.get('/messages/bob').get_json()['messages']
+        mid = msgs[0]['id']
+        r = client.post(f'/pins/user/bob/{mid}')
+        assert r.status_code == 200
+        r = client.delete(f'/pins/user/bob/{mid}')
+        assert r.status_code == 200
+
+
+class TestWallpapers:
+    def test_get_presets(self, client):
+        _register(client, 'alice')
+        r = client.get('/wallpapers')
+        assert r.status_code == 200
+        assert len(r.get_json()['presets']) > 0
+
+    def test_set_wallpaper(self, client):
+        _register(client, 'alice')
+        _register(client, 'bob')
+        r = client.post('/wallpaper/user/bob', json={'wallpaper_id': 'stars'})
+        assert r.status_code == 200
+        r = client.get('/wallpaper/user/bob')
+        assert r.get_json()['wallpaper']['id'] == 'stars'
+
+
+class TestContacts:
+    def test_add_contact(self, client):
+        _register(client, 'alice')
+        _register(client, 'bob')
+        r = client.post('/contacts', json={'username': 'bob', 'name': 'Bob B'})
+        assert r.status_code == 200
+
+    def test_add_contact_nonexistent(self, client):
+        _register(client, 'alice')
+        r = client.post('/contacts', json={'username': 'nonexistent'})
+        assert r.status_code == 404
+
+    def test_get_contacts(self, client):
+        _register(client, 'alice')
+        _register(client, 'bob')
+        client.post('/contacts', json={'username': 'bob'})
+        r = client.get('/contacts')
+        assert r.status_code == 200
+        assert len(r.get_json()['contacts']) == 1
+
+    def test_update_contact(self, client):
+        _register(client, 'alice')
+        _register(client, 'bob')
+        client.post('/contacts', json={'username': 'bob', 'name': 'Bob'})
+        r = client.put('/contacts/bob', json={'name': 'Robert', 'notes': 'Min venn'})
+        assert r.status_code == 200
+
+    def test_remove_contact(self, client):
+        _register(client, 'alice')
+        _register(client, 'bob')
+        client.post('/contacts', json={'username': 'bob'})
+        r = client.delete('/contacts/bob')
+        assert r.status_code == 200
+
+
+class TestArchive:
+    def test_toggle_archive(self, client):
+        _register(client, 'alice')
+        r = client.post('/archive', json={'chatType': 'user', 'chatId': 'bob'})
+        assert r.status_code == 200
+
+    def test_get_archive(self, client):
+        _register(client, 'alice')
+        client.post('/archive', json={'chatType': 'user', 'chatId': 'bob'})
+        r = client.get('/archive')
+        assert r.status_code == 200
+        assert len(r.get_json()['archive']) == 1
+
+
+class TestFolders:
+    def test_get_default_folders(self, client):
+        _register(client, 'alice')
+        r = client.get('/folders')
+        assert r.status_code == 200
+        assert len(r.get_json()['folders']) == 1
+
+    def test_save_folders(self, client):
+        _register(client, 'alice')
+        folders = [{'id': 'work', 'name': 'Jobb', 'filters': ['bob']}]
+        r = client.post('/folders', json={'folders': folders})
+        assert r.status_code == 200
+        r = client.get('/folders')
+        assert r.get_json()['folders'] == folders
+
+
+class TestBlockUser:
+    def test_block_unblock(self, client):
+        _register(client, 'alice')
+        r = client.post('/block/bob')
+        assert r.status_code == 200
+        r = client.delete('/block/bob')
+        assert r.status_code == 200
+
+    def test_block_self(self, client):
+        _register(client, 'alice')
+        r = client.post('/block/alice')
+        assert r.status_code == 400
+
+    def test_blocked_list(self, client):
+        _register(client, 'alice')
+        client.post('/block/bob')
+        r = client.get('/blocked')
+        assert r.status_code == 200
+        assert 'bob' in r.get_json()['blocked']
+
+    def test_check_blocked(self, client):
+        _register(client, 'alice')
+        client.post('/block/bob')
+        r = client.get('/blocked/check/bob')
+        assert r.status_code == 200
+        assert r.get_json()['iBlocked'] is True
+
+
+class TestStories:
+    def test_create_story(self, client):
+        _register(client, 'alice')
+        r = client.post('/stories', json={
+            'content': 'Min første story!',
+            'type': 'text',
+            'bgColor': '#1c1030',
+        })
+        assert r.status_code == 200
+        assert 'story' in r.get_json()
+
+    def test_get_stories(self, client):
+        _register(client, 'alice')
+        client.post('/stories', json={'content': 'Hei', 'type': 'text'})
+        r = client.get('/stories')
+        assert r.status_code == 200
+        assert len(r.get_json()['stories']) == 1
+
+    def test_delete_story(self, client):
+        _register(client, 'alice')
+        r = client.post('/stories', json={'content': 'Hei', 'type': 'text'})
+        sid = r.get_json()['story']['id']
+        r = client.delete(f'/stories/{sid}')
+        assert r.status_code == 200
+
+    def test_view_story(self, client):
+        _register(client, 'alice')
+        r = client.post('/stories', json={'content': 'Hei', 'type': 'text'})
+        sid = r.get_json()['story']['id']
+        client2 = _new_client()
+        _register(client2, 'bob')
+        client.post('/contacts', json={'username': 'bob'})
+        r = client2.post(f'/stories/{sid}/view')
+        assert r.status_code == 200
+
+
+class TestSlowMode:
+    def test_set_slowmode(self, client):
+        _register(client, 'alice')
+        r = client.post('/groups', json={'name': 'g', 'members': []})
+        gid = r.get_json()['group']['id']
+        r = client.post(f'/groups/{gid}/slowmode', json={'seconds': 30})
+        assert r.status_code == 200
+
+    def test_get_slowmode(self, client):
+        _register(client, 'alice')
+        r = client.post('/groups', json={'name': 'g', 'members': []})
+        gid = r.get_json()['group']['id']
+        client.post(f'/groups/{gid}/slowmode', json={'seconds': 30})
+        r = client.get(f'/groups/{gid}/slowmode')
+        assert r.status_code == 200
+        assert r.get_json()['seconds'] == 30
+
+
+class TestInviteLinks:
+    def test_get_invite_link(self, client):
+        _register(client, 'alice')
+        r = client.post('/groups', json={'name': 'g', 'members': []})
+        gid = r.get_json()['group']['id']
+        r = client.get(f'/groups/{gid}/invite-link')
+        assert r.status_code == 200
+        assert 'link' in r.get_json()
+
+    def test_resolve_invite(self, client):
+        _register(client, 'alice')
+        r = client.post('/groups', json={'name': 'g', 'members': []})
+        gid = r.get_json()['group']['id']
+        r = client.get(f'/groups/{gid}/invite-link')
+        token = r.get_json()['link']
+        r = client.get(f'/invite/{token}')
+        assert r.status_code == 200
+        assert r.get_json()['groupId'] == gid
+
+    def test_join_via_invite(self, client):
+        _register(client, 'alice')
+        r = client.post('/groups', json={'name': 'g', 'members': []})
+        gid = r.get_json()['group']['id']
+        r = client.get(f'/groups/{gid}/invite-link')
+        token = r.get_json()['link']
+        client2 = _new_client()
+        _register(client2, 'bob')
+        r = client2.post(f'/invite/{token}/join')
+        assert r.status_code == 200
+        assert r.get_json()['groupId'] == gid
+
+    def test_invalid_invite(self, client):
+        _register(client, 'alice')
+        r = client.get('/invite/invalidtoken123')
+        assert r.status_code == 404
+
+
+class TestMessageReporting:
+    def test_report_message(self, client):
+        _register(client, 'alice')
+        _register(client, 'bob')
+        client.post('/send', json={'recipient': 'bob', 'ciphertext': 'bad', 'type': 'text'})
+        msgs = client.get('/messages/bob').get_json()['messages']
+        mid = msgs[0]['id']
+        r = client.post('/report', json={'message_id': mid, 'reason': 'Spam', 'type': 'spam'})
+        assert r.status_code == 200
+
+
+class TestForwardMessage:
+    def test_forward_message(self, client):
+        _register(client, 'alice')
+        _register(client, 'bob')
+        _register(client, 'charlie')
+        client.post('/send', json={'recipient': 'bob', 'ciphertext': 'forward me', 'type': 'text'})
+        msgs = client.get('/messages/bob').get_json()['messages']
+        mid = msgs[0]['id']
+        r = client.post(f'/messages/{mid}/forward', json={'target': 'charlie', 'target_type': 'user'})
+        assert r.status_code == 200
+
+
+class TestSavedMessages:
+    def test_save_message(self, client):
+        _register(client, 'alice')
+        r = client.post('/saved', json={'ciphertext': 'bookmark this', 'type': 'text'})
+        assert r.status_code == 200
+
+    def test_get_saved(self, client):
+        _register(client, 'alice')
+        client.post('/saved', json={'ciphertext': 'bookmark', 'type': 'text'})
+        r = client.get('/saved')
+        assert r.status_code == 200
+        assert len(r.get_json()['messages']) == 1
+
+
+class TestPinnedChats:
+    def test_toggle_pinned_chat(self, client):
+        _register(client, 'alice')
+        r = client.post('/pinned-chats', json={'chatId': 'bob', 'chatType': 'user'})
+        assert r.status_code == 200
+
+    def test_get_pinned_chats(self, client):
+        _register(client, 'alice')
+        client.post('/pinned-chats', json={'chatId': 'bob', 'chatType': 'user'})
+        r = client.get('/pinned-chats')
+        assert r.status_code == 200
+        assert len(r.get_json()['pinned']) == 1
+
+
+class TestMuteChat:
+    def test_toggle_mute(self, client):
+        _register(client, 'alice')
+        r = client.post('/settings/mute', json={'chatId': 'bob', 'muted': True})
+        assert r.status_code == 200
+
+    def test_get_muted(self, client):
+        _register(client, 'alice')
+        client.post('/settings/mute', json={'chatId': 'bob', 'muted': True})
+        r = client.get('/settings/mute')
+        assert r.status_code == 200
+        assert 'bob' in r.get_json()['muted']
+
+
+class TestDrafts:
+    def test_save_draft(self, client):
+        _register(client, 'alice')
+        r = client.post('/drafts', json={'target': 'bob', 'text': 'utkast'})
+        assert r.status_code == 200
+
+    def test_get_drafts(self, client):
+        _register(client, 'alice')
+        client.post('/drafts', json={'target': 'bob', 'text': 'utkast'})
+        r = client.get('/drafts')
+        assert r.status_code == 200
+        assert 'bob' in r.get_json()['drafts']
+
+
+class TestDeleteForMe:
+    def test_delete_for_me(self, client):
+        _register(client, 'alice')
+        _register(client, 'bob')
+        client.post('/send', json={'recipient': 'bob', 'ciphertext': 'delete me', 'type': 'text'})
+        msgs = client.get('/messages/bob').get_json()['messages']
+        mid = msgs[0]['id']
+        r = client.delete(f'/messages/{mid}/me')
+        assert r.status_code == 200
+
+
+class TestPasswordChange:
+    def test_change_password(self, client):
+        _register(client, 'alice')
+        r = client.post('/auth/change-password', json={
+            'old_password': 'Passw0rd!23',
+            'new_password': 'N3wP@ssw0rd!',
+        })
+        assert r.status_code == 200
+        r = client.post('/auth/login', json={'username': 'alice', 'password': 'N3wP@ssw0rd!'})
+        assert r.status_code == 200
+
+    def test_change_password_wrong_old(self, client):
+        _register(client, 'alice')
+        r = client.post('/auth/change-password', json={
+            'old_password': 'wrong',
+            'new_password': 'N3wP@ssw0rd!',
+        })
+        assert r.status_code == 401
+
+
+class TestSearchV2:
+    def test_search_v2_empty(self, client):
+        _register(client, 'alice')
+        r = client.get('/search/v2')
+        assert r.status_code == 200
+        assert r.get_json()['results'] == []
+
+    def test_search_v2_with_query(self, client):
+        _register(client, 'alice')
+        _register(client, 'bob')
+        client.post('/send', json={'recipient': 'bob', 'ciphertext': 'findable', 'type': 'text'})
+        r = client.get('/search/v2?q=findable')
+        assert r.status_code == 200
+
+
+class TestExportChat:
+    def test_export_user_chat(self, client):
+        _register(client, 'alice')
+        _register(client, 'bob')
+        client.post('/send', json={'recipient': 'bob', 'ciphertext': 'export me', 'type': 'text'})
+        r = client.get('/export/user/bob')
+        assert r.status_code == 200
+        assert b'export me' in r.data
+
+
+class TestStickers:
+    def test_list_packs(self, client):
+        r = client.get('/stickers')
+        assert r.status_code == 200
+        assert len(r.get_json()['packs']) > 0
+
+    def test_get_pack(self, client):
+        r = client.get('/stickers/smileys')
+        assert r.status_code == 200
+        assert r.get_json()['pack']['name'] == 'Smileys'
+
+
+class TestGroupAdminRoles:
+    def _create_group(self, client, name='g', members=None):
+        r = client.post('/groups', json={'name': name, 'members': members or []})
+        return r.get_json()['group']['id']
+
+    def test_set_admin(self, client):
+        _register(client, 'alice')
+        _register(client, 'bob')
+        gid = self._create_group(client, 'g', ['alice', 'bob'])
+        r = client.post(f'/groups/{gid}/admins', json={'username': 'bob', 'role': 'admin'})
+        assert r.status_code == 200
+
+    def test_remove_admin(self, client):
+        _register(client, 'alice')
+        _register(client, 'bob')
+        gid = self._create_group(client, 'g', ['alice', 'bob'])
+        client.post(f'/groups/{gid}/admins', json={'username': 'bob', 'role': 'admin'})
+        r = client.delete(f'/groups/{gid}/admins/bob')
+        assert r.status_code == 200
+
+
+class TestKeyRotation:
+    def test_rotate_key(self, client):
+        _register(client, 'alice')
+        r = client.post('/key/rotate')
+        assert r.status_code == 200
+
+    def test_key_rotation_status(self, client):
+        _register(client, 'alice')
+        r = client.get('/key/rotation-status')
+        assert r.status_code == 200
+        assert 'rotated_at' in r.get_json()
+
+
+class TestMultiDevice:
+    def test_sync_key(self, client):
+        _register(client, 'alice')
+        r = client.post('/sync/keys', json={'publicKey': 'pubkey123', 'deviceId': 'phone1'})
+        assert r.status_code == 200
+
+    def test_get_synced_keys(self, client):
+        _register(client, 'alice')
+        client.post('/sync/keys', json={'publicKey': 'pubkey123', 'deviceId': 'phone1'})
+        r = client.get('/sync/keys')
+        assert r.status_code == 200
+        assert 'phone1' in r.get_json()['syncedKeys']
+
+    def test_remove_synced_key(self, client):
+        _register(client, 'alice')
+        client.post('/sync/keys', json={'publicKey': 'pubkey123', 'deviceId': 'phone1'})
+        r = client.delete('/sync/keys/phone1')
+        assert r.status_code == 200
+
+
+class TestSessionManagement:
+    def test_list_sessions(self, client):
+        _register(client, 'alice')
+        r = client.get('/sessions')
+        assert r.status_code == 200
+        assert len(r.get_json()['sessions']) == 1
+
+    def test_revoke_session_self(self, client):
+        _register(client, 'alice')
+        sessions = client.get('/sessions').get_json()['sessions']
+        sid = sessions[0]['id']
+        r = client.post(f'/sessions/{sid}/revoke')
+        assert r.status_code == 400
+
+
+class TestUpload:
+    def test_upload_without_login(self, client):
+        r = client.post('/upload', data={'recipient': 'bob'})
+        assert r.status_code in (401, 302)
+
+    def test_upload_no_file(self, client):
+        _register(client, 'alice')
+        r = client.post('/upload', data={'recipient': 'bob'})
+        assert r.status_code == 400
+
+
+class TestAdminRoutes:
+    def test_admin_stats_requires_admin(self, client):
+        _register(client, 'alice')
+        r = client.get('/admin/stats')
+        assert r.status_code == 403
+
+    def test_admin_pages_requires_admin(self, client):
+        _register(client, 'alice')
+        r = client.get('/admin/pages')
+        assert r.status_code == 403
+
+    def test_admin_rotate_secret_requires_admin(self, client):
+        _register(client, 'alice')
+        r = client.post('/admin/rotate-secret')
+        assert r.status_code == 403

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>CryptoChat</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💬</text></svg>">
-  <link rel="stylesheet" href="/static/css/login.css?v=15">
+  <link rel="stylesheet" href="/static/css/login.css?v=16">
 </head>
 <body>
   <div class="ambient">
@@ -25,6 +25,7 @@
       <div class="tabs">
         <button class="tab active" data-tab="register">Opprett konto</button>
         <button class="tab" data-tab="login">Logg inn</button>
+        <button class="tab" data-tab="qr">QR</button>
       </div>
 
       <!-- Register -->
@@ -97,6 +98,21 @@
         </div>
       </div>
 
+      <!-- QR Login -->
+      <div id="form-qr" class="form" style="text-align:center">
+        <div class="field">
+          <p style="color:var(--text-secondary);margin-bottom:16px;font-size:.9rem;">Skann QR-koden med en enhet som allerede er logget inn</p>
+        </div>
+        <div id="qrContainer" style="margin:0 auto 16px;width:220px;height:220px;background:rgba(255,255,255,.05);border-radius:12px;display:flex;align-items:center;justify-content:center;">
+          <div id="qrPlaceholder" style="color:var(--text-muted);font-size:.8rem;">Genererer QR...</div>
+          <img id="qrImage" style="display:none;width:220px;height:220px;border-radius:8px;" alt="QR-kode" />
+        </div>
+        <div id="qrStatus" style="color:var(--text-secondary);font-size:.85rem;">Genererer kode...</div>
+        <div class="form-footer">
+          <button type="button" class="link-btn" data-tab="login">Tilbake til innlogging</button>
+        </div>
+      </div>
+
       <div id="feedback" class="feedback"></div>
     </div>
 
@@ -109,6 +125,8 @@
     </div>
   </div>
 
-  <script src="/static/js/auth.js?v=14"></script>
+  <button id="themeToggle" class="theme-toggle" aria-label="Bytt tema">🌓</button>
+
+  <script src="/static/js/auth.js?v=16"></script>
 </body>
 </html>

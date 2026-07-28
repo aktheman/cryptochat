@@ -1,5 +1,5 @@
-:8080 {
-    reverse_proxy 127.0.0.1:5000
+:80 {
+    reverse_proxy cryptochat:5000
 
     header {
         X-Content-Type-Options nosniff
