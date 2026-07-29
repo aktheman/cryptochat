@@ -513,6 +513,8 @@ def require_csrf(f):
 def login_page():
     if 'username' in session:
         return redirect(url_for('chat_page'))
+    if not session.get('csrf_token'):
+        session['csrf_token'] = secrets.token_hex(32)
     resp = make_response(render_template('login.html'))
     resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
     resp.headers['Pragma'] = 'no-cache'
