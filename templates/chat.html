@@ -12,6 +12,10 @@
   <title>CryptoChat</title>
   <link rel="manifest" href="/manifest.json" />
   <link rel="apple-touch-icon" href="/static/img/icon-192.png" />
+  <style>
+/* Critical CSS - loads first for instant paint */
+:root{--c-bg:#0e1621;--c-card:#17213b;--c-text:#e7e8f3;--c-text-muted:#6d8094;--c-border:#1c2436;--c-primary:#3390ec}*{box-sizing:border-box;margin:0;padding:0}body{background:var(--c-bg);color:var(--c-text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Roboto','Helvetica Neue',sans-serif;overflow:hidden;height:100vh}.loading-screen{display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:12px}.loading-inner{text-align:center}.loading-icon{font-size:3rem}.loading-brand{font-size:1.3rem;font-weight:700;color:var(--c-text);margin-top:8px}.loading-label{font-size:.85rem;color:var(--c-text-muted)}
+</style>
   <link rel="stylesheet" href="/static/css/style.css?v={{ version or '17' }}" />
 </head>
 <body data-username="{{ username }}">

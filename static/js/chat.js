@@ -1,6 +1,9 @@
 (() => {
   'use strict';
 
+  const EMOJI_MAP = {
+    ':smile:':'😊',':happy:':'😊',':laugh:':'😂',':joy:':'😂',':sad:':'😢',':cry:':'😢',':heart:':'❤️',':love:':'😍',':wink:':'😉',':wow:':'😮',':angry:':'😠',':mad:':'😡',':cool:':'😎',':sunglasses:':'😎',':blush:':'☺️',':kiss:':'😘',':hug:':'🤗',':think:':'🤔',':shrug:':'🤷',':facepalm:':'🤦',':eyes:':'👀',':fire:':'🔥',':star:':'⭐',':thumbsup:':'👍',':thumbsdown:':'👎',':ok:':'👌',':clap:':'👏',':wave:':'👋',':rocket:':'🚀',':check:':'✅',':x:':'❌',':warning:':'⚠️',':question:':'❓',':exclamation:':'❗',':100:':'💯',':party:':'🎉',':tada:':'🎉',':confetti:':'🎊',':balloon:':'🎈',':gift:':'🎁',':bell:':'🔔',':lock:':'🔒',':unlock:':'🔓',':key:':'🔑',':mail:':'✉️',':phone:':'📞',':camera:':'📷',':video:':'📹',':music:':'🎵',':note:':'🎶',':headphones:':'🎧',':game:':'🎮',':soccer:':'⚽',':basketball:':'🏀',':football:':'🏈',':baseball:':'⚾',':tennis:':'🎾',':golf:':'⛳',':swim:':'🏊',':run:':'🏃',':bike:':'🚴',':car:':'🚗',':bus:':'🚌',':train:':'🚆',':plane:':'✈️',':boat:':'⛵',':house:':'🏠',':office:':'🏢',':school:':'🏫',':church:':'⛪',':map:':'🗺️',':globe:':'🌍',':moon:':'🌙',':sun:':'☀️',':rain:':'🌧️',':snow:':'❄️',':cloud:':'☁️',':lightning:':'⚡',':rainbow:':'🌈',':dog:':'🐶',':cat:':'🐱',':fish:':'🐟',':bird:':'🐦',':horse:':'🐴',':cow:':'🐮',':pig:':'🐷',':frog:':'🐸',':bee:':'🐝',':butterfly:':'🦋',':snake:':'🐍',':dragon:':'🐉',':unicorn:':'🦄',':cake:':'🎂',':pizza:':'🍕',':burger:':'🍔',':fries:':'🍟',':hotdog:':'🌭',':taco:':'🌮',':sushi:':'🍣',':pasta:':'🍝',':rice:':'🍚',':noodles:':'🍜',':coffee:':'☕',':tea:':'🍵',':beer:':'🍺',':wine:':'🍷',':cocktail:':'🍸',':water:':'💧',':droplet:':'💧',':skull:':'💀',':alien:':'👽',':robot:':'🤖',':poop:':'💩',':ghost:':'👻',':clown:':'🤡',':mask:':'😷',':pill:':'💊',':syringe:':'💉',':lab:':'🔬',':microscope:':'🔬',':telescope:':'🔭',':satellite:':'📡',':antenna:':'📡',':bomb:':'💣',':knife:':'🔪',':shield:':'🛡️',':crown:':'👑',':ring:':'💍',':diamond:':'💎',':gem:':'💎',':trophy:':'🏆',':medal:':'🥇',':book:':'📖',':notebook:':'📓',':newspaper:':'📰',':computer:':'💻',':laptop:':'💻',':mouse:':'🖱️',':printer:':'🖨️',':folder:':'📁',':file:':'📄',':calendar:':'📅',':clock:':'🕐',':alarm:':'⏰',':timer:':'⏱️',':hourglass:':'⌛',':lightbulb:':'💡',':money:':'💰',':chart:':'📊',':graph:':'📈',':magnifier:':'🔍',':search:':'🔍',':tools:':'🔧',':wrench:':'🔧',':screwdriver:':'🪛',':gear:':'⚙️',':chain:':'🔗',':link:':'🔗',':magnet:':'🧲',':flag:':'🚩',':cross:':'⚔️',':medal:':'🎖️',':microphone:':'🎤',':tv:':'📺',':radio:':'📻',':battery:':'🔋',':plug:':'🔌',':lamp:':'💡',':bulb:':'💡',':candle:':'🕯️',':toilet:':'🚽',':shower:':'🚿',':bath:':'🛁',':bed:':'🛏️',':sofa:':'🛋️',':airplane:':'✈️',':helicopter:':'🚁',':ambulance:':'🚑',':police:':'🚓',':firetruck:':'🚒',':tractor:':'🚜',':motorcycle:':'🏍️',':scooter:':'🛴',':skateboard:':'🛹',':surf:':'🏄',':ski:':'⛷️',':snowboarder:':'🏂',':guitar:':'🎸',':drum:':'🥁',':trumpet:':'🎺',':violin:':'🎻',':saxophone:':'🎷',':piano:':'🎹',':email:':'📧',':inbox:':'📥',':outbox:':'📤',':package:':'📦',':shopping:':'🛒',':cart:':'🛒',':credit:':'💳',':bank:':'🏦',':statue:':'🗽',':palm:':'🌴',':cactus:':'🌵',':flower:':'🌸',':rose:':'🌹',':tulip:':'🌷',':sunflower:':'🌻',':herb:':'🌿',':shamrock:':'☘️',':pinetree:':'🌲',':xmas:':'🎄',':santa:':'🎅',':zombie:':'🧟',':vampire:':'🧛',':fairy:':'🧚',':elf:':'🧝',':genie:':'🧞',':mermaid:':'🧜',':angel:':'👼',':baby:':'👶',':boy:':'👦',':girl:':'👧',':man:':'👨',':woman:':'👩',':oldman:':'👴',':oldwoman:':'👵',':police:':'👮',':detective:':'🕵️',':guard:':'💂',':construction:':'👷',':ninja:':'🥷',':prince:':'🤴',':princess:':'👸',':soldier:':'💂',':surgeon:':'🥼',':scientist:':'🥽',':pilot:':'👨‍✈️',':astronaut:':'🧑‍🚀',':firefighter:':'🧑‍🚒',':teacher:':'🧑‍🏫',':judge:':'🧑‍⚖️',':farmer:':'🧑‍🌾',':cook:':'🧑‍🍳',':handshake:':'🤝',':pray:':'🙏',':muscle:':'💪',':fist:':'✊',':raisedhand:':'✋',':victory:':'✌️',':fingerscrossed:':'🤞',':peace:':'☮️',':yin:':'☯️',':recycle:':'♻️',':wheelchair:':'♿',':restroom:':'🚻',':nosmoking:':'🚭',':dog:':'🐕',':cat:':'🐈',':mouse:':'🐁',':hamster:':'🐹',':rabbit:':'🐇',':fox:':'🦊',':bear:':'🐻',':panda:':'🐼',':koala:':'🐨',':tiger:':'🐯',':lion:':'🦁',':monkey:':'🐵',':gorilla:':'🦍',':elephant:':'🐘',':rhino:':'🦏',':bat:':'🦇',':owl:':'🦉',':eagle:':'🦅',':duck:':'🦆',':swan:':'🦢',':peacock:':'🦚',':parrot:':'🦜',':frog:':'🐸',':crocodile:':'🐊',':turtle:':'🐢',':lizard:':'🦎',':snail:':'🐌',':spider:':'🕷️',':scorpion:':'🦂',':crab:':'🦀',':lobster:':'🦞',':shrimp:':'🦐',':squid:':'🦑',':dolphin:':'🐬',':whale:':'🐋',':shark:':'🦈',':octopus:':'🐙',':earth:':'🌍',':saturn:':'🪐',':comet:':'☄️',':star:':'⭐',':sun:':'☀️',':moon:':'🌙',':eclipse:':'🌑',':northernlights:':'🌌',':tornado:':'🌪️',':cyclone:':'🌀',':volcano:':'🌋',':desert:':'🏜️',':island:':'🏝️',':mountain:':'⛰️',':camping:':'🏕️',':beach:':'🏖️',':city:':'🏙️',':sunrise:':'🌅',':sunset:':'🌇',':bridge:':'🌉',':fountain:':'⛲',':tent:':'⛺',':carousel:':'🎠',':ferris:':'🎡',':rollercoaster:':'🎢',':fishing:':'🎣',':bowling:':'🎳',':pool:':'🎱',':dart:':'🎯',':gift:':'🎁',':ribbon:':'🎀',':ticket:':'🎟️',':clapper:':'🎬',':palette:':'🎨',':thread:':'🧵',':yarn:':'🧶',':balloon:':'🎈',':dice:':'🎲',':chess:':'♟️',':jigsaw:':'🧩',':teddy:':'🧸',':kite:':'🪁',':puzzle:':'🧩',':dolls:':'🪆',':glasses:':'👓',':goggles:':'🥽',':hat:':'🎩',':cap:':'🧢',':scarf:':'🧣',':gloves:':'🧤',':coat:':'🧥',':socks:':'🧦',':dress:':'👗',':kimono:':'👘',':sarong:':'🥻',':bikini:':'👙',':swimsuit:':'🩱',':shoe:':'👟',':boot:':'🥾',':sandal:':'👡',':heel:':'👠',':crown:':'👑',':tophat:':'🎩',':graduation:':'🎓',':medal:':'🎖️',':military:':'🎖️',':trophy:':'🏆',':pin:':'📌',':pushpin:':'📌',':paperclip:':'📎',':ruler:':'📏',':scissors:':'✂️',':envelope:':'✉️',':pencil:':'✏️',':pen:':'🖊️',':brush:':'🖌️',':crayon:':'🖍️',':chalk:':'🖍️',':folder:':'📁',':tag:':'🏷️',':barcode:':'🏷️',':qrcode:':'📱',':phone:':'📱',':mobile:':'📱',':tablet:':'📲',':computer:':'💻',':watch:':'⌚',':ring:':'💍',':keyboard:':'⌨️',':mouse:':'🖱️',':trackball:':'🖲️',':printer:':'🖨️',':fax:':'📠',':joystick:':'🕹️',':floppy:':'💾',':cd:':'💿',':dvd:':'📀',':vhs:':'📼',':camera:':'📷',':film:':'🎞️',':projector:':'📽️',':tv:':'📺',':radio:':'📻',':alarm:':'⏰',':stopwatch:':'⏱️',':timer:':'⏲️',':clock:':'🕰️',':thermometer:':'🌡️',':sun:':'☀️',':moon:':'🌙',':cloud:':'☁️',':umbrella:':'☂️',':snowman:':'⛄',':comet:':'☄️',':fire:':'🔥',':droplet:':'💧',':wave:':'🌊',':wind:':'🌬️',':compass:':'🧭',':anchor:':'⚓',':ship:':'🚢',':submarine:':'🛳️',':bridge:':'🌉',':airplane:':'✈️',':helicopter:':'🚁',':rocket:':'🚀',':satellite:':'🛰️',':road:':'🛣️',':railway:':'🛤️',':station:':'🚉',':busstop:':'🚏',':fuel:':'⛽',':parking:':'🅿️',':hospital:':'🏥',':police:':'🚔',':ambulance:':'🚑',':firetruck:':'🚒',':wheel:':'⚙️',':axe:':'🪓',':pick:':'⛏️',':hammer:':'🔨',':saw:':'🪚',':wrench:':'🔧',':screwdriver:':'🪛',':pliers:':'🔧',':ladder:':'🪜',':shovel:':'⛏️',':broom:':'🧹',':soap:':'🧼',':sponge:':'🧽',':toothbrush:':'🪥',':razor:':'🪒',':lotion:':'🧴',':key:':'🔑',':lock:':'🔒',':unlock:':'🔓',':bell:':'🔔',':mute:':'🔕',':loudspeaker:':'📢',':megaphone:':'📣',':postal:':'📮',':postbox:':'📮',':newspaper:':'📰',':bookmark:':'🔖',':link:':'🔗',':gear:':'⚙️',':atom:':'⚛️',':radiation:':'☢️',':biohazard:':'☣️',':recycle:':'♻️',':infinity:':'♾️',':warning:':'⚠️',':pause:':'⏸️',':play:':'▶️',':stop:':'⏹️',':record:':'⏺️',':eject:':'⏏️',':next:':'⏭️',':previous:':'⏮️',':shuffle:':'🔀',':repeat:':'🔁',':repeatone:':'🔂',':arrowup:':'⬆️',':arrowdown:':'⬇️',':arrowleft:':'⬅️',':arrowright:':'➡️',':up:':'🆙',':new:':'🆕',':free:':'🆓',':cool:':'🆒',':top:':'🔝',':soon:':'🔜',':end:':'🔚',':on:':'🔛',':atm:':'🏧',':wc:':'🚾',':passport:':'🛂',':customs:':'🛃',':baggage:':'🛄',':leftluggage:':'🛅',':elevator:':'🛗',':escalator:':'🚈',':stairs:':'🪜',':wheelchair:':'♿',':nosmoking:':'🚭',':dog:':'🐕',':cat:':'🐈',':snake:':'🐍',':dragon:':'🐉',':horse:':'🐎',':bull:':'🐂',':cow:':'🐄',':pig:':'🐖',':ram:':'🐏',':sheep:':'🐑',':goat:':'🐐',':camel:':'🐪',':llama:':'🦙',':giraffe:':'🦒',':elephant:':'🐘',':rhino:':'🦏',':hippo:':'🦛',':mouse:':'🐁',':rat:':'🐀',':hamster:':'🐹',':rabbit:':'🐇',':chipmunk:':'🐿️',':beaver:':'🦫',':hedgehog:':'🦔',':bat:':'🦇',':koala:':'🐨',':panda:':'🐼',':sloth:':'🦥',':otter:':'🦦',':skunk:':'🦨',':kangaroo:':'🦘',':badger:':'🦡',':monkey:':'🐒',':gorilla:':'🦍',':orangutan:':'🦧',':bird:':'🐦',':penguin:':'🐧',':dove:':'🕊️',':eagle:':'🦅',':duck:':'🦆',':swan:':'🦢',':owl:':'🦉',':peacock:':'🦚',':parrot:':'🦜',':frog:':'🐸',':crocodile:':'🐊',':turtle:':'🐢',':lizard:':'🦎',':snail:':'🐌',':spider:':'🕷️',':scorpion:':'🦂',':crab:':'🦀',':lobster:':'🦞',':shrimp:':'🦐',':squid:':'🦑',':octopus:':'🐙',':dolphin:':'🐬',':whale:':'🐋',':shark:':'🦈',':seal:':'🦭',':fish:':'🐟',':tropicalfish:':'🐠',':blowfish:':'🐡',':jellyfish:':'🪼',':coral:':'🪸',':worm:':'🪱',':leaves:':'🍃',':seedling:':'🌱',':palm:':'🌴',':cactus:':'🌵',':flower:':'🌸',':rose:':'🌹',':wilted:':'🥀',':hibiscus:':'🌺',':sunflower:':'🌻',':blossom:':'🌼',':tulip:':'🌷',':herb:':'🌿',':shamrock:':'☘️',':maple:':'🍁',':pine:':'🌲',':xmas:':'🎄',':apple:':'🍎',':pear:':'🍐',':orange:':'🍊',':lemon:':'🍋',':banana:':'🍌',':watermelon:':'🍉',':grapes:':'🍇',':berry:':'🫐',':strawberry:':'🍓',':cherry:':'🍒',':peach:':'🍑',':mango:':'🥭',':pineapple:':'🍍',':melon:':'🍈',':kiwi:':'🥝',':tomato:':'🍅',':eggplant:':'🍆',':avocado:':'🥑',':broccoli:':'🥦',':carrot:':'🥕',':corn:':'🌽',':cucumber:':'🥒',':pepper:':'🫑',':potato:':'🥔',':sweetpotato:':'🍠',':mushroom:':'🍄',':peanuts:':'🥜',':honey:':'🍯',':bread:':'🍞',':croissant:':'🥐',':bagel:':'🥯',':pretzel:':'🥨',':pancake:':'🥞',':waffle:':'🧇',':cheese:':'🧀',':egg:':'🥚',':cooking:':'🍳',':bacon:':'🥓',':pizza:':'🍕',':burger:':'🍔',':fries:':'🍟',':hotdog:':'🌭',':sandwich:':'🥪',':taco:':'🌮',':burrito:':'🌯',':sushi:':'🍣',':rice:':'🍚',':curry:':'🍛',':ramen:':'🍜',':spaghetti:':'🍝',':friedshrimp:':'🍤',':dumpling:':'🥟',':fortune:':'🥠',':takeout:':'🥡',':icecream:':'🍨',':shavedice:':'🍧',':cake:':'🎂',':cupcake:':'🧁',':pie:':'🥧',':chocolate:':'🍫',':candy:':'🍬',':lollipop:':'🍭',':custard:':'🍮',':doughnut:':'🍩',':cookie:':'🍪',':milk:':'🥛',':coffee:':'☕',':tea:':'🍵',':beer:':'🍺',':wine:':'🍷',':cocktail:':'🍸',':tropicaldrink:':'🍹',':champagne:':'🥂',':bottle:':'🍾',':sake:':'🍶',':babybottle:':'🍼',':fork:':'🍴',':knife:':'🔪',':spoon:':'🥄',':chopsticks:':'🥢',':cup:':'🥃',':salad:':'🥗',':popcorn:':'🍿',':salt:':'🧂',':canned:':'🥫',
+  };
   const _featureCSS = document.createElement('style');
   _featureCSS.textContent = `
     :root, body {
@@ -345,6 +348,42 @@
     setTimeout(() => { if (item.parentElement) item.remove(); }, 2500);
   }
 
+  function showUndoToast(message, undoCallback) {
+    let container = document.getElementById('toasts');
+    if (!container) {
+      container = document.createElement('div');
+      container.id = 'toasts';
+      container.className = 'toasts';
+      document.body.appendChild(container);
+    }
+    const item = document.createElement('div');
+    item.className = 'toast info';
+    const span = document.createElement('span');
+    span.textContent = message;
+    const btn = document.createElement('button');
+    btn.className = 'undo-btn';
+    btn.textContent = 'Angre';
+    btn.addEventListener('click', (e) => { e.stopPropagation(); item.remove(); if (undoCallback) undoCallback(); });
+    item.appendChild(span);
+    item.appendChild(btn);
+    container.appendChild(item);
+    setTimeout(() => { if (item.parentElement) item.remove(); }, 5000);
+  }
+
+  function deleteMessageWithUndo(msgId, msgEl) {
+    const savedHTML = msgEl ? msgEl.innerHTML : null;
+    fetch('/messages/' + encodeURIComponent(msgId), { method: 'DELETE' }).then(r => r.json()).then(data => {
+      if (data.success) {
+        if (msgEl) msgEl.style.opacity = '0.3';
+        showUndoToast('Melding slettet', () => {
+          fetch('/messages/' + encodeURIComponent(msgId) + '/restore', { method: 'POST' }).then(r => r.json()).then(d => {
+            if (d.success && msgEl) { msgEl.style.opacity = '1'; }
+          });
+        });
+      }
+    }).catch(() => toast('Kunne ikke slette'));
+  }
+
   function escapeHtml(str) {
     return String(str || '').replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m]);
   }
@@ -548,6 +587,20 @@
   async function init() {
     if (!window.__APP__?.username) return;
     try {
+      // ── Animated background ──
+      (function initParticles() {
+        const bg = document.createElement('div');
+        bg.className = 'particle-bg';
+        document.body.insertBefore(bg, document.body.firstChild);
+        for (let i = 0; i < 20; i++) {
+          const p = document.createElement('div');
+          p.className = 'p';
+          const size = 2 + Math.random() * 4;
+          p.style.cssText = 'width:' + size + 'px;height:' + size + 'px;left:' + (Math.random() * 100) + '%;animation-duration:' + (15 + Math.random() * 25) + 's;animation-delay:' + (Math.random() * 20) + 's;';
+          bg.appendChild(p);
+        }
+      })();
+
       await ensureIdentity();
       const [usersRes, groupsRes] = await Promise.all([
         fetch('/users/all'),
@@ -584,6 +637,9 @@
             <button id="fa2Btn" class="btn btn-small btn-ghost" aria-label="Tofaktorautentisering">2FA</button>
             <button id="sessionsBtn" class="btn btn-small btn-ghost" aria-label="Administrer enheter">Enheter</button>
             <button id="rotateKeyBtn" class="btn btn-small btn-ghost" title="Roter.noekkel" aria-label="Roter krypteringsnoekkel">🔄</button>
+            <button id="lockToggle" class="btn btn-small btn-ghost" title="App-lås">🔐</button>
+            <button id="stealthToggle" class="btn btn-small btn-ghost" title="Stealth-modus">👁️</button>
+            <button id="aiSummaryBtn" class="btn btn-small btn-ghost" title="AI-sammendrag">🤖</button>
           </div>
         </header>
         <div class="app-row">
@@ -775,6 +831,23 @@
       let pinnedChats = [];
       let mutedChats = [];
       let channels = [];
+      let chatLabels = {};
+
+      async function loadLabels() {
+        try {
+          const data = await loadJSON('/labels');
+          chatLabels = data.labels || {};
+        } catch(e) { chatLabels = {}; }
+      }
+
+      async function saveLabel(chatId, label) {
+        try {
+          const data = await loadJSON('/labels', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chatId, label }) });
+          if (data.success) {
+            chatLabels[chatId] = data.labels;
+          }
+        } catch(e) {}
+      }
 
       async function fetchVerificationStatus(username) {
         try {
@@ -1181,7 +1254,9 @@
           const key = window.__allUsers?.find ? window.__allUsers.find(x => (x && x.username) === name) : undefined;
           const hasKey = (typeof key === 'object' && key && key.identity_public_key);
           const lockIcon = hasKey ? '<span class="e2ee" title="E2EE">🔒</span>' : '';
-          item.innerHTML = '<div class="avatar-wrap">' + avatarHtml(name) + (presence[name] ? '<div class="presence"></div>' : '') + '</div><div class="item-info"><div class="item-top"><span class="name">' + escapeHtml(displayName) + lockIcon + verifyIcon + pinIcon + '</span>' + (msgTime ? '<span class="preview-time">' + escapeHtml(msgTime) + '</span>' : '') + '</div><div class="preview">' + escapeHtml(preview) + lastSeenText + '</div></div>' + badge;
+          const labels = chatLabels[name] || [];
+          const labelBadges = labels.length ? '<div class="label-badges">' + labels.map(l => '<span class="label-badge">' + escapeHtml(l) + '</span>').join('') + '</div>' : '';
+          item.innerHTML = '<div class="avatar-wrap">' + avatarHtml(name) + (presence[name] ? '<div class="presence"></div>' : '') + '</div><div class="item-info"><div class="item-top"><span class="name">' + escapeHtml(displayName) + lockIcon + verifyIcon + pinIcon + '</span>' + (msgTime ? '<span class="preview-time">' + escapeHtml(msgTime) + '</span>' : '') + '</div><div class="preview">' + escapeHtml(preview) + lastSeenText + '</div>' + labelBadges + '</div>' + badge;
           item.addEventListener('click', () => { activateItem(usersList, item); openChat(name); });
           usersList.appendChild(item);
         });
@@ -1199,7 +1274,9 @@
           const hasKey = !!(g && g.encryptedKey);
           const lockIcon = hasKey ? '<span class="e2ee" title="E2EE">🔒</span>' : '';
           const inviteIcon = g.invite_token ? '<span class="e2ee" title="Invitasjon aktiv">🔗</span>' : '';
-          item.innerHTML = '<div class="avatar-wrap">' + avatarHtml(g.name) + '</div><div class="item-info"><div class="item-top"><span class="name">' + escapeHtml(g.name) + lockIcon + inviteIcon + '</span>' + (groupMsgTime ? '<span class="preview-time">' + escapeHtml(groupMsgTime) + '</span>' : '') + '</div><div class="preview">' + escapeHtml(preview || ((g.members || []).length + ' medlemmer')) + '</div></div><button class="btn btn-small btn-ghost delete-group" data-id="' + escapeHtml(g.id) + '">Slett</button>';
+          const labels = chatLabels[g.id] || [];
+          const labelBadges = labels.length ? '<div class="label-badges">' + labels.map(l => '<span class="label-badge">' + escapeHtml(l) + '</span>').join('') + '</div>' : '';
+          item.innerHTML = '<div class="avatar-wrap">' + avatarHtml(g.name) + '</div><div class="item-info"><div class="item-top"><span class="name">' + escapeHtml(g.name) + lockIcon + inviteIcon + '</span>' + (groupMsgTime ? '<span class="preview-time">' + escapeHtml(groupMsgTime) + '</span>' : '') + '</div><div class="preview">' + escapeHtml(preview || ((g.members || []).length + ' medlemmer')) + '</div>' + labelBadges + '</div><button class="btn btn-small btn-ghost delete-group" data-id="' + escapeHtml(g.id) + '">Slett</button>';
           item.addEventListener('click', (e) => { if (e.target.closest('.delete-group')) return; activateItem(groupsList, item); openGroup(g.id); });
           const del = item.querySelector('.delete-group');
           if (del) del.addEventListener('click', async () => { await deleteGroup(g.id); });
@@ -1968,10 +2045,18 @@
             } catch(e) { toast('Kunne ikke oversette'); }
           }},
           ...(isOwn ? [{ icon: '✏️', label: 'Rediger', action: () => editMessage(msgId) }] : []),
+          ...(activeChat && activeChat.type === 'user' ? [{ icon: '🗑️', label: 'Tøm samtale', action: () => {
+            if (confirm('Slette alle meldinger?')) {
+              fetch('/clear_messages/' + encodeURIComponent(activeChat.target), { method: 'POST' }).then(() => {
+                messagesBox.innerHTML = '<div class="empty-state"><div class="empty-icon">💬</div><p>Ingen meldinger</p></div>';
+              }).catch(() => toast('Kunne ikke tømme samtale'));
+            }
+          }}] : []),
         ];
 
         actionDefs.forEach(a => {
-          html += '<button class="ctx-item"><span>' + a.icon + '</span><span>' + a.label + '</span></button>';
+          const extra = a.label === 'Tøm samtale' ? ' toem-samtale' : '';
+          html += '<button class="ctx-item' + extra + '"><span>' + a.icon + '</span><span>' + a.label + '</span></button>';
         });
         html += '<div class="ctx-sep"></div>';
         html += '<button class="ctx-item danger"><span>🗑</span><span>Slett</span></button>';
@@ -2045,6 +2130,67 @@
         }
       }
 
+      // ── App Lock ──
+      function checkAppLock() {
+        const pin = localStorage.getItem('app-pin');
+        if (!pin) return;
+        const locked = sessionStorage.getItem('app-locked');
+        if (locked !== 'unlocked') showLockScreen();
+      }
+      function showLockScreen() {
+        const overlay = document.createElement('div');
+        overlay.id = 'appLockOverlay';
+        overlay.style.cssText = 'position:fixed;inset:0;background:#0e1621;z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;';
+        const hasPin = !!localStorage.getItem('app-pin');
+        overlay.innerHTML = '<div style="font-size:2.5rem;">🔐</div>'
+          + '<div style="color:#e7e8f3;font-size:1.1rem;font-weight:600;">' + (hasPin ? 'Skriv inn PIN' : 'Sett PIN-kode') + '</div>'
+          + '<input id="lockPinInput" type="password" inputmode="numeric" maxlength="6" pattern="[0-9]*" placeholder="' + (hasPin ? 'PIN-kode' : 'Ny PIN (4-6 siffer)') + '" style="width:200px;padding:10px;border-radius:10px;border:none;background:#17213b;color:#fff;text-align:center;font-size:1.2rem;letter-spacing:4px;outline:2px solid #3390ec;" />'
+          + '<div id="lockError" style="color:#ff6b6b;font-size:.85rem;display:none;"></div>'
+          + '<button id="lockSubmitBtn" style="background:#3390ec;border:none;border-radius:10px;color:#fff;padding:10px 30px;cursor:pointer;font-size:.95rem;">' + (hasPin ? 'Lås opp' : 'Lagre PIN') + '</button>'
+          + (hasPin ? '<button id="lockUnsetBtn" style="background:transparent;border:none;color:#6d8094;cursor:pointer;font-size:.8rem;">Fjern PIN</button>' : '');
+        document.body.appendChild(overlay);
+        document.getElementById('lockPinInput').focus();
+        document.getElementById('lockPinInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') document.getElementById('lockSubmitBtn').click(); });
+        document.getElementById('lockSubmitBtn')?.addEventListener('click', () => {
+          const val = document.getElementById('lockPinInput').value.trim();
+          const err = document.getElementById('lockError');
+          if (hasPin) {
+            if (val === localStorage.getItem('app-pin')) {
+              sessionStorage.setItem('app-locked', 'unlocked');
+              overlay.remove();
+            } else {
+              err.textContent = 'Feil PIN-kode';
+              err.style.display = 'block';
+              document.getElementById('lockPinInput').value = '';
+            }
+          } else {
+            if (val.length < 4) { err.textContent = 'PIN må være minst 4 siffer'; err.style.display = 'block'; return; }
+            localStorage.setItem('app-pin', val);
+            sessionStorage.setItem('app-locked', 'unlocked');
+            overlay.remove();
+            toast('PIN-kode satt', 'success');
+          }
+        });
+        document.getElementById('lockUnsetBtn')?.addEventListener('click', () => {
+          if (confirm('Fjerne PIN-kode?')) {
+            localStorage.removeItem('app-pin');
+            sessionStorage.removeItem('app-locked');
+            overlay.remove();
+            toast('PIN fjernet', 'success');
+          }
+        });
+      }
+
+      // ── Stealth mode ──
+      let stealthMode = localStorage.getItem('stealth-mode') === 'true';
+      function toggleStealthMode() {
+        stealthMode = !stealthMode;
+        localStorage.setItem('stealth-mode', stealthMode);
+        document.body.classList.toggle('stealth-mode', stealthMode);
+        document.getElementById('stealthToggle').textContent = stealthMode ? '🕵️' : '👁️';
+        toast(stealthMode ? 'Stealth-modus på — varsler skjult' : 'Stealth-modus av', 'success');
+      }
+
       function finishAppend(message, chatId, isMe, renderedText, parent) {
         if (message.deleted) renderedText = '🗑️ [Melding slettet]';
         const box = parent || messagesBox;
@@ -2078,6 +2224,8 @@
           const isImage = /\.(png|jpe?g|gif|webp)$/i.test(message.filename || '');
           if (isImage) {
             fileHtml = '<div class="inline-image"><img src="/uploads/' + encodeURIComponent(message.filename) + '" alt="' + escapeHtml(message.filename || 'bilde') + '" /></div>';
+          } else if (/\.pdf$/i.test(message.filename || '')) {
+            fileHtml = '<div class="pdf-preview" onclick="window.open(\'/uploads/' + encodeURIComponent(message.filename) + '\',\'_blank\')"><div class="pdf-icon">📄</div><div class="pdf-name">' + escapeHtml(message.filename || 'dokument.pdf') + '</div><div class="pdf-open">Åpne</div></div>';
           } else {
             const audioExts = ['.webm', '.mp3', '.ogg', '.wav', '.opus', '.m4a'];
             const isVoice = message.filename && audioExts.some(ext => message.filename.toLowerCase().endsWith(ext));
@@ -2387,6 +2535,20 @@
       document.getElementById('messageInput').addEventListener('input', () => {
         updateSendButton();
         handleTypingInput();
+      });
+      document.getElementById('messageInput').addEventListener('input', function emojiAutocomplete() {
+        const el = this;
+        const val = el.value;
+        const cursorPos = el.selectionStart;
+        const match = val.slice(0, cursorPos).match(/:(\w+):$/);
+        if (match && EMOJI_MAP[':' + match[1] + ':']) {
+          const emoji = EMOJI_MAP[':' + match[1] + ':'];
+          const before = val.slice(0, cursorPos - match[0].length);
+          const after = val.slice(cursorPos);
+          el.value = before + emoji + after;
+          const newPos = before.length + emoji.length;
+          el.setSelectionRange(newPos, newPos);
+        }
       });
       document.getElementById('fileInput').addEventListener('change', (e) => {
         updateSendButton();
@@ -3238,6 +3400,7 @@
 
       function showMessageNotification(message) {
         try {
+          if (stealthMode) return;
           if (message.silent) return;
           playNotificationSound();
           if (Notification.permission !== 'granted') return;
@@ -3291,11 +3454,25 @@
           + '<div style="display:flex;gap:6px;margin-top:4px;"><input id="profilePin" class="input-text" type="password" inputmode="numeric" pattern="[0-9]*" placeholder="Ny PIN" autocomplete="new-password" style="flex:1;" />'
           + '<input id="profilePinConfirm" class="input-text" type="password" inputmode="numeric" pattern="[0-9]*" placeholder="Gjenta PIN" autocomplete="new-password" style="flex:1;" /></div>'
           + '<button id="profilePinSaveBtn" class="btn btn-ghost" style="margin-top:6px;">Lagre PIN</button></div>'
-          + '<div class="modal-actions">'
-          + '<button id="profileCancelBtn" class="btn btn-ghost">Avbryt</button>'
-          + '<button id="profileSaveBtn" class="btn btn-primary">Lagre</button>'
-          + '</div></div>';
-        document.body.appendChild(overlay);
+           + '<div class="setting-section">'
+           + '<h3>Selvødeleggelse</h3>'
+           + '<p style="font-size:.85rem;color:#6d8094;">Slett konto automatisk etter inaktivitet</p>'
+           + '<select id="destructDelay" style="background:#1c2436;border:none;border-radius:8px;color:#fff;padding:6px 10px;margin-top:4px;">'
+           + '<option value="0">Aldri (av)</option>'
+           + '<option value="7">7 dager</option>'
+           + '<option value="14">14 dager</option>'
+           + '<option value="30" selected>30 dager</option>'
+           + '<option value="60">60 dager</option>'
+           + '<option value="90">90 dager</option>'
+           + '</select>'
+           + '<button id="setDestructBtn" class="btn btn-small btn-primary" style="margin-top:8px;">Lagre</button>'
+           + '<div id="destructStatus" style="font-size:.8rem;color:#6d8094;margin-top:4px;"></div>'
+           + '</div>'
+           + '<div class="modal-actions">'
+           + '<button id="profileCancelBtn" class="btn btn-ghost">Avbryt</button>'
+           + '<button id="profileSaveBtn" class="btn btn-primary">Lagre</button>'
+           + '</div></div>';
+         document.body.appendChild(overlay);
 
         let avatarBase64 = profile.avatar || '';
         const avatarInput = overlay.querySelector('#profileAvatarInput');
@@ -3367,6 +3544,15 @@
             }
           });
         }
+
+        document.getElementById('setDestructBtn')?.addEventListener('click', async () => {
+          const delay = parseInt(document.getElementById('destructDelay').value);
+          try {
+            const d = await loadJSON('/account/self-destruct', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ delay }) });
+            toast(d.message || 'Selvødeleggelse oppdatert', 'success');
+            document.getElementById('destructStatus').textContent = delay > 0 ? 'Konto slettes om ' + delay + ' dager' : '';
+          } catch(e) { toast('Kunne ikke oppdatere'); }
+        });
 
         overlay.querySelector('#profileCancelBtn').addEventListener('click', () => overlay.remove());
         overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
@@ -3638,12 +3824,20 @@
           users.length = 0;
           users.push(...(data.users || []));
           renderUsers();
-          const usernames = users.map(u => typeof u === 'string' ? u : (u && u.username) || '').filter(Boolean);
-          if (usernames.length) fetchBatchVerification(usernames).then(() => renderUsers()).catch(() => {});
         }).catch(() => {});
-        if (activeChat?.type === 'user') {
-          fetchVerificationStatus(activeChat.target).then(() => updateVerifyButton()).catch(() => {});
-        }
+      }, 30000);
+
+      let _slowWarmup = true;
+      setTimeout(() => { _slowWarmup = false; }, 60000);
+
+      const _pollSlowVerification = setInterval(() => {
+        if (_slowWarmup) return;
+        const usernames = users.map(u => typeof u === 'string' ? u : (u && u.username) || '').filter(Boolean);
+        if (usernames.length) fetchBatchVerification(usernames).then(() => renderUsers()).catch(() => {});
+        if (activeChat?.type === 'user') fetchVerificationStatus(activeChat.target).then(() => updateVerifyButton()).catch(() => {});
+      }, 60000);
+
+      const _pollGroups = setInterval(() => {
         loadJSON('/groups').then(data => { groups.length = 0; groups.push(...(data.groups || [])); renderGroups(); }).catch(() => {});
         loadJSON('/last-messages').then(data => {
           if (data.users) Object.assign(lastMessages, data.users);
@@ -3651,7 +3845,7 @@
           renderUsers();
           renderGroups();
         }).catch(() => {});
-      }, 15000);
+      }, 45000);
 
       window.addEventListener('beforeunload', () => { if (currentCall) hangUp(); });
 
@@ -4629,13 +4823,9 @@
           + '<button class="del-everyone">🗑️ Slett for alle</button>'
           + '<button class="del-me">👤 Slett for meg</button>'
           + '<button class="del-cancel">Avbryt</button>';
-        dialog.querySelector('.del-everyone').addEventListener('click', async () => {
+        dialog.querySelector('.del-everyone').addEventListener('click', () => {
           overlay.remove();
-          try {
-            await fetch('/messages/' + encodeURIComponent(msgId), { method: 'DELETE' });
-            if (msgEl) msgEl.remove();
-            toast('Slettet for alle', 'success');
-          } catch(e) { toast('Kunne ikke slette'); }
+          deleteMessageWithUndo(msgId, msgEl);
         });
         dialog.querySelector('.del-me').addEventListener('click', async () => {
           overlay.remove();
@@ -5195,7 +5385,45 @@
       await loadPinnedChats();
       await loadMutedChats();
       await loadChannels();
+      await loadLabels();
+      renderUsers();
+      renderGroups();
       renderChannels();
+
+      // ── App Lock ──
+      checkAppLock();
+
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) sessionStorage.removeItem('app-locked');
+        else { const pin = localStorage.getItem('app-pin'); if (pin) { sessionStorage.removeItem('app-locked'); checkAppLock(); } }
+      });
+
+      document.getElementById('lockToggle')?.addEventListener('click', () => {
+        if (localStorage.getItem('app-pin')) {
+          if (confirm('Fjern PIN-kode?')) {
+            localStorage.removeItem('app-pin');
+            sessionStorage.removeItem('app-locked');
+            toast('PIN fjernet', 'success');
+          }
+        } else {
+          showLockScreen();
+        }
+      });
+
+      // ── Stealth mode ──
+      document.body.classList.toggle('stealth-mode', stealthMode);
+      document.getElementById('stealthToggle')?.addEventListener('click', toggleStealthMode);
+
+      // ── AI summary placeholder ──
+      document.getElementById('aiSummaryBtn')?.addEventListener('click', async () => {
+        const unread = document.querySelectorAll('.item.unread, .badge-new, .unread-count');
+        if (!unread.length) { toast('Ingen uleste meldinger'); return; }
+        toast('🤖 Sammendrag kommer i en fremtidig oppdatering', 'info');
+        const overlay = document.createElement('div');
+        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center;';
+        overlay.innerHTML = '<div style="background:#17213b;border-radius:16px;padding:24px;max-width:400px;width:90%;text-align:center;"><div style="font-size:3rem;margin:8px 0;">🤖</div><h3 style="color:#e7e8f3;margin:8px 0;">AI-sammendrag</h3><p style="color:#6d8094;">AI-sammendrag kommer snart! Skal oppsummere uleste meldinger fra alle chatter.</p><button onclick="this.parentElement.parentElement.remove()" style="margin-top:12px;padding:8px 20px;background:#3390ec;border:none;border-radius:8px;color:#fff;cursor:pointer;">Lukk</button></div>';
+        document.body.appendChild(overlay);
+      });
 
       if (document.getElementById('mobileBackBtn')) {
         document.getElementById('mobileBackBtn').addEventListener('click', () => closeChat());
@@ -5227,10 +5455,58 @@
           const q = sidebarSearch.value.toLowerCase().trim();
           document.querySelectorAll('#usersList .item, #groupsList .item, #channelsList .item').forEach(el => {
             const name = (el.dataset.user || el.dataset.groupId || el.querySelector('.name')?.textContent || '').toLowerCase();
-            el.style.display = q && !name.includes(q) ? 'none' : '';
+            const chatId = el.dataset.user || el.dataset.groupId || '';
+            const chatLabelsList = chatLabels[chatId] || [];
+            const labelMatch = chatLabelsList.some(l => l.toLowerCase().includes(q));
+            el.style.display = q && !name.includes(q) && !labelMatch ? 'none' : '';
           });
         });
       }
+
+      // ── Sidebar context menu (labels) ──
+      document.querySelectorAll('#usersList, #groupsList, #channelsList').forEach(list => {
+        list.addEventListener('contextmenu', (e) => {
+          const item = e.target.closest('.item');
+          if (!item) return;
+          e.preventDefault();
+          document.querySelectorAll('.context-menu').forEach(el => el.remove());
+          const chatId = item.dataset.user || item.dataset.groupId || '';
+          if (!chatId) return;
+          const labels = chatLabels[chatId] || [];
+          const menu = document.createElement('div');
+          menu.className = 'context-menu sidebar-label-menu';
+          const menuId = 'labelMenu_' + Date.now();
+          menu.innerHTML = '<div class="ctx-section-title">🏷️ Etiketter</div>'
+            + '<input class="sidebar-label-input label-input" placeholder="Ny etikett..." maxlength="20" />'
+            + '<button class="ctx-item label-add-btn">➕ Legg til</button>'
+            + (labels.length ? '<div class="ctx-sep"></div>' + labels.map(l => '<button class="ctx-item label-remove" data-label="' + escapeHtml(l) + '">✕ ' + escapeHtml(l) + '</button>').join('') : '<div class="ctx-empty">Ingen etiketter</div>');
+          document.body.appendChild(menu);
+          const rect = menu.getBoundingClientRect();
+          menu.style.left = Math.min(e.clientX, window.innerWidth - rect.width - 8) + 'px';
+          menu.style.top = Math.min(e.clientY, window.innerHeight - rect.height - 8) + 'px';
+          const input = menu.querySelector('.label-input');
+          if (input) { input.focus(); input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') menu.querySelector('.label-add-btn')?.click(); }); }
+          menu.querySelector('.label-add-btn')?.addEventListener('click', async () => {
+            const val = input?.value.trim();
+            if (!val) return;
+            await saveLabel(chatId, val);
+            renderUsers(); renderGroups();
+            menu.remove();
+          });
+          menu.querySelectorAll('.label-remove').forEach(btn => {
+            btn.addEventListener('click', async () => {
+              const label = btn.dataset.label;
+              await saveLabel(chatId, label);
+              renderUsers(); renderGroups();
+              menu.remove();
+            });
+          });
+          setTimeout(() => {
+            const close = (ev) => { if (!menu.contains(ev.target)) { menu.remove(); document.removeEventListener('click', close); } };
+            document.addEventListener('click', close);
+          }, 10);
+        });
+      });
 
       // ── Quick message templates ──
       function saveTemplate(text) {
@@ -5379,24 +5655,31 @@
 
   // Add thread link to messages
   (function patchThreadLink() {
-    const _origFinishAppend5 = finishAppend;
-    finishAppend = function(message, chatId, isMe, renderedText, parent) {
-      _origFinishAppend5(message, chatId, isMe, renderedText, parent);
-      const box = parent || messagesBox;
-      if (message.deleted) return;
-      const items = box.querySelectorAll(':scope > .msg:not(.thread-link-added)');
-      items.forEach(item => {
-        if (item.dataset.msgId) {
-          item.classList.add('thread-link-added');
-          const link = document.createElement('span');
-          link.className = 'thread-link';
-          link.textContent = '↪ Tråd';
-          link.onclick = (e) => { e.stopPropagation(); openThread(item.dataset.msgId); };
-          const lastChild = item.querySelector('.reactions, .time-wrap, .msg-actions');
-          if (lastChild) lastChild.after(link);
-          else item.appendChild(link);
-        }
-      });
-    };
+    function tryPatch() {
+      if (typeof finishAppend !== 'function') {
+        setTimeout(tryPatch, 50);
+        return;
+      }
+      const _origFinishAppend5 = finishAppend;
+      finishAppend = function(message, chatId, isMe, renderedText, parent) {
+        _origFinishAppend5(message, chatId, isMe, renderedText, parent);
+        const box = parent || messagesBox;
+        if (message.deleted) return;
+        const items = box.querySelectorAll(':scope > .msg:not(.thread-link-added)');
+        items.forEach(item => {
+          if (item.dataset.msgId) {
+            item.classList.add('thread-link-added');
+            const link = document.createElement('span');
+            link.className = 'thread-link';
+            link.textContent = '↪ Tråd';
+            link.onclick = (e) => { e.stopPropagation(); openThread(item.dataset.msgId); };
+            const lastChild = item.querySelector('.reactions, .time-wrap, .msg-actions');
+            if (lastChild) lastChild.after(link);
+            else item.appendChild(link);
+          }
+        });
+      };
+    }
+    tryPatch();
   })();
 })();

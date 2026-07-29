@@ -521,7 +521,7 @@ def login_page():
 
 @app.context_processor
 def inject_common():
-    return {'version': os.environ.get('APP_VERSION', '3.2.0')}
+    return {'version': os.environ.get('APP_VERSION', '3.2.1')}
 
 @app.route('/webrtc/turn')
 @require_login
@@ -641,6 +641,21 @@ def login():
         if not totp.verify(twofa_code):
             audit('login_failed', actor=username, target=username, meta='bad_2fa')
             return jsonify({'success': False, 'message': 'Ugyldig 2FA-kode.'}), 401
+    if user.get('self_destruct_at'):
+        try:
+            dest_at = datetime.fromisoformat(user['self_destruct_at'])
+            if dest_at <= datetime.utcnow():
+                users[:] = [u for u in users if u.get('username') != username]
+                save_json(USERS_FILE, users)
+                messages = load_json(MESSAGES_FILE, [])
+                messages[:] = [m for m in messages if m.get('sender') != username and m.get('recipient') != username]
+                save_json(MESSAGES_FILE, messages)
+                return jsonify({'success': False, 'message': 'Kontoen er utløpt og slettet.'}), 403
+            else:
+                user.pop('self_destruct_at', None)
+                save_json(USERS_FILE, users)
+        except:
+            pass
     session['username'] = username
     session['csrf_token'] = secrets.token_hex(32)
     session_id = secrets.token_hex(16)
@@ -679,6 +694,41 @@ def logout_all():
     if username:
         invalidate_all_sessions(username)
     session.clear()
+    return jsonify({'success': True})
+
+@app.route('/account/self-destruct', methods=['POST'])
+@require_csrf
+def self_destruct_account():
+    if 'username' not in session:
+        return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
+    user = session['username']
+    data = request.get_json(force=True, silent=True) or {}
+    delay = min(max(int(data.get('delay', 30)), 0), 90)
+    users = load_json(USERS_FILE, {})
+    u = users.get(user)
+    if not u:
+        return jsonify({'success': False, 'message': 'Bruker ikke funnet.'}), 404
+    if delay > 0:
+        u['self_destruct_at'] = (datetime.utcnow() + timedelta(days=delay)).isoformat()
+        msg = 'Konto vil bli slettet om ' + str(delay) + ' dager. Logg inn innen da for å avbryte.'
+    else:
+        u.pop('self_destruct_at', None)
+        msg = 'Selvødeleggelse avbrutt.'
+    save_json(USERS_FILE, users)
+    return jsonify({'success': True, 'message': msg})
+
+@app.route('/account/cancel-self-destruct', methods=['POST'])
+@require_csrf
+def cancel_self_destruct():
+    if 'username' not in session:
+        return jsonify({'success': False}), 401
+    user = session['username']
+    users = load_json(USERS_FILE, {})
+    u = users.get(user)
+    if not u:
+        return jsonify({'success': False}), 404
+    u.pop('self_destruct_at', None)
+    save_json(USERS_FILE, users)
     return jsonify({'success': True})
 
 @app.route('/auth/qr/generate', methods=['POST'])
@@ -1735,6 +1785,31 @@ def delete_message(message_id):
             audit('message_deleted', actor=username, target=message_id)
             return jsonify({'success': True})
     return jsonify({'success': False, 'message': 'Melding ikke funnet.'}), 404
+
+@app.route('/messages/<msg_id>/restore', methods=['POST'])
+@require_csrf
+def restore_message(msg_id):
+    if 'username' not in session:
+        return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
+    messages = load_json(MESSAGES_FILE, [])
+    for m in messages:
+        if m.get('id') == msg_id and m.get('sender') == session['username']:
+            m['deleted'] = False
+            save_json(MESSAGES_FILE, messages)
+            return jsonify({'success': True})
+    return jsonify({'success': False, 'message': 'Melding ikke funnet.'}), 404
+
+@app.route('/clear_messages/<other_user>', methods=['POST'])
+@require_csrf
+def clear_messages(other_user):
+    if 'username' not in session:
+        return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
+    me = session['username']
+    pk = pair_key(me, other_user)
+    messages = load_json(MESSAGES_FILE, [])
+    messages = [m for m in messages if m.get('pair_key') != pk]
+    save_json(MESSAGES_FILE, messages)
+    return jsonify({'success': True})
 
 # ──────────────────────────────────────────────
 # User profiles
@@ -4502,7 +4577,7 @@ def health_check():
         'success': True,
         'status': 'healthy' if db_ok else 'degraded',
         'db': 'ok' if db_ok else 'error',
-        'version': '3.2.0',
+        'version': '3.2.1',
     })
 
 @app.route('/sw-test')
@@ -4550,6 +4625,33 @@ def get_thread(msg_id):
             break
     return jsonify({'success': True, 'thread': thread, 'parent': parent, 'count': len(thread)})
 
+@app.route('/labels', methods=['GET'])
+@require_login
+def get_labels():
+    me = session['username']
+    labels = load_json(LABELS_FILE, {})
+    return jsonify({'success': True, 'labels': labels.get(me, {})})
+
+@app.route('/labels', methods=['POST'])
+@require_login
+@require_csrf
+def save_labels():
+    me = session['username']
+    data = request.get_json(force=True, silent=True) or {}
+    chat_id = data.get('chatId', '')
+    label = data.get('label', '').strip()
+    if not chat_id or not label:
+        return jsonify({'success': False, 'message': 'Manglende chatId eller etikett.'}), 400
+    labels = load_json(LABELS_FILE, {})
+    user_labels = labels.setdefault(me, {})
+    existing = user_labels.setdefault(chat_id, [])
+    if label in existing:
+        existing.remove(label)
+    else:
+        existing.append(label)
+    save_json(LABELS_FILE, labels)
+    return jsonify({'success': True, 'labels': existing})
+
 if __name__ == '__main__':
     app.run(debug=os.environ.get('FLASK_DEBUG', 'false').lower() in ('true', '1'), host='0.0.0.0', port=5000)
 
@@ -4586,3 +4688,4 @@ app.slowmode_file = SLOWMODE_FILE
 app.archive_file = ARCHIVE_FILE
 app.polls_file = POLLS_FILE
 app.reports_file = REPORTS_FILE
+app.labels_file = LABELS_FILE
