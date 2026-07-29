@@ -1407,10 +1407,13 @@ def create_group():
         return jsonify({'success': False, 'message': 'Gruppenavn er påkrevd.'}), 400
     members = list(set([m for m in members if m != session['username']]))
     groups = load_json(GROUPS_FILE, [])
+    description = (data.get('description') or '').strip()[:200]
     group_id = hashlib.sha256(f"{name}{datetime.utcnow().isoformat()}{session['username']}".encode()).hexdigest()[:16]
     group = {
         'id': group_id,
         'name': name,
+        'description': description,
+        'avatar': '',
         'members': [session['username']] + members,
         'created': now_iso(),
         'created_by': session['username'],
@@ -1501,6 +1504,56 @@ def delete_group(group_id):
     groups = [g for g in groups if g['id'] != group_id]
     save_json(GROUPS_FILE, groups)
     return jsonify({'success': True, 'message': 'Gruppen er slettet.'})
+
+@app.route('/groups/<group_id>/update', methods=['POST'])
+@require_csrf
+def update_group(group_id):
+    if 'username' not in session:
+        return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
+    user = session['username']
+    groups = load_json(GROUPS_FILE, [])
+    group = None
+    for g in groups:
+        if g.get('id') == group_id: group = g; break
+    if not group:
+        return jsonify({'success': False, 'message': 'Gruppe ikke funnet.'}), 404
+    if group.get('created_by') != user and user not in group.get('admins', []):
+        return jsonify({'success': False, 'message': 'Kun admin kan endre gruppe.'}), 403
+    data = request.get_json(force=True, silent=True) or {}
+    if 'description' in data:
+        group['description'] = (data['description'] or '').strip()[:200]
+    if 'name' in data:
+        group['name'] = (data['name'] or '').strip()[:50]
+    save_json(GROUPS_FILE, groups)
+    return jsonify({'success': True, 'group': group})
+
+@app.route('/groups/<group_id>/avatar', methods=['POST'])
+@require_csrf
+def upload_group_avatar(group_id):
+    if 'username' not in session:
+        return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
+    user = session['username']
+    groups = load_json(GROUPS_FILE, [])
+    group = None
+    for g in groups:
+        if g.get('id') == group_id: group = g; break
+    if not group:
+        return jsonify({'success': False, 'message': 'Gruppe ikke funnet.'}), 404
+    if group.get('created_by') != user and user not in group.get('admins', []):
+        return jsonify({'success': False, 'message': 'Kun admin kan endre gruppe.'}), 403
+    if 'avatar' not in request.files:
+        return jsonify({'success': False, 'message': 'Ingen fil mottatt.'}), 400
+    f = request.files['avatar']
+    if f.filename == '':
+        return jsonify({'success': False, 'message': 'Ingen fil valgt.'}), 400
+    ext = os.path.splitext(f.filename)[1].lower()
+    if ext not in ('.png', '.jpg', '.jpeg', '.gif', '.webp'):
+        return jsonify({'success': False, 'message': 'Ugyldig filtype.'}), 400
+    safe_name = 'group_avatar_' + group_id + ext
+    f.save(os.path.join(app.config['UPLOAD_FOLDER'], safe_name))
+    group['avatar'] = '/uploads/' + safe_name
+    save_json(GROUPS_FILE, groups)
+    return jsonify({'success': True, 'avatar': group['avatar']})
 
 @app.route('/groups/<group_id>/send', methods=['POST'])
 @rate_limit(max_requests=30, window_seconds=120)
@@ -4467,6 +4520,35 @@ def uploaded_file(filename):
     if not abs_target.startswith(abs_root + os.sep):
         return jsonify({'success': False, 'message': 'Ugyldig filsti.'}), 400
     return send_from_directory(abs_root, safe_name, as_attachment=False)
+
+@app.route('/thread/<msg_id>', methods=['GET'])
+def get_thread(msg_id):
+    if 'username' not in session:
+        return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
+    messages = load_json(MESSAGES_FILE, [])
+    thread = []
+    for m in messages:
+        if m.get('reply_to') == msg_id:
+            thread.append({
+                'id': m.get('id'),
+                'sender': m['sender'],
+                'text': m.get('ciphertext') or m.get('filename', ''),
+                'type': m.get('type'),
+                'timestamp': m['timestamp'],
+            })
+    thread.sort(key=lambda x: x['timestamp'])
+    parent = None
+    for m in messages:
+        if m.get('id') == msg_id:
+            parent = {
+                'id': m.get('id'),
+                'sender': m['sender'],
+                'text': m.get('ciphertext') or m.get('filename', ''),
+                'type': m.get('type'),
+                'timestamp': m['timestamp'],
+            }
+            break
+    return jsonify({'success': True, 'thread': thread, 'parent': parent, 'count': len(thread)})
 
 if __name__ == '__main__':
     app.run(debug=os.environ.get('FLASK_DEBUG', 'false').lower() in ('true', '1'), host='0.0.0.0', port=5000)

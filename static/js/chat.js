@@ -692,6 +692,7 @@
                 <button id="voiceRecordBtn" class="btn btn-small btn-ghost" title="Talebeskjed" aria-label="Talebeskjed">🎙️</button>
                 <button id="videoRecordBtn" class="btn btn-small btn-ghost" title="Videomelding" aria-label="Videomelding">📹</button>
                 <button id="locationBtn" class="btn btn-small btn-ghost" title="Del posisjon" aria-label="Del posisjon">📍</button>
+                <button id="templateBtn" class="btn-attach" title="Maler" style="font-size:1rem;">📋</button>
                 <button id="pollBtn" class="btn btn-small btn-ghost" title="Opprett avstemning" aria-label="Opprett avstemning" style="display:none">📊</button>
                 <span id="silentToggle" class="silent-toggle" title="Lydløs melding" aria-label="Lydløs melding">🔇</span>
                 <span style="position:relative;">
@@ -1939,6 +1940,10 @@
           { icon: '📋', label: 'Kopier', action: () => {
             const text = msgEl.querySelector('.msg-text');
             if (text) { navigator.clipboard.writeText(text.textContent); toast('Kopiert', 'success'); }
+          }},
+          { icon: '📋', label: 'Lagre som mal', action: () => {
+            const textEl = msgEl.querySelector('.text, .msg-text');
+            saveTemplate(textEl?.textContent || '');
           }},
           { icon: '📌', label: 'Fest', action: async () => {
             if (!activeChat) return;
@@ -3426,40 +3431,55 @@
       applyTheme(currentTheme);
 
       document.getElementById('createGroupBtn').addEventListener('click', async () => {
-        const name = prompt('Gruppenavn:');
-        if (!name) return;
-        const members = (prompt('Medlemmer (komma-separert):', '') || '').split(',').map(x => x.trim()).filter(Boolean);
-        try {
-          const res = await fetch('/groups', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, members }) });
-          const resData = await res.json();
-          if (resData.success && resData.group) {
-            try {
-              const groupKeyBytes = window.crypto.getRandomValues(new Uint8Array(32));
-              const allMembers = [window.__APP__?.username, ...members];
-              const encryptedKeys = {};
-              for (const member of allMembers) {
-                const pubKey = await getPeerPublicKeyPem(member);
-                if (pubKey) {
-                  const key = await window.__CRYPTO__.getSharedKey(pubKey);
-                  const rawKey = await window.crypto.subtle.exportKey('raw', key);
-                  const iv = window.crypto.getRandomValues(new Uint8Array(12));
-                  const enc = await window.crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, groupKeyBytes);
-                  encryptedKeys[member] = arrayBufferToBase64(iv) + '.' + arrayBufferToBase64(enc);
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        overlay.innerHTML = '<div class="modal" style="max-width:400px"><h2>Opprett gruppe</h2>'
+          + '<div class="field"><label>Gruppenavn</label><input id="groupNameInput" class="input-text" placeholder="Navn" maxlength="50" /></div>'
+          + '<div class="field"><label>Beskrivelse (valgfri)</label><input id="groupDesc" class="input-text" placeholder="Gruppebeskrivelse" maxlength="200" /></div>'
+          + '<div class="field"><label>Medlemmer</label><input id="groupMembersInput" class="input-text" placeholder="Brukernavn (komma-separert)" /></div>'
+          + '<div class="modal-actions"><button id="createGroupSubmit" class="btn btn-primary">Opprett</button>'
+          + '<button id="createGroupCancel" class="btn btn-ghost">Avbryt</button></div></div>';
+        document.body.appendChild(overlay);
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+        overlay.querySelector('#createGroupCancel').addEventListener('click', () => overlay.remove());
+        overlay.querySelector('#createGroupSubmit').addEventListener('click', async () => {
+          const name = document.getElementById('groupNameInput').value.trim();
+          if (!name) { toast('Gruppenavn er påkrevd'); return; }
+          const description = document.getElementById('groupDesc').value.trim();
+          const members = document.getElementById('groupMembersInput').value.split(',').map(x => x.trim()).filter(Boolean);
+          overlay.remove();
+          try {
+            const res = await fetch('/groups', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, description, members }) });
+            const resData = await res.json();
+            if (resData.success && resData.group) {
+              try {
+                const groupKeyBytes = window.crypto.getRandomValues(new Uint8Array(32));
+                const allMembers = [window.__APP__?.username, ...members];
+                const encryptedKeys = {};
+                for (const member of allMembers) {
+                  const pubKey = await getPeerPublicKeyPem(member);
+                  if (pubKey) {
+                    const key = await window.__CRYPTO__.getSharedKey(pubKey);
+                    const rawKey = await window.crypto.subtle.exportKey('raw', key);
+                    const iv = window.crypto.getRandomValues(new Uint8Array(12));
+                    const enc = await window.crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, groupKeyBytes);
+                    encryptedKeys[member] = arrayBufferToBase64(iv) + '.' + arrayBufferToBase64(enc);
+                  }
                 }
-              }
-              if (Object.keys(encryptedKeys).length > 0) {
-                await fetch('/groups/' + encodeURIComponent(resData.group.id) + '/keys', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keys: encryptedKeys }) });
-              }
-            } catch (e2) { console.debug('Group E2EE key distribution failed', e2); }
+                if (Object.keys(encryptedKeys).length > 0) {
+                  await fetch('/groups/' + encodeURIComponent(resData.group.id) + '/keys', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keys: encryptedKeys }) });
+                }
+              } catch (e2) { console.debug('Group E2EE key distribution failed', e2); }
+            }
+            toast('Gruppe opprettet', 'success');
+            const data = await loadJSON('/groups');
+            groups.length = 0;
+            groups.push(...(data.groups || []));
+            renderGroups();
+          } catch (e) {
+            toast('Kunne ikke opprette gruppe');
           }
-          toast('Gruppe opprettet', 'success');
-          const data = await loadJSON('/groups');
-          groups.length = 0;
-          groups.push(...(data.groups || []));
-          renderGroups();
-        } catch (e) {
-          toast('Kunne ikke opprette gruppe');
-        }
+        });
       });
 
       document.getElementById('fa2Btn').addEventListener('click', async () => {
@@ -3965,7 +3985,19 @@
         const me = window.__APP__?.username || '';
         const isCreator = group.created_by === me;
         const isAdmin = (group.admins || []).includes(me);
+        const groupDesc = group.description || '';
         let html = '<div class="modal-overlay" id="groupAdminModal"><div class="modal" style="max-width:500px"><h2>Gruppeinnstillinger</h2>';
+        html += '<div class="group-info-section">'
+          + (group.avatar ? '<img src="' + escapeHtml(group.avatar) + '" class="group-avatar-preview" />' : '<div class="group-avatar-placeholder">' + escapeHtml((group.name || 'G')[0]) + '</div>')
+          + '<h3>' + escapeHtml(group.name) + '</h3>'
+          + (groupDesc ? '<p class="group-desc">' + escapeHtml(groupDesc) + '</p>' : '<p class="group-desc muted">Ingen beskrivelse</p>')
+          + '</div>';
+        if (isCreator || isAdmin) {
+          html += '<div class="field"><label>Beskrivelse</label><textarea id="groupDescInput" class="input-text" maxlength="200" style="min-height:48px;resize:vertical;">' + escapeHtml(groupDesc) + '</textarea></div>';
+          html += '<div class="field"><label>Gruppebilde</label><div style="display:flex;gap:8px;align-items:center;">'
+            + '<input type="file" id="groupAvatarInput" accept="image/png,image/jpeg,image/gif,image/webp" style="flex:1;" />'
+            + '<button id="uploadGroupAvatarBtn" class="btn btn-primary btn-small">Last opp</button></div></div>';
+        }
         html += '<div class="field"><label>Medlemmer (' + (group.members || []).length + ')</label><div id="memberList">';
         (group.members || []).forEach(m => {
           const isAdm = (group.admins || []).includes(m);
@@ -4020,6 +4052,43 @@
                 modal.remove();
                 document.getElementById('groupAdminBtn').click();
               } catch (e) { toast('Kunne ikke legge til: ' + e.message); }
+            });
+          }
+          const descInput = modal.querySelector('#groupDescInput');
+          if (descInput) {
+            let descTimer = null;
+            descInput.addEventListener('input', () => {
+              clearTimeout(descTimer);
+              descTimer = setTimeout(async () => {
+                try {
+                  await loadJSON('/groups/' + encodeURIComponent(activeChat.target) + '/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ description: descInput.value }) });
+                  const data = await loadJSON('/groups');
+                  groups.length = 0;
+                  groups.push(...(data.groups || []));
+                  renderGroups();
+                } catch (e) {}
+              }, 500);
+            });
+          }
+          const uploadAvatarBtn = modal.querySelector('#uploadGroupAvatarBtn');
+          const avatarInput = modal.querySelector('#groupAvatarInput');
+          if (uploadAvatarBtn && avatarInput) {
+            uploadAvatarBtn.addEventListener('click', async () => {
+              const file = avatarInput.files[0];
+              if (!file) { toast('Velg en fil forst'); return; }
+              const form = new FormData();
+              form.append('avatar', file);
+              try {
+                const res = await fetch('/groups/' + encodeURIComponent(activeChat.target) + '/avatar', { method: 'POST', body: form });
+                const data = await res.json();
+                if (data.success) {
+                  toast('Gruppebilde oppdatert', 'success');
+                  modal.remove();
+                  document.getElementById('groupAdminBtn').click();
+                } else {
+                  toast(data.message || 'Kunne ikke laste opp');
+                }
+              } catch (e) { toast('Opplasting feilet'); }
             });
           }
         }
@@ -5006,10 +5075,9 @@
       // CLICKABLE LINKS IN MESSAGES
       // ──────────────────────────────────────────────
       function linkifyText(text) {
-        return text.replace(
-          /(https?:\/\/[^\s<]+)/g,
-          (match) => '<a href="' + match.replace(/"/g, '%22') + '" target="_blank" rel="noopener noreferrer" style="color:#5b8def;text-decoration:underline;word-break:break-all;">' + match + '</a>'
-        );
+        return text
+          .replace(/(https?:\/\/[^\s<]+)/g, (match) => '<a href="' + match.replace(/"/g, '%22') + '" target="_blank" rel="noopener noreferrer" style="color:#5b8def;text-decoration:underline;word-break:break-all;">' + match + '</a>')
+          .replace(/@(\w+)/g, '<span style="color:#3390ec;font-weight:500;">@$1</span>');
       }
 
       // Patch finishAppend to use linkifyText
@@ -5163,6 +5231,62 @@
           });
         });
       }
+
+      // ── Quick message templates ──
+      function saveTemplate(text) {
+        const templates = JSON.parse(localStorage.getItem('chat-templates') || '[]');
+        const template = { id: Date.now().toString(36), text: text.substring(0, 200), createdAt: Date.now() };
+        templates.push(template);
+        localStorage.setItem('chat-templates', JSON.stringify(templates));
+        toast('Mal lagret', 'success');
+        renderTemplates();
+      }
+
+      function saveSelectedTextAsTemplate() {
+        const input = document.getElementById('messageInput');
+        if (!input || !input.value.trim()) return;
+        saveTemplate(input.value.trim());
+        input.value = '';
+        input.focus();
+      }
+
+      function deleteTemplate(id) {
+        let templates = JSON.parse(localStorage.getItem('chat-templates') || '[]');
+        templates = templates.filter(t => t.id !== id);
+        localStorage.setItem('chat-templates', JSON.stringify(templates));
+        renderTemplates();
+      }
+
+      function insertTemplate(text) {
+        const input = document.getElementById('messageInput');
+        if (input) { input.value = text; input.focus(); input.dispatchEvent(new Event('input')); }
+        const panel = document.querySelector('.template-panel');
+        if (panel) panel.remove();
+      }
+
+      function renderTemplates() {
+        let panel = document.querySelector('.template-panel');
+        if (!panel) {
+          panel = document.createElement('div');
+          panel.className = 'template-panel';
+          document.body.appendChild(panel);
+        }
+        const templates = JSON.parse(localStorage.getItem('chat-templates') || '[]');
+        if (!templates.length) { panel.style.display = 'none'; return; }
+        panel.style.display = 'block';
+        panel.innerHTML = '<div class="template-panel-header"><span>📋 Maler</span><button class="template-close" onclick="this.closest(\'.template-panel\').style.display=\'none\'">✕</button></div>'
+          + templates.map(t => '<div class="template-item" onclick="insertTemplate(' + JSON.stringify(t.text).replace(/"/g, '&quot;') + ')"><span class="template-text">' + escapeHtml(t.text.substring(0, 60)) + '</span><button class="template-del" onclick="event.stopPropagation();deleteTemplate(\'' + t.id + '\')">✕</button></div>').join('');
+      }
+
+      function toggleTemplates() {
+        let panel = document.querySelector('.template-panel');
+        if (panel && panel.style.display !== 'none') { panel.style.display = 'none'; return; }
+        renderTemplates();
+        panel = document.querySelector('.template-panel');
+        if (panel) panel.style.display = 'block';
+      }
+
+      document.getElementById('templateBtn')?.addEventListener('click', toggleTemplates);
     } catch (e) {
       document.getElementById('app').innerHTML = '<pre style="color:#ff8888;background:#0f1424;padding:16px;">' + escapeHtml(e.stack || e.message) + '</pre>';
     }
@@ -5179,4 +5303,100 @@
       }
     }
   }, 12000);
+
+  // ── Thread panel ──
+  function openThread(msgId) {
+    closeThread();
+    const panel = document.createElement('div');
+    panel.className = 'thread-panel';
+    const me = window.__APP__?.username || '';
+    panel.innerHTML = '<div class="thread-panel-header"><button class="close-thread" onclick="closeThread()">✕</button><span class="thread-title">Tråd</span></div><div class="thread-messages"><div class="spinner" style="margin:20px auto;"></div></div><div class="thread-composer"><input id="threadInput" placeholder="Svar i tråden..." /><button id="threadSendBtn">Send</button></div>';
+    document.body.appendChild(panel);
+    window.__threadMsgId = msgId;
+    window.addEventListener('click', _closeThreadOutside, true);
+    loadJSON('/thread/' + encodeURIComponent(msgId)).then(data => {
+      const container = panel.querySelector('.thread-messages');
+      container.innerHTML = '';
+      if (data.parent) {
+        const parentDiv = document.createElement('div');
+        parentDiv.className = 'thread-parent-msg';
+        parentDiv.innerHTML = '<div class="sender">' + escapeHtml(data.parent.sender) + '</div><div>' + escapeHtml((data.parent.text || '').substring(0, 120)) + '</div>';
+        container.appendChild(parentDiv);
+      }
+      (data.thread || []).forEach(m => {
+        const div = document.createElement('div');
+        div.className = 'thread-msg';
+        div.innerHTML = '<div class="sender">' + escapeHtml(m.sender) + '</div><div class="msg-text">' + escapeHtml((m.text || '').substring(0, 200)) + '</div><div class="time" style="font-size:.65rem;color:#6d8094;">' + formatTime(m.timestamp) + '</div>';
+        container.appendChild(div);
+      });
+      if (!data.thread || !data.thread.length) {
+        container.innerHTML += '<div style="text-align:center;padding:30px;color:#6d8094;font-size:.85rem;">Ingen svar i denne tråden ennå. Skriv et svar!</div>';
+      }
+    }).catch(() => {
+      panel.querySelector('.thread-messages').innerHTML = '<div style="text-align:center;padding:20px;color:#6d8094;">Kunne ikke laste tråd</div>';
+    });
+    document.getElementById('threadSendBtn')?.addEventListener('click', sendThreadReply);
+    document.getElementById('threadInput')?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') sendThreadReply();
+    });
+    setTimeout(() => document.getElementById('threadInput')?.focus(), 100);
+  }
+
+  function _closeThreadOutside(e) {
+    const panel = document.querySelector('.thread-panel');
+    if (panel && !panel.contains(e.target) && !e.target.closest('.thread-link')) {
+      closeThread();
+    }
+  }
+
+  function closeThread() {
+    const panel = document.querySelector('.thread-panel');
+    if (panel) panel.remove();
+    window.__threadMsgId = null;
+    window.removeEventListener('click', _closeThreadOutside, true);
+  }
+
+  async function sendThreadReply() {
+    const input = document.getElementById('threadInput');
+    const msgId = window.__threadMsgId;
+    if (!input || !msgId || !input.value.trim()) return;
+    const text = input.value.trim();
+    input.value = '';
+    const isGroup = activeChat?.type === 'group';
+    try {
+      if (isGroup) {
+        const body = { text, reply_to: msgId };
+        if (activeChat.groupE2EEKey) body.encryption = 'e2ee';
+        await fetch('/groups/' + encodeURIComponent(activeChat.target) + '/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      } else {
+        await fetch('/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, recipient: activeChat.target, reply_to: msgId }) });
+      }
+      openThread(msgId);
+    } catch (e) {
+      toast('Kunne ikke sende svar');
+    }
+  }
+
+  // Add thread link to messages
+  (function patchThreadLink() {
+    const _origFinishAppend5 = finishAppend;
+    finishAppend = function(message, chatId, isMe, renderedText, parent) {
+      _origFinishAppend5(message, chatId, isMe, renderedText, parent);
+      const box = parent || messagesBox;
+      if (message.deleted) return;
+      const items = box.querySelectorAll(':scope > .msg:not(.thread-link-added)');
+      items.forEach(item => {
+        if (item.dataset.msgId) {
+          item.classList.add('thread-link-added');
+          const link = document.createElement('span');
+          link.className = 'thread-link';
+          link.textContent = '↪ Tråd';
+          link.onclick = (e) => { e.stopPropagation(); openThread(item.dataset.msgId); };
+          const lastChild = item.querySelector('.reactions, .time-wrap, .msg-actions');
+          if (lastChild) lastChild.after(link);
+          else item.appendChild(link);
+        }
+      });
+    };
+  })();
 })();
