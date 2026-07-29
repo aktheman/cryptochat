@@ -697,6 +697,7 @@ def logout_all():
     return jsonify({'success': True})
 
 @app.route('/account/self-destruct', methods=['POST'])
+@rate_limit(max_requests=5, window_seconds=300)
 @require_csrf
 def self_destruct_account():
     if 'username' not in session:
@@ -718,15 +719,16 @@ def self_destruct_account():
     return jsonify({'success': True, 'message': msg})
 
 @app.route('/account/cancel-self-destruct', methods=['POST'])
+@rate_limit(max_requests=5, window_seconds=300)
 @require_csrf
 def cancel_self_destruct():
     if 'username' not in session:
-        return jsonify({'success': False}), 401
+        return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
     user = session['username']
     users = load_json(USERS_FILE, {})
     u = users.get(user)
     if not u:
-        return jsonify({'success': False}), 404
+        return jsonify({'success': False, 'message': 'Bruker ikke funnet.'}), 404
     u.pop('self_destruct_at', None)
     save_json(USERS_FILE, users)
     return jsonify({'success': True})
