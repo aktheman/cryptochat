@@ -5,9 +5,9 @@
     username: ds.username || '',
     partnerKeys: (() => { try { return localStorage.getItem('partnerKeys') ? JSON.parse(localStorage.getItem('partnerKeys')) : {}; } catch(e) { return {}; } })(),
     theme: localStorage.getItem('theme') || 'dark',
-    turnUrl: ds.turnUrl || '',
-    turnUser: ds.turnUser || '',
-    turnPass: ds.turnPass || ''
+    turnUrl: '',
+    turnUser: '',
+    turnPass: ''
   };
 
   let deferredPrompt;
@@ -33,6 +33,7 @@
       if (banner) banner.classList.remove('install-banner-visible');
     });
   });
+
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.getRegistrations().then(r => r.forEach(x => x.unregister())).catch(() => {});
   }

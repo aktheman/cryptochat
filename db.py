@@ -4,6 +4,7 @@ import time
 import threading
 import sqlite3
 from pathlib import Path
+import logging
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / 'data'
@@ -11,6 +12,8 @@ DATA_DIR = BASE_DIR / 'data'
 _cache = {}
 _cache_ttl = {}
 _cache_lock = threading.Lock()
+
+logger = logging.getLogger('cryptochat')
 
 DB_PATH = DATA_DIR / 'cryptochat.sqlite3'
 
@@ -57,8 +60,8 @@ def _read_from_sqlite(file_key):
             row = conn.execute('SELECT value FROM json_store WHERE file_key = ?', (file_key,)).fetchone()
             if row:
                 return json.loads(row['value'])
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning('sqlite read failed for %s: %s', file_key, e)
     return None
 
 
@@ -67,7 +70,8 @@ def _write_to_sqlite(file_key, data):
         value = json.dumps(data, ensure_ascii=False)
         with _conn() as conn:
             conn.execute('INSERT OR REPLACE INTO json_store (file_key, value) VALUES (?, ?)', (file_key, value))
-    except Exception:
+    except Exception as e:
+        logger.warning('sqlite write failed for %s: %s', file_key, e)
         pass
 
 
@@ -75,7 +79,8 @@ def _delete_from_sqlite(file_key):
     try:
         with _conn() as conn:
             conn.execute('DELETE FROM json_store WHERE file_key = ?', (file_key,))
-    except Exception:
+    except Exception as e:
+        logger.warning('sqlite delete failed for %s: %s', file_key, e)
         pass
 
 

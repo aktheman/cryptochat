@@ -18,10 +18,13 @@ from cryptography.hazmat.primitives.asymmetric import x25519
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.exceptions import InvalidTag
 import pyotp
+import logging
 from db import load_json, save_json, init_db, migrate_json_files, invalidate_cache, _cache, _get_conn
 from config import *
 from flask_socketio import SocketIO
 from sockets import register_socket_handlers, notify_user
+
+logger = logging.getLogger('cryptochat')
 
 app = Flask(__name__)
 secret_key_file = os.environ.get('SECRET_KEY_FILE', '')
@@ -58,7 +61,7 @@ init_db()
 migrate_json_files()
 app._start_time = time.time()
 
-socketio = SocketIO(app, cors_allowed_origins='*', async_mode='eventlet')
+socketio = SocketIO(app, cors_allowed_origins=app.config.get('CSRF_TRUSTED_ORIGINS', []), async_mode='eventlet')
 register_socket_handlers(socketio)
 
 @app.after_request
@@ -81,8 +84,8 @@ def set_security_headers(response):
         "form-action 'self'; "
         "upgrade-insecure-requests"
     )
-    if request.path.startswith('/static/'):
-        response.headers['Cache-Control'] = 'public, max-age=604800'
+    if request.path.startswith('/static/') or request.path.startswith('/favicon.ico'):
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
     else:
         response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
     return response
@@ -140,6 +143,23 @@ def rate_limit(max_requests=30, window_seconds=60):
 def now_iso():
     return datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
 
+def _peppered_hash(text: str) -> str:
+    key = (app.secret_key or b'')[:32]
+    if isinstance(text, str):
+        text = text.encode('utf-8')
+    if not isinstance(key, bytes):
+        key = str(key).encode('utf-8')
+    return hashlib.sha256(bytes(key) + bytes(text)).hexdigest()
+
+def _pin_pepper(pin: str) -> str:
+    return _peppered_hash(pin)
+
+def _pin_verify(pin: str, expected: str) -> bool:
+    return _hmac_mod.compare_digest(_pin_pepper(pin), expected)
+
+def _recovery_code_hash(code: str) -> str:
+    return _peppered_hash(code)
+
 def fpair(a, b):
     return tuple(sorted([a, b]))
 
@@ -161,9 +181,9 @@ def audit(event: str, actor: str = '', target: str = '', meta: str = ''):
         line = json.dumps({
             'ts': datetime.utcnow().isoformat() + 'Z',
             'event': event,
-            'actor': actor,
-            'target': target,
-            'meta': meta,
+            'actor': actor or '',
+            'target': target or '',
+            'meta': meta or '',
         }, ensure_ascii=False) + '\n'
         with AUDIT_LOG_FILE.open('a', encoding='utf-8') as f:
             f.write(line)
@@ -174,8 +194,8 @@ def audit(event: str, actor: str = '', target: str = '', meta: str = ''):
                 AUDIT_LOG_FILE.write_text('\n'.join(keep) + ('\n' if keep else ''), encoding='utf-8')
         except Exception:
             pass
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning('audit failed: %s', e)
 
 def touch_presence(username):
     presence = load_json(USER_PRESENCE_FILE, {})
@@ -499,6 +519,19 @@ def login_page():
     resp.headers['Expires'] = '0'
     return resp
 
+@app.context_processor
+def inject_common():
+    return {'version': os.environ.get('APP_VERSION', '3.2.0')}
+
+@app.route('/webrtc/turn')
+@require_login
+def webrtc_turn():
+    return jsonify({
+        'url': os.environ.get('TURN_URL', ''),
+        'user': os.environ.get('TURN_USER', ''),
+        'pass': os.environ.get('TURN_PASS', ''),
+    })
+
 @app.route('/chat')
 def chat_page():
     if 'username' not in session:
@@ -520,7 +553,7 @@ def generate_recovery_codes(count=5):
         code = secrets.token_hex(4).upper()
         code_formatted = f"{code[:4]}-{code[4:8]}"
         codes.append(code_formatted)
-        hashed.append(hashlib.sha256(code_formatted.encode()).hexdigest())
+        hashed.append(_recovery_code_hash(code_formatted))
     return codes, hashed
 
 def verify_recovery_code(code_input, stored_hashes):
@@ -528,7 +561,7 @@ def verify_recovery_code(code_input, stored_hashes):
     if len(code) != 8:
         return False, -1
     code_formatted = f"{code[:4]}-{code[4:8]}"
-    code_hash = hashlib.sha256(code_formatted.encode()).hexdigest()
+    code_hash = _recovery_code_hash(code_formatted)
     for i, h in enumerate(stored_hashes):
         if _hmac_mod.compare_digest(code_hash, h):
             return True, i
@@ -658,8 +691,9 @@ def qr_generate():
         with _get_conn() as conn:
             conn.execute('INSERT OR REPLACE INTO kv_store (key, value) VALUES (?, ?)',
                          (f'qr_login:{token}', json.dumps({'expires': expires, 'status': 'pending', 'username': None})))
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning('qr_generate db error: %s', e)
+        return jsonify({'success': False, 'message': 'Kunne ikke opprette QR.'}), 500
     import io, base64 as _b64
     try:
         import qrcode
@@ -687,6 +721,7 @@ def qr_status(token):
             return jsonify({'success': False, 'message': 'Token utløpt.', 'status': 'expired'}), 410
         return jsonify({'success': True, 'status': data.get('status'), 'username': data.get('username')})
     except Exception as e:
+        logger.warning('qr_status error: %s', e)
         return jsonify({'success': False, 'message': 'Feil.'}), 500
 
 @app.route('/auth/qr/accept', methods=['POST'])
@@ -716,6 +751,7 @@ def qr_accept():
         audit('qr_login_accepted', actor=username)
         return jsonify({'success': True, 'message': 'QR-innlogging godkjent.'})
     except Exception as e:
+        logger.warning('qr_accept error: %s', e)
         return jsonify({'success': False, 'message': 'Feil.'}), 500
 
 @app.route('/auth/qr/login', methods=['POST'])
@@ -747,6 +783,7 @@ def qr_login():
         audit('qr_login', actor=username)
         return jsonify({'success': True, 'message': 'Logget inn via QR.', 'username': username})
     except Exception as e:
+        logger.warning('qr_login error: %s', e)
         return jsonify({'success': False, 'message': 'Feil.'}), 500
 
 @app.route('/sessions')
@@ -853,7 +890,7 @@ def session_pin():
     if not user:
         return jsonify({'success': False, 'message': 'Bruker ikke funnet.'}), 404
     expected = user.get('session_pin')
-    if expected and _hmac_mod.compare_digest(hashlib.sha256(pin.encode()).hexdigest()[:32], expected[:32]):
+    if expected and _pin_verify(pin, expected):
         session['unlocked'] = True
         return jsonify({'success': True})
     return jsonify({'success': False, 'message': 'Feil PIN.'}), 401
@@ -1731,7 +1768,7 @@ def set_profile_pin():
     if not username:
         return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
     users = load_json(USERS_FILE, {})
-    users[username]['session_pin'] = hashlib.sha256(pin.encode()).hexdigest()[:32]
+    users[username]['session_pin'] = _pin_pepper(pin)
     save_json(USERS_FILE, users)
     audit('session_pin_set', actor=username, target=username)
     return jsonify({'success': True})
@@ -3743,6 +3780,7 @@ def get_invite_link(group_id):
     return jsonify({'success': True, 'link': link_data['token'], 'groupId': group_id, 'groupName': group['name']})
 
 @app.route('/invite/<token>')
+@require_login
 def resolve_invite(token):
     links = load_json(INVITE_LINKS_FILE, {})
     link_data = next((v for v in links.values() if v.get('token') == token), None)
@@ -4412,8 +4450,6 @@ def health_check():
         'status': 'healthy' if db_ok else 'degraded',
         'db': 'ok' if db_ok else 'error',
         'version': '3.2.0',
-        'uptime': time.time() - app._start_time if hasattr(app, '_start_time') else 0,
-        'cache_size': len(_cache),
     })
 
 @app.route('/sw-test')

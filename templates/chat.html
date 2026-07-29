@@ -12,9 +12,9 @@
   <title>CryptoChat</title>
   <link rel="manifest" href="/manifest.json" />
   <link rel="apple-touch-icon" href="/static/img/icon-192.png" />
-  <link rel="stylesheet" href="/static/css/style.css?v=17" />
+  <link rel="stylesheet" href="/static/css/style.css?v={{ version or '17' }}" />
 </head>
-<body data-username="{{ username }}" data-turn-url="{{ turn_url }}" data-turn-user="{{ turn_user }}" data-turn-pass="{{ turn_pass }}">
+<body data-username="{{ username }}">
   <div id="app" class="app">
     <div class="loading-screen">
       <div class="loading-inner">
@@ -32,10 +32,10 @@
     </div>
   </div>
 
-  <script src="/static/js/bootstrap.js?v=17"></script>
-  <script src="/static/js/crypto.js?v=17" defer></script>
+  <script src="/static/js/bootstrap.js?v={{ version or '17' }}"></script>
+  <script src="/static/js/crypto.js?v={{ version or '17' }}" defer></script>
   <script src="https://cdn.socket.io/4.8.1/socket.io.min.js" crossorigin="anonymous" async></script>
-  <script src="/static/js/socket.js?v=17" defer></script>
-  <script src="/static/js/chat.js?v=17" defer></script>
+  <script src="/static/js/socket.js?v={{ version or '17' }}"></script>
+  <script src="/static/js/chat.js?v={{ version or '17' }}" defer></script>
 </body>
 </html>

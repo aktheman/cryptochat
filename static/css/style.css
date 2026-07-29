@@ -637,6 +637,10 @@ body.theme-light .skeleton-msg { background:linear-gradient(90deg,#d6d9de 25%,#e
 .install-banner-label { color:#ffffff; font-size:.9rem; }
 .install-banner-actions { display:flex; gap:8px; }
 
+/* ── Spinner ── */
+.spinner { width:24px; height:24px; border:2.5px solid rgba(255,255,255,.15); border-top-color:#3390ec; border-radius:50%; animation:spin .6s linear infinite; margin:0 auto; }
+@keyframes spin { to { transform:rotate(360deg); } }
+
 /* ══════════════════════════════════════
    ═══ MOBILE (max-width: 860px) ═══
    ══════════════════════════════════════ */
@@ -683,6 +687,19 @@ body.theme-light .skeleton-msg { background:linear-gradient(90deg,#d6d9de 25%,#e
 
   /* Sidebar search bar on mobile */
   .sidebar-search { padding:8px 12px; }
+
+  /* Prevent iOS zoom on input focus */
+  input[type="text"], input[type="password"], input[type="search"], input[type="email"], textarea, select { font-size:16px !important; }
+
+  /* Better touch targets */
+  .btn-attach, .reaction-trigger, .back-btn { min-width:44px; min-height:44px; }
+
+  /* Swipe reply hint styling */
+  .swipe-reply-hint { position:fixed; bottom:80px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,.75); color:#fff; padding:6px 14px; border-radius:20px; font-size:.8rem; z-index:9999; pointer-events:none; opacity:0; transition:opacity .15s; }
+  .swipe-reply-hint.visible { opacity:1; }
+
+  /* Pull-to-refresh prevention */
+  .messages { overscroll-behavior-y:contain; }
 }
 
 @media (max-width: 420px) {
