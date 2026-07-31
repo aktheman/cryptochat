@@ -99,7 +99,8 @@ def load_json(path, default=None, ttl=None):
         try:
             data = json.loads(p.read_text(encoding='utf-8') or '{}')
             _write_to_sqlite(key, data)
-        except Exception:
+        except Exception as e:
+            logger.warning('json load failed %s: %s', key, e)
             data = None
 
     if data is None:
@@ -146,5 +147,6 @@ def migrate_json_files():
             try:
                 data = json.loads(f.read_text(encoding='utf-8') or '{}')
                 _write_to_sqlite(key, data)
-            except Exception:
+            except Exception as e:
+                logger.warning('migrate skipped %s: %s', key, e)
                 pass

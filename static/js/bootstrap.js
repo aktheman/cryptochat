@@ -35,6 +35,6 @@
   });
 
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.getRegistrations().then(r => r.forEach(x => x.unregister())).catch(() => {});
+    navigator.serviceWorker.register('/static/sw.js', { scope: '/' }).catch(() => {});
   }
 })();

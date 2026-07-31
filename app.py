@@ -10,13 +10,11 @@ from flask import (
     Flask, render_template, request, jsonify, session,
     redirect, url_for, send_from_directory, Response, make_response
 )
-from flask import current_app
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
-from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import x25519
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from cryptography.exceptions import InvalidTag
 import pyotp
 import logging
 from db import load_json, save_json, init_db, migrate_json_files, invalidate_cache, _cache, _get_conn
@@ -89,6 +87,10 @@ def set_security_headers(response):
     else:
         response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
     return response
+
+@app.route('/health')
+def health():
+    return jsonify({'status': 'ok', 'version': os.environ.get('APP_VERSION', '3.4.0')})
 
 def _rl_get(store, key):
     item = store.setdefault(key, {'ts': [], 'n': 0})
@@ -523,7 +525,7 @@ def login_page():
 
 @app.context_processor
 def inject_common():
-    return {'version': os.environ.get('APP_VERSION', '3.2.1')}
+    return {'version': os.environ.get('APP_VERSION', '3.4.0')}
 
 @app.route('/webrtc/turn')
 @require_login
@@ -656,8 +658,9 @@ def login():
             else:
                 user.pop('self_destruct_at', None)
                 save_json(USERS_FILE, users)
-        except:
-            pass
+        except Exception as e:
+            logger.warning('self_destruct parse failed for %s: %s', username, e)
+            return jsonify({'success': False, 'message': 'Kontoinformasjon ugyldig.'}), 400
     session['username'] = username
     session['csrf_token'] = secrets.token_hex(32)
     session_id = secrets.token_hex(16)
@@ -1149,6 +1152,11 @@ def send_message():
         effect = None
     if not recipient or not ciphertext:
         return jsonify({'success': False, 'message': 'Manglende felt.'}), 400
+    blocked = load_json(BLOCKED_FILE, {})
+    if recipient in blocked.get(session['username'], []):
+        return jsonify({'success': False, 'message': 'Du har blokkert denne brukeren.'}), 403
+    if session['username'] in blocked.get(recipient, []):
+        return jsonify({'success': False, 'message': 'Denne brukeren har blokkert deg.'}), 403
     shared_key = get_or_create_pair_key(session['username'], recipient)
     pk = pair_key(session['username'], recipient)
     messages = load_json(MESSAGES_FILE, [])
@@ -1191,6 +1199,11 @@ def upload_file():
     recipient = (request.form.get('recipient') or '').strip()
     if not file or not recipient:
         return jsonify({'success': False, 'message': 'Manglende fil eller mottaker.'}), 400
+    blocked = load_json(BLOCKED_FILE, {})
+    if recipient in blocked.get(session['username'], []):
+        return jsonify({'success': False, 'message': 'Du har blokkert denne brukeren.'}), 403
+    if session['username'] in blocked.get(recipient, []):
+        return jsonify({'success': False, 'message': 'Denne brukeren har blokkert deg.'}), 403
     if not allowed_file(file.filename):
         return jsonify({'success': False, 'message': 'Ugyldig filtype.'}), 400
     filename = secure_filename(file.filename)
@@ -1324,6 +1337,25 @@ def mark_read(partner):
     receipts.setdefault(me, {})[partner] = now
     save_json(READ_RECEIPTS_FILE, receipts)
     return jsonify({'success': True, 'updated': updated, 'lastReadAt': now})
+
+@app.route('/mark_read', methods=['POST'])
+@require_csrf
+def mark_read_handler():
+    if 'username' not in session:
+        return jsonify({'success': False}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    sender = data.get('sender')
+    if not sender:
+        return jsonify({'success': False}), 400
+    messages = load_json(MESSAGES_FILE, [])
+    updated = False
+    for m in messages:
+        if m.get('recipient') == session['username'] and m.get('sender') == sender and not m.get('read'):
+            m['read'] = True
+            updated = True
+    if updated:
+        save_json(MESSAGES_FILE, messages)
+    return jsonify({'success': True})
 
 @app.route('/notifications', methods=['GET'])
 @rate_limit(max_requests=60, window_seconds=60)
@@ -2478,6 +2510,34 @@ def unpin_message(chat_type, chat_id, message_id):
     pins[key] = pinned
     save_json(PINS_FILE, pins)
     return jsonify({'success': True})
+
+@app.route('/pins/<chat_target>', methods=['GET'])
+@require_csrf
+def get_pins_simple(chat_target):
+    pins = load_json(PINS_FILE, {})
+    return jsonify(pins.get(chat_target, []))
+
+@app.route('/pins', methods=['POST'])
+@require_csrf
+def toggle_pin():
+    if 'username' not in session:
+        return jsonify({'success': False}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    chat_target = data.get('chat_target')
+    msg_id = data.get('msg_id')
+    pin = data.get('pin', True)
+    if not chat_target or not msg_id:
+        return jsonify({'success': False, 'message': 'Mangler data'}), 400
+    pins = load_json(PINS_FILE, {})
+    if chat_target not in pins:
+        pins[chat_target] = []
+    if pin:
+        if msg_id not in pins[chat_target]:
+            pins[chat_target].append(msg_id)
+    else:
+        pins[chat_target] = [p for p in pins[chat_target] if p != msg_id]
+    save_json(PINS_FILE, pins)
+    return jsonify({'success': True, 'pins': pins[chat_target]})
 
 # ──────────────────────────────────────────────
 # Scheduled Messages
@@ -3735,6 +3795,52 @@ def toggle_archive():
     save_json(ARCHIVE_FILE, all_archive)
     return jsonify({'success': True, 'archived': entry in user_archive})
 
+@app.route('/archived', methods=['GET'])
+@require_login
+def list_archived():
+    me = session['username']
+    data = load_json(ARCHIVE_FILE, {})
+    entries = data.get(me, [])
+    result = []
+    for e in entries:
+        parts = e.split(':', 1)
+        if len(parts) == 2:
+            result.append({'target': parts[1], 'type': parts[0]})
+    return jsonify(result)
+
+@app.route('/archive/<chat_target>', methods=['POST'])
+@rate_limit(max_requests=30, window_seconds=120)
+@require_login
+@require_csrf
+def archive_chat(chat_target):
+    me = session['username']
+    payload = request.get_json(force=True, silent=True) or {}
+    chat_type = payload.get('chat_type', 'user')
+    all_archive = load_json(ARCHIVE_FILE, {})
+    user_archive = set(all_archive.get(me, []))
+    entry = chat_type + ':' + chat_target
+    if entry not in user_archive:
+        user_archive.add(entry)
+    all_archive[me] = list(user_archive)
+    save_json(ARCHIVE_FILE, all_archive)
+    return jsonify({'success': True})
+
+@app.route('/unarchive/<chat_target>', methods=['POST'])
+@rate_limit(max_requests=30, window_seconds=120)
+@require_login
+@require_csrf
+def unarchive_chat(chat_target):
+    me = session['username']
+    payload = request.get_json(force=True, silent=True) or {}
+    chat_type = payload.get('chat_type', 'user')
+    all_archive = load_json(ARCHIVE_FILE, {})
+    user_archive = set(all_archive.get(me, []))
+    entry = chat_type + ':' + chat_target
+    user_archive.discard(entry)
+    all_archive[me] = list(user_archive)
+    save_json(ARCHIVE_FILE, all_archive)
+    return jsonify({'success': True})
+
 # ──────────────────────────────────────────────
 # Chat Folders (Telegram-style tabs)
 # ──────────────────────────────────────────────
@@ -3974,6 +4080,37 @@ def get_muted_chats():
     me = session['username']
     mutes = load_json(MUTED_CHATS_FILE, {})
     return jsonify({'success': True, 'muted': mutes.get(me, [])})
+
+# ──────────────────────────────────────────────
+# Per-Chat Notification Override
+# ──────────────────────────────────────────────
+@app.route('/notif/<chat_type>/<chat_id>', methods=['GET'])
+@require_login
+def get_chat_notif(chat_type, chat_id):
+    me = session['username']
+    notifs = load_json(CHAT_NOTIF_FILE, {})
+    key = f"{chat_type}_{chat_id}"
+    return jsonify({'success': True, 'override': notifs.get(me, {}).get(key)})
+
+@app.route('/notif/<chat_type>/<chat_id>', methods=['PUT'])
+@rate_limit(max_requests=30, window_seconds=60)
+@require_login
+@require_csrf
+def set_chat_notif(chat_type, chat_id):
+    me = session['username']
+    data = request.get_json(force=True, silent=True) or {}
+    override = data.get('override')
+    if override not in (None, 'always', 'never'):
+        return jsonify({'success': False, 'message': 'Ugyldig verdi.'}), 400
+    notifs = load_json(CHAT_NOTIF_FILE, {})
+    user_notifs = notifs.setdefault(me, {})
+    key = f"{chat_type}_{chat_id}"
+    if override is None:
+        user_notifs.pop(key, None)
+    else:
+        user_notifs[key] = override
+    save_json(CHAT_NOTIF_FILE, notifs)
+    return jsonify({'success': True, 'override': override})
 
 # ──────────────────────────────────────────────
 # Enhanced Search (date range + groups + mentions)
@@ -4581,7 +4718,7 @@ def health_check():
         'success': True,
         'status': 'healthy' if db_ok else 'degraded',
         'db': 'ok' if db_ok else 'error',
-        'version': '3.2.1',
+        'version': '3.4.0',
     })
 
 @app.route('/sw-test')
@@ -4692,4 +4829,5 @@ app.slowmode_file = SLOWMODE_FILE
 app.archive_file = ARCHIVE_FILE
 app.polls_file = POLLS_FILE
 app.reports_file = REPORTS_FILE
+app.chat_notif_file = CHAT_NOTIF_FILE
 app.labels_file = LABELS_FILE

@@ -1,6 +1,8 @@
 (() => {
   'use strict';
 
+  function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
+
   const EMOJI_MAP = {
     ':smile:':'😊',':happy:':'😊',':laugh:':'😂',':joy:':'😂',':sad:':'😢',':cry:':'😢',':heart:':'❤️',':love:':'😍',':wink:':'😉',':wow:':'😮',':angry:':'😠',':mad:':'😡',':cool:':'😎',':sunglasses:':'😎',':blush:':'☺️',':kiss:':'😘',':hug:':'🤗',':think:':'🤔',':shrug:':'🤷',':facepalm:':'🤦',':eyes:':'👀',':fire:':'🔥',':star:':'⭐',':thumbsup:':'👍',':thumbsdown:':'👎',':ok:':'👌',':clap:':'👏',':wave:':'👋',':rocket:':'🚀',':check:':'✅',':x:':'❌',':warning:':'⚠️',':question:':'❓',':exclamation:':'❗',':100:':'💯',':party:':'🎉',':tada:':'🎉',':confetti:':'🎊',':balloon:':'🎈',':gift:':'🎁',':bell:':'🔔',':lock:':'🔒',':unlock:':'🔓',':key:':'🔑',':mail:':'✉️',':phone:':'📞',':camera:':'📷',':video:':'📹',':music:':'🎵',':note:':'🎶',':headphones:':'🎧',':game:':'🎮',':soccer:':'⚽',':basketball:':'🏀',':football:':'🏈',':baseball:':'⚾',':tennis:':'🎾',':golf:':'⛳',':swim:':'🏊',':run:':'🏃',':bike:':'🚴',':car:':'🚗',':bus:':'🚌',':train:':'🚆',':plane:':'✈️',':boat:':'⛵',':house:':'🏠',':office:':'🏢',':school:':'🏫',':church:':'⛪',':map:':'🗺️',':globe:':'🌍',':moon:':'🌙',':sun:':'☀️',':rain:':'🌧️',':snow:':'❄️',':cloud:':'☁️',':lightning:':'⚡',':rainbow:':'🌈',':dog:':'🐶',':cat:':'🐱',':fish:':'🐟',':bird:':'🐦',':horse:':'🐴',':cow:':'🐮',':pig:':'🐷',':frog:':'🐸',':bee:':'🐝',':butterfly:':'🦋',':snake:':'🐍',':dragon:':'🐉',':unicorn:':'🦄',':cake:':'🎂',':pizza:':'🍕',':burger:':'🍔',':fries:':'🍟',':hotdog:':'🌭',':taco:':'🌮',':sushi:':'🍣',':pasta:':'🍝',':rice:':'🍚',':noodles:':'🍜',':coffee:':'☕',':tea:':'🍵',':beer:':'🍺',':wine:':'🍷',':cocktail:':'🍸',':water:':'💧',':droplet:':'💧',':skull:':'💀',':alien:':'👽',':robot:':'🤖',':poop:':'💩',':ghost:':'👻',':clown:':'🤡',':mask:':'😷',':pill:':'💊',':syringe:':'💉',':lab:':'🔬',':microscope:':'🔬',':telescope:':'🔭',':satellite:':'📡',':antenna:':'📡',':bomb:':'💣',':knife:':'🔪',':shield:':'🛡️',':crown:':'👑',':ring:':'💍',':diamond:':'💎',':gem:':'💎',':trophy:':'🏆',':medal:':'🥇',':book:':'📖',':notebook:':'📓',':newspaper:':'📰',':computer:':'💻',':laptop:':'💻',':mouse:':'🖱️',':printer:':'🖨️',':folder:':'📁',':file:':'📄',':calendar:':'📅',':clock:':'🕐',':alarm:':'⏰',':timer:':'⏱️',':hourglass:':'⌛',':lightbulb:':'💡',':money:':'💰',':chart:':'📊',':graph:':'📈',':magnifier:':'🔍',':search:':'🔍',':tools:':'🔧',':wrench:':'🔧',':screwdriver:':'🪛',':gear:':'⚙️',':chain:':'🔗',':link:':'🔗',':magnet:':'🧲',':flag:':'🚩',':cross:':'⚔️',':medal:':'🎖️',':microphone:':'🎤',':tv:':'📺',':radio:':'📻',':battery:':'🔋',':plug:':'🔌',':lamp:':'💡',':bulb:':'💡',':candle:':'🕯️',':toilet:':'🚽',':shower:':'🚿',':bath:':'🛁',':bed:':'🛏️',':sofa:':'🛋️',':airplane:':'✈️',':helicopter:':'🚁',':ambulance:':'🚑',':police:':'🚓',':firetruck:':'🚒',':tractor:':'🚜',':motorcycle:':'🏍️',':scooter:':'🛴',':skateboard:':'🛹',':surf:':'🏄',':ski:':'⛷️',':snowboarder:':'🏂',':guitar:':'🎸',':drum:':'🥁',':trumpet:':'🎺',':violin:':'🎻',':saxophone:':'🎷',':piano:':'🎹',':email:':'📧',':inbox:':'📥',':outbox:':'📤',':package:':'📦',':shopping:':'🛒',':cart:':'🛒',':credit:':'💳',':bank:':'🏦',':statue:':'🗽',':palm:':'🌴',':cactus:':'🌵',':flower:':'🌸',':rose:':'🌹',':tulip:':'🌷',':sunflower:':'🌻',':herb:':'🌿',':shamrock:':'☘️',':pinetree:':'🌲',':xmas:':'🎄',':santa:':'🎅',':zombie:':'🧟',':vampire:':'🧛',':fairy:':'🧚',':elf:':'🧝',':genie:':'🧞',':mermaid:':'🧜',':angel:':'👼',':baby:':'👶',':boy:':'👦',':girl:':'👧',':man:':'👨',':woman:':'👩',':oldman:':'👴',':oldwoman:':'👵',':police:':'👮',':detective:':'🕵️',':guard:':'💂',':construction:':'👷',':ninja:':'🥷',':prince:':'🤴',':princess:':'👸',':soldier:':'💂',':surgeon:':'🥼',':scientist:':'🥽',':pilot:':'👨‍✈️',':astronaut:':'🧑‍🚀',':firefighter:':'🧑‍🚒',':teacher:':'🧑‍🏫',':judge:':'🧑‍⚖️',':farmer:':'🧑‍🌾',':cook:':'🧑‍🍳',':handshake:':'🤝',':pray:':'🙏',':muscle:':'💪',':fist:':'✊',':raisedhand:':'✋',':victory:':'✌️',':fingerscrossed:':'🤞',':peace:':'☮️',':yin:':'☯️',':recycle:':'♻️',':wheelchair:':'♿',':restroom:':'🚻',':nosmoking:':'🚭',':dog:':'🐕',':cat:':'🐈',':mouse:':'🐁',':hamster:':'🐹',':rabbit:':'🐇',':fox:':'🦊',':bear:':'🐻',':panda:':'🐼',':koala:':'🐨',':tiger:':'🐯',':lion:':'🦁',':monkey:':'🐵',':gorilla:':'🦍',':elephant:':'🐘',':rhino:':'🦏',':bat:':'🦇',':owl:':'🦉',':eagle:':'🦅',':duck:':'🦆',':swan:':'🦢',':peacock:':'🦚',':parrot:':'🦜',':frog:':'🐸',':crocodile:':'🐊',':turtle:':'🐢',':lizard:':'🦎',':snail:':'🐌',':spider:':'🕷️',':scorpion:':'🦂',':crab:':'🦀',':lobster:':'🦞',':shrimp:':'🦐',':squid:':'🦑',':dolphin:':'🐬',':whale:':'🐋',':shark:':'🦈',':octopus:':'🐙',':earth:':'🌍',':saturn:':'🪐',':comet:':'☄️',':star:':'⭐',':sun:':'☀️',':moon:':'🌙',':eclipse:':'🌑',':northernlights:':'🌌',':tornado:':'🌪️',':cyclone:':'🌀',':volcano:':'🌋',':desert:':'🏜️',':island:':'🏝️',':mountain:':'⛰️',':camping:':'🏕️',':beach:':'🏖️',':city:':'🏙️',':sunrise:':'🌅',':sunset:':'🌇',':bridge:':'🌉',':fountain:':'⛲',':tent:':'⛺',':carousel:':'🎠',':ferris:':'🎡',':rollercoaster:':'🎢',':fishing:':'🎣',':bowling:':'🎳',':pool:':'🎱',':dart:':'🎯',':gift:':'🎁',':ribbon:':'🎀',':ticket:':'🎟️',':clapper:':'🎬',':palette:':'🎨',':thread:':'🧵',':yarn:':'🧶',':balloon:':'🎈',':dice:':'🎲',':chess:':'♟️',':jigsaw:':'🧩',':teddy:':'🧸',':kite:':'🪁',':puzzle:':'🧩',':dolls:':'🪆',':glasses:':'👓',':goggles:':'🥽',':hat:':'🎩',':cap:':'🧢',':scarf:':'🧣',':gloves:':'🧤',':coat:':'🧥',':socks:':'🧦',':dress:':'👗',':kimono:':'👘',':sarong:':'🥻',':bikini:':'👙',':swimsuit:':'🩱',':shoe:':'👟',':boot:':'🥾',':sandal:':'👡',':heel:':'👠',':crown:':'👑',':tophat:':'🎩',':graduation:':'🎓',':medal:':'🎖️',':military:':'🎖️',':trophy:':'🏆',':pin:':'📌',':pushpin:':'📌',':paperclip:':'📎',':ruler:':'📏',':scissors:':'✂️',':envelope:':'✉️',':pencil:':'✏️',':pen:':'🖊️',':brush:':'🖌️',':crayon:':'🖍️',':chalk:':'🖍️',':folder:':'📁',':tag:':'🏷️',':barcode:':'🏷️',':qrcode:':'📱',':phone:':'📱',':mobile:':'📱',':tablet:':'📲',':computer:':'💻',':watch:':'⌚',':ring:':'💍',':keyboard:':'⌨️',':mouse:':'🖱️',':trackball:':'🖲️',':printer:':'🖨️',':fax:':'📠',':joystick:':'🕹️',':floppy:':'💾',':cd:':'💿',':dvd:':'📀',':vhs:':'📼',':camera:':'📷',':film:':'🎞️',':projector:':'📽️',':tv:':'📺',':radio:':'📻',':alarm:':'⏰',':stopwatch:':'⏱️',':timer:':'⏲️',':clock:':'🕰️',':thermometer:':'🌡️',':sun:':'☀️',':moon:':'🌙',':cloud:':'☁️',':umbrella:':'☂️',':snowman:':'⛄',':comet:':'☄️',':fire:':'🔥',':droplet:':'💧',':wave:':'🌊',':wind:':'🌬️',':compass:':'🧭',':anchor:':'⚓',':ship:':'🚢',':submarine:':'🛳️',':bridge:':'🌉',':airplane:':'✈️',':helicopter:':'🚁',':rocket:':'🚀',':satellite:':'🛰️',':road:':'🛣️',':railway:':'🛤️',':station:':'🚉',':busstop:':'🚏',':fuel:':'⛽',':parking:':'🅿️',':hospital:':'🏥',':police:':'🚔',':ambulance:':'🚑',':firetruck:':'🚒',':wheel:':'⚙️',':axe:':'🪓',':pick:':'⛏️',':hammer:':'🔨',':saw:':'🪚',':wrench:':'🔧',':screwdriver:':'🪛',':pliers:':'🔧',':ladder:':'🪜',':shovel:':'⛏️',':broom:':'🧹',':soap:':'🧼',':sponge:':'🧽',':toothbrush:':'🪥',':razor:':'🪒',':lotion:':'🧴',':key:':'🔑',':lock:':'🔒',':unlock:':'🔓',':bell:':'🔔',':mute:':'🔕',':loudspeaker:':'📢',':megaphone:':'📣',':postal:':'📮',':postbox:':'📮',':newspaper:':'📰',':bookmark:':'🔖',':link:':'🔗',':gear:':'⚙️',':atom:':'⚛️',':radiation:':'☢️',':biohazard:':'☣️',':recycle:':'♻️',':infinity:':'♾️',':warning:':'⚠️',':pause:':'⏸️',':play:':'▶️',':stop:':'⏹️',':record:':'⏺️',':eject:':'⏏️',':next:':'⏭️',':previous:':'⏮️',':shuffle:':'🔀',':repeat:':'🔁',':repeatone:':'🔂',':arrowup:':'⬆️',':arrowdown:':'⬇️',':arrowleft:':'⬅️',':arrowright:':'➡️',':up:':'🆙',':new:':'🆕',':free:':'🆓',':cool:':'🆒',':top:':'🔝',':soon:':'🔜',':end:':'🔚',':on:':'🔛',':atm:':'🏧',':wc:':'🚾',':passport:':'🛂',':customs:':'🛃',':baggage:':'🛄',':leftluggage:':'🛅',':elevator:':'🛗',':escalator:':'🚈',':stairs:':'🪜',':wheelchair:':'♿',':nosmoking:':'🚭',':dog:':'🐕',':cat:':'🐈',':snake:':'🐍',':dragon:':'🐉',':horse:':'🐎',':bull:':'🐂',':cow:':'🐄',':pig:':'🐖',':ram:':'🐏',':sheep:':'🐑',':goat:':'🐐',':camel:':'🐪',':llama:':'🦙',':giraffe:':'🦒',':elephant:':'🐘',':rhino:':'🦏',':hippo:':'🦛',':mouse:':'🐁',':rat:':'🐀',':hamster:':'🐹',':rabbit:':'🐇',':chipmunk:':'🐿️',':beaver:':'🦫',':hedgehog:':'🦔',':bat:':'🦇',':koala:':'🐨',':panda:':'🐼',':sloth:':'🦥',':otter:':'🦦',':skunk:':'🦨',':kangaroo:':'🦘',':badger:':'🦡',':monkey:':'🐒',':gorilla:':'🦍',':orangutan:':'🦧',':bird:':'🐦',':penguin:':'🐧',':dove:':'🕊️',':eagle:':'🦅',':duck:':'🦆',':swan:':'🦢',':owl:':'🦉',':peacock:':'🦚',':parrot:':'🦜',':frog:':'🐸',':crocodile:':'🐊',':turtle:':'🐢',':lizard:':'🦎',':snail:':'🐌',':spider:':'🕷️',':scorpion:':'🦂',':crab:':'🦀',':lobster:':'🦞',':shrimp:':'🦐',':squid:':'🦑',':octopus:':'🐙',':dolphin:':'🐬',':whale:':'🐋',':shark:':'🦈',':seal:':'🦭',':fish:':'🐟',':tropicalfish:':'🐠',':blowfish:':'🐡',':jellyfish:':'🪼',':coral:':'🪸',':worm:':'🪱',':leaves:':'🍃',':seedling:':'🌱',':palm:':'🌴',':cactus:':'🌵',':flower:':'🌸',':rose:':'🌹',':wilted:':'🥀',':hibiscus:':'🌺',':sunflower:':'🌻',':blossom:':'🌼',':tulip:':'🌷',':herb:':'🌿',':shamrock:':'☘️',':maple:':'🍁',':pine:':'🌲',':xmas:':'🎄',':apple:':'🍎',':pear:':'🍐',':orange:':'🍊',':lemon:':'🍋',':banana:':'🍌',':watermelon:':'🍉',':grapes:':'🍇',':berry:':'🫐',':strawberry:':'🍓',':cherry:':'🍒',':peach:':'🍑',':mango:':'🥭',':pineapple:':'🍍',':melon:':'🍈',':kiwi:':'🥝',':tomato:':'🍅',':eggplant:':'🍆',':avocado:':'🥑',':broccoli:':'🥦',':carrot:':'🥕',':corn:':'🌽',':cucumber:':'🥒',':pepper:':'🫑',':potato:':'🥔',':sweetpotato:':'🍠',':mushroom:':'🍄',':peanuts:':'🥜',':honey:':'🍯',':bread:':'🍞',':croissant:':'🥐',':bagel:':'🥯',':pretzel:':'🥨',':pancake:':'🥞',':waffle:':'🧇',':cheese:':'🧀',':egg:':'🥚',':cooking:':'🍳',':bacon:':'🥓',':pizza:':'🍕',':burger:':'🍔',':fries:':'🍟',':hotdog:':'🌭',':sandwich:':'🥪',':taco:':'🌮',':burrito:':'🌯',':sushi:':'🍣',':rice:':'🍚',':curry:':'🍛',':ramen:':'🍜',':spaghetti:':'🍝',':friedshrimp:':'🍤',':dumpling:':'🥟',':fortune:':'🥠',':takeout:':'🥡',':icecream:':'🍨',':shavedice:':'🍧',':cake:':'🎂',':cupcake:':'🧁',':pie:':'🥧',':chocolate:':'🍫',':candy:':'🍬',':lollipop:':'🍭',':custard:':'🍮',':doughnut:':'🍩',':cookie:':'🍪',':milk:':'🥛',':coffee:':'☕',':tea:':'🍵',':beer:':'🍺',':wine:':'🍷',':cocktail:':'🍸',':tropicaldrink:':'🍹',':champagne:':'🥂',':bottle:':'🍾',':sake:':'🍶',':babybottle:':'🍼',':fork:':'🍴',':knife:':'🔪',':spoon:':'🥄',':chopsticks:':'🥢',':cup:':'🥃',':salad:':'🥗',':popcorn:':'🍿',':salt:':'🧂',':canned:':'🥫',
   };
@@ -623,6 +625,7 @@
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
             </button>
             <h1 class="brand">CryptoChat</h1>
+            <span id="onlineStatus" class="online-status"></span>
             <button id="logoutBtn" class="btn btn-small btn-ghost">Logg ut</button>
           </div>
           <div class="header-actions">
@@ -639,6 +642,7 @@
             <button id="rotateKeyBtn" class="btn btn-small btn-ghost" title="Roter.noekkel" aria-label="Roter krypteringsnoekkel">🔄</button>
             <button id="lockToggle" class="btn btn-small btn-ghost" title="App-lås">🔐</button>
             <button id="stealthToggle" class="btn btn-small btn-ghost" title="Stealth-modus">👁️</button>
+            <button id="globalSearchBtn" class="btn btn-small btn-ghost" title="Globalt søk">🔍</button>
             <button id="aiSummaryBtn" class="btn btn-small btn-ghost" title="AI-sammendrag">🤖</button>
           </div>
         </header>
@@ -649,6 +653,7 @@
               <input id="sidebarSearch" class="sidebar-search-input" type="text" placeholder="Soek" autocomplete="off" aria-label="Soek i kontakter" />
             </div>
             <div id="folderTabs" class="folder-tabs" role="tablist"></div>
+            <button id="folderEditBtn" class="btn btn-small btn-ghost" title="Rediger mapper" style="margin: 0 12px 6px;font-size:.78rem;">✎ Mapper</button>
             <div class="section">
               <div class="section-title">MELDINGER</div>
               <div id="savedMsgItem" class="item saved-messages-item" role="option" tabindex="0" aria-label="Lagrede meldinger" style="cursor:pointer;margin-bottom:6px;">
@@ -661,6 +666,10 @@
               <div class="section-title">GRUPPER</div>
               <div id="groupsList" class="list" role="listbox" aria-label="Grupper"></div>
               <button id="createGroupBtn" class="btn btn-small btn-ghost" aria-label="Opprett ny gruppe">+ Ny gruppe</button>
+            </div>
+            <div class="section" id="archiveSection" style="display:none">
+              <div class="section-title">ARKIV</div>
+              <div id="archivedList" class="list" role="listbox" aria-label="Arkiverte samtaler"></div>
             </div>
             <div class="section">
               <div class="section-title">KANALER</div>
@@ -761,6 +770,7 @@
                     <button data-effect="stars" title="Stjerner">⭐</button>
                   </div>
                 </span>
+                <button id="scheduleBtn" class="btn btn-small btn-ghost" title="Planlegg melding" aria-label="Planlegg melding">⏰</button>
                 <button id="sendBtn" class="btn btn-primary" disabled aria-label="Send melding"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg></button>
               </div>
               <div id="scheduleBar" class="schedule-bar" style="display:none">
@@ -813,6 +823,9 @@
         return _iceServers;
       }
       let presence = {};
+      const onlineUsers = new Set();
+      window.__onlineUsers = onlineUsers;
+      let sendOnEnter = localStorage.getItem('sendOnEnter') !== 'false';
       let typingTimeout = null;
       let isTyping = false;
       let knownMessageIds = new Set();
@@ -826,10 +839,14 @@
       let _notificationAudio = null;
       window.__lastSeenTimes = {};
       let currentFolder = 'all';
+      let chatFolders = [];
+      let archivedChats = [];
       const selectedMessages = new Set();
       let selectionMode = false;
       let pinnedChats = [];
       let mutedChats = [];
+      let blockedUsers = [];
+      let chatNotifOverrides = {};
       let channels = [];
       let chatLabels = {};
 
@@ -1225,6 +1242,10 @@
 
       // (Escape handler consolidated below in keyboard shortcuts block)
 
+      function isArchivedChat(id, type) {
+        return archivedChats.some(e => e.target === id && e.type === type);
+      }
+
       function renderUsers() {
         usersList.innerHTML = '';
         const list = Array.isArray(users) ? users : [];
@@ -1238,6 +1259,8 @@
         });
         sorted.forEach(u => {
           const name = typeof u === 'string' ? u : (u && u.username) || JSON.stringify(u);
+          if (isBlockedUser(name)) return;
+          if (isArchivedChat(name, 'user')) return;
           const displayName = (typeof u === 'object' && u && u.display_name) ? u.display_name : getDisplayName(name);
           if (typeof u === 'object' && u && u.username) userProfiles[u.username] = u;
           const item = document.createElement('div');
@@ -1256,7 +1279,8 @@
           const lockIcon = hasKey ? '<span class="e2ee" title="E2EE">🔒</span>' : '';
           const labels = chatLabels[name] || [];
           const labelBadges = labels.length ? '<div class="label-badges">' + labels.map(l => '<span class="label-badge">' + escapeHtml(l) + '</span>').join('') + '</div>' : '';
-          item.innerHTML = '<div class="avatar-wrap">' + avatarHtml(name) + (presence[name] ? '<div class="presence"></div>' : '') + '</div><div class="item-info"><div class="item-top"><span class="name">' + escapeHtml(displayName) + lockIcon + verifyIcon + pinIcon + '</span>' + (msgTime ? '<span class="preview-time">' + escapeHtml(msgTime) + '</span>' : '') + '</div><div class="preview">' + escapeHtml(preview) + lastSeenText + '</div>' + labelBadges + '</div>' + badge;
+          const statusDot = onlineUsers.has(name) ? '<span class="online-dot"></span>' : '';
+          item.innerHTML = '<div class="avatar-wrap">' + avatarHtml(name) + (presence[name] ? '<div class="presence"></div>' : '') + statusDot + '</div><div class="item-info"><div class="item-top"><span class="name">' + escapeHtml(displayName) + lockIcon + verifyIcon + pinIcon + '</span>' + (msgTime ? '<span class="preview-time">' + escapeHtml(msgTime) + '</span>' : '') + '</div><div class="preview">' + escapeHtml(preview) + lastSeenText + '</div>' + labelBadges + '</div>' + badge;
           item.addEventListener('click', () => { activateItem(usersList, item); openChat(name); });
           usersList.appendChild(item);
         });
@@ -1265,6 +1289,7 @@
       function renderGroups() {
         groupsList.innerHTML = '';
         groups.forEach(g => {
+          if (isArchivedChat(g.id, 'group')) return;
           const item = document.createElement('div');
           item.className = 'item';
           item.dataset.groupId = g.id;
@@ -1334,31 +1359,162 @@
       async function loadFolders() {
         try {
           const data = await loadJSON('/folders');
-          const tabs = document.getElementById('folderTabs');
-          if (!tabs) return;
-          const userFolders = data.folders || [];
-          const defaultFolders = [
-            { id: 'all', name: 'Alle' },
-            { id: 'personal', name: 'Personlige' },
-            { id: 'groups', name: 'Grupper' },
-            { id: 'channels', name: 'Kanaler' },
-          ];
-          const folders = userFolders.length > 1 ? userFolders : defaultFolders;
-          tabs.innerHTML = '';
-          folders.forEach(f => {
-            const btn = document.createElement('button');
-            btn.className = 'folder-tab' + (f.id === currentFolder ? ' active' : '');
-            btn.dataset.folder = f.id;
-            const count = f.count ? '<span class="folder-count">' + f.count + '</span>' : '';
-            btn.innerHTML = escapeHtml(f.name) + count;
-            btn.addEventListener('click', () => {
-              currentFolder = f.id;
-              document.querySelectorAll('.folder-tab').forEach(t => t.classList.toggle('active', t.dataset.folder === f.id));
-              filterSidebar();
-            });
-            tabs.appendChild(btn);
+          chatFolders = data.folders || [];
+        } catch(e) { chatFolders = []; }
+        renderFolderTabs();
+      }
+
+      function renderFolderTabs() {
+        const tabs = document.getElementById('folderTabs');
+        if (!tabs) return;
+        const defaultFolders = [
+          { id: 'all', name: 'Alle' },
+          { id: 'personal', name: 'Personlige' },
+          { id: 'groups', name: 'Grupper' },
+          { id: 'channels', name: 'Kanaler' },
+        ];
+        const folders = chatFolders.length > 1 ? chatFolders : defaultFolders;
+        tabs.innerHTML = '';
+        folders.forEach(f => {
+          const btn = document.createElement('button');
+          btn.className = 'folder-tab' + (f.id === currentFolder ? ' active' : '');
+          btn.dataset.folder = f.id;
+          const count = f.count ? '<span class="folder-count">' + f.count + '</span>' : '';
+          btn.innerHTML = escapeHtml(f.name) + count;
+          btn.addEventListener('click', () => setActiveFolder(f.id));
+          tabs.appendChild(btn);
+        });
+      }
+
+      function setActiveFolder(id) {
+        currentFolder = id;
+        document.querySelectorAll('.folder-tab').forEach(t => t.classList.toggle('active', t.dataset.folder === id));
+        filterSidebar();
+      }
+
+      function showFolderEditor() {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        overlay.innerHTML = '<div class="modal" style="max-width:400px"><div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><strong>Rediger mapper</strong><button class="modal-close" onclick="this.closest(\'.modal-overlay\').remove()">✕</button></div><div id="folderEditorList" style="margin-bottom:12px"></div><div style="display:flex;gap:8px"><input id="folderEditorInput" class="input-text" placeholder="Nytt mappenavn..." style="flex:1" maxlength="20" /><button id="folderEditorAddBtn" class="btn btn-primary">Legg til</button></div><div style="text-align:right;margin-top:12px"><button class="btn btn-primary" onclick="saveFolderEditor()">Lagre</button></div></div>';
+        document.body.appendChild(overlay);
+        renderFolderEditorList();
+        document.getElementById('folderEditorAddBtn')?.addEventListener('click', () => {
+          const input = document.getElementById('folderEditorInput');
+          const name = input?.value.trim();
+          if (!name) return;
+          chatFolders.push({ id: 'f' + Date.now().toString(36), name, filters: [] });
+          input.value = '';
+          renderFolderEditorList();
+        });
+        document.getElementById('folderEditorInput')?.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') document.getElementById('folderEditorAddBtn')?.click();
+        });
+      }
+
+      function renderFolderEditorList() {
+        const list = document.getElementById('folderEditorList');
+        if (!list) return;
+        list.innerHTML = chatFolders.map((f, i) => '<div style="display:flex;align-items:center;gap:8px;padding:4px 0"><span style="flex:1">' + escapeHtml(f.name) + '</span><button class="btn btn-small btn-ghost" onclick="chatFolders.splice(' + i + ',1);renderFolderEditorList()">✕</button></div>').join('');
+      }
+
+      async function saveFolderEditor() {
+        try {
+          await loadJSON('/folders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ folders: chatFolders }) });
+          toast('Mapper lagret', 'success');
+          document.querySelector('.modal-overlay')?.remove();
+          loadFolders();
+        } catch(e) { toast('Kunne ikke lagre mapper'); }
+      }
+
+      async function loadArchived() {
+        try {
+          const data = await loadJSON('/archived');
+          archivedChats = Array.isArray(data) ? data : [];
+        } catch(e) { archivedChats = []; }
+        renderArchived();
+      }
+
+      function renderArchived() {
+        const section = document.getElementById('archiveSection');
+        const list = document.getElementById('archivedList');
+        if (!section || !list) return;
+        if (!archivedChats.length) { section.style.display = 'none'; return; }
+        section.style.display = '';
+        list.innerHTML = archivedChats.map(e => {
+          let name = e.target;
+          let avatar = '';
+          let letter = '';
+          if (e.type === 'group') {
+            const g = groups.find(gr => gr.id === e.target);
+            if (g) { name = g.name; avatar = 'linear-gradient(135deg,#5b8def,#3390ec)'; letter = '👥'; }
+            else { avatar = 'linear-gradient(135deg,#5b8def,#3390ec)'; letter = '👥'; }
+          } else {
+            avatar = avatarGradient(e.target);
+            letter = avatarLetter(e.target);
+          }
+          return '<div class="item" data-target="' + escapeHtml(e.target) + '" data-type="' + e.type + '" style="cursor:pointer"><div class="avatar-wrap"><div class="avatar" style="background:' + avatar + '">' + letter + '</div></div><div><div class="name">' + escapeHtml(name) + '</div><div class="preview" style="color:#6d8094;font-size:.75rem">Arkivert</div></div></div>';
+        }).join('');
+        list.querySelectorAll('.item').forEach(item => {
+          item.addEventListener('click', () => {
+            const target = item.dataset.target;
+            const type = item.dataset.type;
+            if (type === 'user') loadChat(target);
+            else if (type === 'group') loadGroup(target);
           });
-        } catch(e) {}
+        });
+      }
+
+      async function toggleArchive(target, type) {
+        try {
+          await loadJSON('/archive/' + encodeURIComponent(target), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_type: type }) });
+          if (!archivedChats.some(e => e.target === target && e.type === type)) {
+            archivedChats.push({ target, type });
+          }
+          renderArchived();
+          renderUsers();
+          renderGroups();
+        } catch(e) { toast('Kunne ikke arkivere'); }
+      }
+
+      async function unarchiveChat(target, type) {
+        try {
+          await loadJSON('/unarchive/' + encodeURIComponent(target), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_type: type }) });
+          archivedChats = archivedChats.filter(e => !(e.target === target && e.type === type));
+          renderArchived();
+          renderUsers();
+          renderGroups();
+        } catch(e) { toast('Kunne ikke avarkivere'); }
+      }
+
+      function initScheduleButton() {
+        const scheduleBtn = document.getElementById('scheduleBtn');
+        if (!scheduleBtn) return;
+        scheduleBtn.addEventListener('click', () => {
+          if (!activeChat) { toast('Velg en samtale foerst'); return; }
+          const overlay = document.createElement('div');
+          overlay.className = 'modal-overlay';
+          overlay.innerHTML = '<div class="modal" style="max-width:360px"><div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><strong>Planlegg melding</strong><button class="modal-close" onclick="this.closest(\'.modal-overlay\').remove()">✕</button></div><textarea id="scheduleModalText" class="input-text" placeholder="Skriv melding..." style="width:100%;min-height:80px;resize:vertical;margin-bottom:8px"></textarea><input id="scheduleModalTime" type="datetime-local" class="input-text" style="width:100%;margin-bottom:12px" /><button id="scheduleModalSendBtn" class="btn btn-primary" style="width:100%">Planlegg</button></div>';
+          document.body.appendChild(overlay);
+          document.getElementById('scheduleModalSendBtn')?.addEventListener('click', async () => {
+            const text = document.getElementById('scheduleModalText')?.value.trim();
+            const timeVal = document.getElementById('scheduleModalTime')?.value;
+            if (!text || !timeVal) { toast('Fyll inn melding og tidspunkt'); return; }
+            try {
+              const body = { ciphertext: text, send_at: new Date(timeVal).toISOString() };
+              if (activeChat.type === 'user') body.recipient = activeChat.target;
+              else body.group_id = activeChat.target;
+              await loadJSON('/schedule', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+              toast('Melding planlagt', 'success');
+              overlay.remove();
+            } catch(e) { toast('Kunne ikke planlegge melding'); }
+          });
+          document.getElementById('scheduleModalTime')?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') document.getElementById('scheduleModalSendBtn')?.click();
+          });
+          const min = new Date(Date.now() + 60000).toISOString().slice(0, 16);
+          const timeInput = document.getElementById('scheduleModalTime');
+          if (timeInput) { timeInput.min = min; timeInput.value = min; }
+        });
       }
 
       function filterSidebar() {
@@ -1400,6 +1556,25 @@
           const data = await loadJSON('/settings/mute');
           mutedChats = data.muted || [];
         } catch(e) { mutedChats = []; }
+      }
+
+      async function loadBlockedUsers() {
+        try {
+          const data = await loadJSON('/blocked');
+          blockedUsers = data.blocked || [];
+        } catch(e) { blockedUsers = []; }
+      }
+
+      function isBlockedUser(username) {
+        return blockedUsers.includes(username);
+      }
+
+      async function loadChatNotifOverrides() {
+        chatNotifOverrides = {};
+      }
+
+      function getChatNotifOverride(chatId, chatType) {
+        return chatNotifOverrides[chatType + '_' + chatId];
       }
 
       function isPinnedChat(id, type) {
@@ -1554,6 +1729,49 @@
         });
       }
 
+      function showForwardModal(msgId) {
+        const overlay = document.createElement('div');
+        overlay.id = 'forwardOverlay';
+        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;';
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+        const users = window.__APP__?.userList || [];
+        const groups = window.__groups || [];
+        let html = '<div style="background:#17213b;border-radius:16px;max-width:360px;width:90%;max-height:70vh;overflow-y:auto;padding:16px;">'
+          + '<h3 style="color:#e7e8f3;margin:0 0 12px;font-size:1rem;">Videresend melding</h3>';
+        if (users.length) {
+          html += '<div style="font-size:.75rem;color:#6d8094;margin:4px 0;">BRUKERE</div>';
+          users.forEach(u => {
+            html += '<div class="forward-item" data-target="' + escapeHtml(u) + '" data-type="user"><div class="forward-avatar">' + escapeHtml((u[0] || '?').toUpperCase()) + '</div><div class="forward-name">' + escapeHtml(u) + '</div></div>';
+          });
+        }
+        if (groups.length) {
+          html += '<div style="font-size:.75rem;color:#6d8094;margin:8px 0 4px;">GRUPPER</div>';
+          groups.forEach(g => {
+            html += '<div class="forward-item" data-target="' + escapeHtml(g.id || g.name) + '" data-type="group"><div class="forward-avatar">' + escapeHtml((g.name || 'G')[0].toUpperCase()) + '</div><div class="forward-name">' + escapeHtml(g.name || g.id) + '</div></div>';
+          });
+        }
+        html += '</div>';
+        overlay.innerHTML = html;
+        document.body.appendChild(overlay);
+        overlay.querySelectorAll('.forward-item').forEach(el => {
+          el.addEventListener('click', async () => {
+            const target = el.dataset.target;
+            const type = el.dataset.type;
+            const msgEl = document.querySelector('.msg[data-msg-id="' + msgId + '"]');
+            const textEl = msgEl?.querySelector('.text');
+            const origText = textEl?.textContent || '';
+            const forwardedText = '➡️ Videresendt:\n' + origText;
+            if (type === 'user') {
+              await loadJSON('/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ recipient: target, text: forwardedText }) });
+            } else {
+              await loadJSON('/groups/' + encodeURIComponent(target) + '/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: forwardedText }) });
+            }
+            toast('Videresendt til ' + target, 'success');
+            overlay.remove();
+          });
+        });
+      }
+
       // ── Export chat ──
       document.getElementById('exportBtn').addEventListener('click', () => {
         if (!activeChat || activeChat.type === 'saved') return;
@@ -1592,7 +1810,7 @@
         await fetchVerificationStatus(user);
         updateVerifyButton();
         await loadChat(user);
-        loadPinnedMessages('user', user);
+        loadPinnedMessages(user);
         addDisappearToggle();
         await checkTypingIndicator();
         const input = document.getElementById('messageInput');
@@ -1731,7 +1949,7 @@
         document.getElementById('exportBtn').style.display = '';
         document.getElementById('pollBtn').style.display = '';
         await loadGroup(groupId);
-        loadPinnedMessages('group', groupId);
+        loadPinnedMessages(groupId);
         await checkTypingIndicator();
         const input = document.getElementById('messageInput');
         if (input) input.focus();
@@ -1759,7 +1977,7 @@
             const last = list[list.length - 1];
             if (last) {
               let text = '';
-              if (last.type === 'file') text = '📎 ' + (last.filename || 'fil');
+              if (last.type === 'file' || last.type === 'file_e2ee') text = '📎 ' + (last.filename || 'fil');
               else text = (last.sender ? last.sender + ': ' : '') + (last.text || '');
               groupLastMessages[groupId] = { text: text, timestamp: last.timestamp || '' };
             }
@@ -1816,11 +2034,19 @@
           try {
             if (peerConnection.getSenders().some(s => s.track && s.track.kind === 'video' && s.track.label.startsWith('Screen'))) {
               stopScreenShare();
+              if (window.__SOCKET && currentCall?.target) {
+                window.__SOCKET.emit('call_signal', { target: currentCall.target, type: 'screen_share_stop', payload: {} });
+              }
               return;
             }
             const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
             const screenTrack = screenStream.getVideoTracks()[0];
-            screenTrack.onended = () => stopScreenShare();
+            screenTrack.onended = () => {
+              stopScreenShare();
+              if (window.__SOCKET && currentCall?.target) {
+                window.__SOCKET.emit('call_signal', { target: currentCall.target, type: 'screen_share_stop', payload: {} });
+              }
+            };
             const sender = peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
             if (sender) {
               sender.replaceTrack(screenTrack);
@@ -1830,6 +2056,9 @@
             document.getElementById('callScreenShare').textContent = '🖥️✅';
             currentCall.screenSharing = true;
             currentCall.screenStream = screenStream;
+            if (window.__SOCKET && currentCall?.target) {
+              window.__SOCKET.emit('call_signal', { target: currentCall.target, type: 'screen_share_start', payload: {} });
+            }
           } catch (e) {
             if (e.name !== 'AbortError') toast('Kunne ikke dele skjerm');
           }
@@ -1840,7 +2069,7 @@
         }
       }
 
-      function stopScreenShare() {
+      function stopScreenShare(silent) {
         if (currentCall && currentCall.screenStream) {
           currentCall.screenStream.getTracks().forEach(t => t.stop());
           currentCall.screenStream = null;
@@ -1857,6 +2086,9 @@
         const btn = document.getElementById('callScreenShare');
         if (btn) btn.textContent = '🖥️';
         if (currentCall) currentCall.screenSharing = false;
+        if (!silent && window.__SOCKET && currentCall?.target) {
+          window.__SOCKET.emit('call_signal', { target: currentCall.target, type: 'screen_share_stop', payload: {} });
+        }
       }
 
       function updateCallStatus(status) {
@@ -2025,7 +2257,7 @@
           { icon: '📌', label: 'Fest', action: async () => {
             if (!activeChat) return;
             try {
-              await loadJSON('/pins/' + activeChat.type + '/' + encodeURIComponent(activeChat.target) + '/' + encodeURIComponent(msgId), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+              await loadJSON('/pins', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_target: activeChat.target, msg_id: msgId, pin: true }) });
               toast('Melding festet', 'success');
             } catch(e) { toast('Kunne ikke feste'); }
           }},
@@ -2224,6 +2456,8 @@
           const isImage = /\.(png|jpe?g|gif|webp)$/i.test(message.filename || '');
           if (isImage) {
             fileHtml = '<div class="inline-image"><img src="/uploads/' + encodeURIComponent(message.filename) + '" alt="' + escapeHtml(message.filename || 'bilde') + '" /></div>';
+          } else if (/\.(mp4|webm|mov|avi|mkv|ogg)$/i.test(message.filename || '')) {
+            fileHtml = '<div class="inline-video"><video src="/uploads/' + encodeURIComponent(message.filename) + '" controls preload="metadata" style="max-width:100%;max-height:300px;border-radius:12px;"></video></div>';
           } else if (/\.pdf$/i.test(message.filename || '')) {
             fileHtml = '<div class="pdf-preview" onclick="window.open(\'/uploads/' + encodeURIComponent(message.filename) + '\',\'_blank\')"><div class="pdf-icon">📄</div><div class="pdf-name">' + escapeHtml(message.filename || 'dokument.pdf') + '</div><div class="pdf-open">Åpne</div></div>';
           } else {
@@ -2235,9 +2469,53 @@
               fileHtml = '<div class="badge">📎 ' + escapeHtml(message.filename || 'fil') + '</div>';
             }
           }
+        } else if (message.type === 'file_e2ee' && !message.deleted && message.text) {
+          fileHtml = '<div class="file-e2ee-loading" style="padding:8px 0;">🔒 Dekrypterer fil...</div>';
+          (async () => {
+            try {
+              let b64;
+              if (activeChat?.type === 'user' && activeChat?.peerPublicKey) {
+                b64 = await decryptFromPeer(message.text, activeChat.peerPublicKey);
+              } else if (activeChat?.type === 'group' && activeChat?.groupE2EEKey && message.e2ee) {
+                const parts = String(message.text).split('.');
+                if (parts.length === 2) {
+                  const iv = base64ToArrayBuffer(parts[0]);
+                  const enc = base64ToArrayBuffer(parts[1]);
+                  const buf = await window.crypto.subtle.decrypt({ name: 'AES-GCM', iv }, activeChat.groupE2EEKey, enc);
+                  b64 = new TextDecoder().decode(buf);
+                }
+              }
+              if (b64) {
+                const raw = base64ToArrayBuffer(b64);
+                const blob = new Blob([raw], { type: message.mimeType || '' });
+                const url = URL.createObjectURL(blob);
+                const container = item.querySelector('.file-e2ee-loading');
+                if (container) {
+                  const ext = (message.filename || '').toLowerCase();
+                  if (/\.(png|jpe?g|gif|webp)$/i.test(ext)) {
+                    container.outerHTML = '<div class="inline-image"><img src="' + url + '" alt="' + escapeHtml(message.filename || 'bilde') + '" /></div>';
+                  } else if (/\.(mp4|webm|mov|avi|mkv|ogg)$/i.test(ext)) {
+                    container.outerHTML = '<div class="inline-video"><video src="' + url + '" controls preload="metadata" style="max-width:100%;max-height:300px;border-radius:12px;"></video></div>';
+                  } else if (/\.pdf$/i.test(ext)) {
+                    container.outerHTML = '<div class="pdf-preview" onclick="window.open(\'' + url + '\',\'_blank\')"><div class="pdf-icon">📄</div><div class="pdf-name">' + escapeHtml(message.filename || 'dokument.pdf') + '</div><div class="pdf-open">Åpne</div></div>';
+                  } else {
+                    const audioExts = ['.webm', '.mp3', '.ogg', '.wav', '.opus', '.m4a'];
+                    if (message.filename && audioExts.some(a => ext.endsWith(a))) {
+                      container.outerHTML = '<div class="voice-msg-player" data-src="' + url + '"><button class="voice-play-btn">▶</button><canvas class="voice-waveform" width="200" height="40"></canvas><span class="voice-duration">0:00</span></div>';
+                    } else {
+                      container.outerHTML = '<div class="badge">📎 <a href="' + url + '" download="' + escapeHtml(message.filename || 'fil') + '">' + escapeHtml(message.filename || 'fil') + '</a></div>';
+                    }
+                  }
+                }
+              }
+            } catch (e) {
+              const container = item.querySelector('.file-e2ee-loading');
+              if (container) container.outerHTML = '<div style="color:#ff6b6b;padding:8px 0;">🔒 Kunne ikke dekryptere fil</div>';
+            }
+          })();
         }
 
-        const e2eeIndicator = (!isMe && message.type === 'text' && activeChat?.type === 'user' && activeChat?.peerPublicKey)
+        const e2eeIndicator = (!isMe && (message.type === 'text' || message.type === 'file_e2ee') && activeChat?.type === 'user' && activeChat?.peerPublicKey)
           ? '<span class="e2ee">🔒 E2EE</span> '
           : '';
 
@@ -2383,10 +2661,28 @@
         if (!text && !file) { input.disabled = false; return; }
         try {
           if (file) {
-            const form = new FormData();
-            form.append('file', file);
-            if (activeChat.type === 'user') form.append('recipient', activeChat.target); else form.append('groupId', activeChat.target);
-            await fetch('/upload', { method: 'POST', body: form });
+            if (activeChat.type === 'user' && activeChat.peerPublicKey) {
+              const buf = await file.arrayBuffer();
+              const b64 = arrayBufferToBase64(buf);
+              const ciphertext = await encryptForPeer(b64, activeChat.peerPublicKey);
+              const body = { ciphertext, type: 'file_e2ee', filename: file.name, mimeType: file.type, recipient: activeChat.target };
+              if (replyingTo) body.reply_to = replyingTo.id;
+              await fetch('/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+            } else if (activeChat.type === 'group' && activeChat.groupE2EEKey) {
+              const buf = await file.arrayBuffer();
+              const b64 = arrayBufferToBase64(buf);
+              const iv = window.crypto.getRandomValues(new Uint8Array(12));
+              const enc = await window.crypto.subtle.encrypt({ name: 'AES-GCM', iv }, activeChat.groupE2EEKey, new TextEncoder().encode(b64));
+              const ciphertext = arrayBufferToBase64(iv) + '.' + arrayBufferToBase64(enc);
+              const body = { ciphertext, type: 'file_e2ee', filename: file.name, mimeType: file.type, e2ee: true };
+              if (replyingTo) body.reply_to = replyingTo.id;
+              await fetch('/groups/' + encodeURIComponent(activeChat.target) + '/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+            } else {
+              const form = new FormData();
+              form.append('file', file);
+              if (activeChat.type === 'user') form.append('recipient', activeChat.target); else form.append('groupId', activeChat.target);
+              await fetch('/upload', { method: 'POST', body: form });
+            }
           } else {
             if (activeChat.type === 'channel') {
               const url = '/channels/' + encodeURIComponent(activeChat.target) + '/send';
@@ -2530,7 +2826,10 @@
 
       document.getElementById('sendBtn').addEventListener('click', sendMessage);
       document.getElementById('messageInput').addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+        if (e.key === 'Enter') {
+          if (sendOnEnter && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+          if (!sendOnEnter && e.shiftKey) { e.preventDefault(); sendMessage(); }
+        }
       });
       document.getElementById('messageInput').addEventListener('input', () => {
         updateSendButton();
@@ -2999,12 +3298,12 @@
       finishAppend = finishAppendWithLinkPreview;
 
       // ── Pinned Messages ──
-      async function loadPinnedMessages(chatType, chatId) {
+      async function loadPinnedMessages(chatId) {
         const bar = document.getElementById('pinnedBar');
         const text = document.getElementById('pinnedText');
         if (!bar || !text) return;
         try {
-          const data = await loadJSON('/pins/' + encodeURIComponent(chatType) + '/' + encodeURIComponent(chatId));
+          const data = await loadJSON('/pins/' + encodeURIComponent(chatId));
           if (data.pins && data.pins.length > 0) {
             const pin = data.pins[0];
             text.textContent = '📌 ' + (pin.text || '').substring(0, 100);
@@ -3022,12 +3321,10 @@
       document.getElementById('pinnedClose')?.addEventListener('click', async (e) => {
         e.stopPropagation();
         if (!activeChat) return;
-        const chatType = activeChat.type === 'group' ? 'group' : 'user';
-        const chatId = activeChat.target;
         try {
-          const data = await loadJSON('/pins/' + encodeURIComponent(chatType) + '/' + encodeURIComponent(chatId));
+          const data = await loadJSON('/pins/' + encodeURIComponent(activeChat.target));
           if (data.pins && data.pins.length > 0) {
-            await loadJSON('/pins/' + encodeURIComponent(chatType) + '/' + encodeURIComponent(chatId) + '/' + data.pins[0].id, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+            await loadJSON('/pins', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_target: activeChat.target, msg_id: data.pins[0].id, pin: false }) });
             document.getElementById('pinnedBar').style.display = 'none';
           }
         } catch (e) {}
@@ -3135,6 +3432,8 @@
 
       // Add schedule toggle to send button area
       document.getElementById('sendBtn')?.addEventListener('contextmenu', (e) => { e.preventDefault(); showScheduleBar(); });
+      initScheduleButton();
+      document.getElementById('folderEditBtn')?.addEventListener('click', showFolderEditor);
 
       // ── Disappearing Messages Toggle ──
       function addDisappearToggle() {
@@ -3213,8 +3512,13 @@
         }
         if (e.ctrlKey && e.key === 'n') {
           e.preventDefault();
-          const msgInput = document.getElementById('messageInput');
-          if (msgInput) msgInput.focus();
+          const newChat = document.getElementById('newChatBtn');
+          if (newChat) newChat.click();
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+          e.preventDefault();
+          const sb = document.getElementById('sidebarSearch');
+          if (sb) { sb.focus(); sb.select(); }
         }
         if (e.key === 'ArrowUp' && !e.target.closest('input, textarea')) {
           e.preventDefault();
@@ -3228,16 +3532,52 @@
         }
       });
 
-      // ── PWA Push Notifications ──
-      async function initPushNotifications() {
-        if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
-        try {
-          const reg = await navigator.serviceWorker.register('/sw.js');
-          const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: (await loadJSON('/push/vapid-key')).key || '' });
-          await fetch('/push/subscribe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ subscription: sub }) });
-        } catch (e) {}
+      // ── Push Notifications ──
+      function initPushNotifications() {
+        if (!('Notification' in window)) return;
+        if (Notification.permission === 'granted') return;
+        if (Notification.permission === 'denied') return;
+        const req = () => { Notification.requestPermission(); document.removeEventListener('click', req); document.removeEventListener('keydown', req); };
+        document.addEventListener('click', req, { once: true });
+        document.addEventListener('keydown', req, { once: true });
       }
-      if ('Notification' in window && Notification.permission === 'granted') initPushNotifications();
+      if ('Notification' in window) initPushNotifications();
+
+      // ── Socket.IO callback stubs ──
+      window.__onTyping = window.__onTyping || ((data) => {
+        const indicator = document.getElementById('typingIndicator');
+        if (!indicator) return;
+        if (data.isTyping) {
+          indicator.textContent = data.username + ' skriver...';
+        } else {
+          indicator.textContent = '';
+        }
+      });
+      window.__onIncomingCall = window.__onIncomingCall || ((data) => {
+        checkIncomingCalls();
+      });
+
+      // ── Online status ──
+      window.__onPresenceUpdate = (data) => {
+        if (data.status === 'online') onlineUsers.add(data.username);
+        else onlineUsers.delete(data.username);
+        renderUsers();
+        renderGroups();
+      };
+      if (window.__SOCKET) {
+        window.__SOCKET.on('connect', () => {
+          if (window.__APP__?.username) {
+            window.__SOCKET.emit('presence', { status: 'online', users: [] });
+          }
+        });
+        window.__SOCKET.on('call_signal', (data) => {
+          if (data.type === 'screen_share_start') {
+            toast('Samtalepartner deler skjerm');
+          } else if (data.type === 'screen_share_stop') {
+            toast('Samtalepartner sluttet å dele skjerm');
+          }
+        });
+      }
 
       // ── Call Recording ──
       let callRecorder = null;
@@ -3340,9 +3680,9 @@
               const chatType = activeChat?.type === 'group' ? 'group' : 'user';
               const chatId = activeChat?.target;
               try {
-                await loadJSON('/pins/' + encodeURIComponent(chatType) + '/' + encodeURIComponent(chatId) + '/' + message.id, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+                await loadJSON('/pins', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_target: chatId, msg_id: message.id, pin: true }) });
                 toast('Melding festet', 'success');
-                loadPinnedMessages(chatType, chatId);
+                loadPinnedMessages(chatId);
               } catch (e) { toast('Kunne ikke feste melding'); }
             });
             actions.appendChild(pinBtn);
@@ -3408,7 +3748,7 @@
           const senderName = getDisplayName(message.sender || '');
           let body = '';
           if (message.deleted) body = '[Slettet]';
-          else if (message.type === 'file') body = '📎 ' + (message.filename || 'Vedlegg');
+          else if (message.type === 'file' || message.type === 'file_e2ee') body = '📎 ' + (message.filename || 'Vedlegg');
           else body = message.text || '';
           new Notification(senderName, { body: body.substring(0, 120) });
         } catch (e) {}
@@ -3430,6 +3770,78 @@
           } catch (e2) {}
         }
         renderUsers();
+      }
+
+      function showGlobalSearch() {
+        document.querySelectorAll('.modal-overlay').forEach(el => el.remove());
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay global-search-modal';
+        overlay.innerHTML = '<div class="modal global-search-dialog">'
+          + '<div class="global-search-header"><h2>Globalt søk</h2><button class="global-search-close btn btn-small btn-ghost">✕</button></div>'
+          + '<div class="global-search-input-wrap"><input id="globalSearchInput" class="input-text" placeholder="Søk i alle meldinger..." autofocus /></div>'
+          + '<div id="globalSearchResults" class="global-search-results"><div class="global-search-empty">Skriv inn et søk for å finne meldinger</div></div>'
+          + '</div>';
+        document.body.appendChild(overlay);
+
+        const input = overlay.querySelector('#globalSearchInput');
+        const resultsEl = overlay.querySelector('#globalSearchResults');
+
+        input.addEventListener('input', debounce(() => {
+          const q = input.value.trim();
+          if (!q) { resultsEl.innerHTML = '<div class="global-search-empty">Skriv inn et søk for å finne meldinger</div>'; return; }
+          resultsEl.innerHTML = '<div class="global-search-loading"><div class="spinner"></div></div>';
+          (async () => {
+            try {
+              const data = await loadJSON('/search?q=' + encodeURIComponent(q));
+              const msgs = data.messages || [];
+              const groups = {};
+              const me = window.__APP__?.username || '';
+              msgs.forEach(m => {
+                const partner = m.sender === me ? m.recipient : m.sender;
+                if (!partner) return;
+                if (!groups[partner]) groups[partner] = [];
+                groups[partner].push(m);
+              });
+              const partners = Object.keys(groups).sort((a, b) => groups[b].length - groups[a].length);
+              if (!partners.length) {
+                resultsEl.innerHTML = '<div class="global-search-empty">Ingen resultater for <strong>' + escapeHtml(q) + '</strong></div>';
+                return;
+              }
+              let html = '<div class="global-search-count">' + msgs.length + ' treff i ' + partners.length + ' samtaler</div>';
+              partners.forEach(partner => {
+                html += '<div class="search-group"><div class="search-group-title" data-partner="' + escapeHtml(partner) + '"><div class="avatar-wrap">' + avatarHtml(partner, 24) + '</div><span>' + escapeHtml(getDisplayName(partner)) + '</span><span class="search-group-count">' + groups[partner].length + '</span></div>';
+                groups[partner].slice(0, 5).forEach(m => {
+                  const preview = (m.text || '').substring(0, 100);
+                  const ts = m.timestamp ? formatTime(m.timestamp) : '';
+                  html += '<div class="search-result-item" data-partner="' + escapeHtml(partner) + '" data-type="user"><div class="search-result-text">' + escapeHtml(preview) + '</div><div class="search-result-meta"><span class="search-result-sender">' + escapeHtml(m.sender) + '</span><span class="search-result-time">' + escapeHtml(ts) + '</span></div></div>';
+                });
+                if (groups[partner].length > 5) {
+                  html += '<div class="search-result-more">+' + (groups[partner].length - 5) + ' flere treff</div>';
+                }
+                html += '</div>';
+              });
+              resultsEl.innerHTML = html;
+              resultsEl.querySelectorAll('.search-group-title, .search-result-item').forEach(el => {
+                el.addEventListener('click', () => {
+                  const partner = el.dataset.partner;
+                  const type = el.dataset.type || 'user';
+                  overlay.remove();
+                  if (type === 'user') {
+                    const existingUser = users.find(u => (typeof u === 'string' ? u : u.username) === partner);
+                    if (existingUser) { activateItem(usersList, usersList.querySelector('[data-user="' + partner + '"]')); openChat(partner); }
+                    else toast('Bruker ikke funnet');
+                  }
+                });
+              });
+            } catch(e) {
+              resultsEl.innerHTML = '<div class="global-search-empty">Søk feilet. Prøv igjen.</div>';
+            }
+          })();
+        }, 300));
+
+        overlay.querySelector('.global-search-close').addEventListener('click', () => overlay.remove());
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+        setTimeout(() => input.focus(), 100);
       }
 
       function showProfileModal() {
@@ -3468,7 +3880,17 @@
            + '<button id="setDestructBtn" class="btn btn-small btn-primary" style="margin-top:8px;">Lagre</button>'
            + '<div id="destructStatus" style="font-size:.8rem;color:#6d8094;margin-top:4px;"></div>'
            + '</div>'
-           + '<div class="modal-actions">'
+            + '<div class="setting-section" style="border-top:1px solid var(--c-border);padding-top:10px;margin-top:6px;">'
+            + '<h3>Meldingsinnstillinger</h3>'
+            + '<label style="display:flex;align-items:center;gap:8px;margin-top:6px;cursor:pointer;">'
+            + '<input type="checkbox" id="sendOnEnterToggle" ' + (sendOnEnter ? 'checked' : '') + ' style="width:18px;height:18px;accent-color:var(--c-primary);" />'
+            + 'Send med Enter</label>'
+            + '</div>'
+            + '<div class="setting-section" style="border-top:1px solid var(--c-border);padding-top:10px;margin-top:6px;">'
+            + '<h3>Blokkerte brukere</h3>'
+            + '<div id="blockedUsersList" style="font-size:.85rem;color:#6d8094;">Laster...</div>'
+            + '</div>'
+            + '<div class="modal-actions">'
            + '<button id="profileCancelBtn" class="btn btn-ghost">Avbryt</button>'
            + '<button id="profileSaveBtn" class="btn btn-primary">Lagre</button>'
            + '</div></div>';
@@ -3553,6 +3975,40 @@
             document.getElementById('destructStatus').textContent = delay > 0 ? 'Konto slettes om ' + delay + ' dager' : '';
           } catch(e) { toast('Kunne ikke oppdatere'); }
         });
+
+        overlay.querySelector('#sendOnEnterToggle')?.addEventListener('change', function() {
+          sendOnEnter = this.checked;
+          localStorage.setItem('sendOnEnter', sendOnEnter);
+        });
+
+        (async () => {
+          const blockedListEl = overlay.querySelector('#blockedUsersList');
+          if (blockedListEl) {
+            try {
+              const data = await loadJSON('/blocked');
+              const blocked = data.blocked || [];
+              if (!blocked.length) {
+                blockedListEl.innerHTML = '<span style="color:#6d8094;">Ingen blokkerte brukere</span>';
+              } else {
+                blockedListEl.innerHTML = blocked.map(u => '<div style="display:flex;align-items:center;justify-content:space-between;padding:4px 0;"><span>' + escapeHtml(u) + '</span><button class="btn btn-small btn-ghost unblock-profile-btn" data-username="' + escapeHtml(u) + '" style="color:#ff6666;font-size:.75rem;">Lås opp</button></div>').join('');
+                blockedListEl.querySelectorAll('.unblock-profile-btn').forEach(btn => {
+                  btn.addEventListener('click', async () => {
+                    const username = btn.dataset.username;
+                    try {
+                      await loadJSON('/block/' + username, { method: 'DELETE' });
+                      blockedUsers = blockedUsers.filter(u => u !== username);
+                      btn.closest('div').remove();
+                      toast('Bruker låst opp', 'success');
+                      renderUsers();
+                      const remaining = blockedListEl.querySelectorAll('.unblock-profile-btn').length;
+                      if (!remaining) blockedListEl.innerHTML = '<span style="color:#6d8094;">Ingen blokkerte brukere</span>';
+                    } catch(e) { toast('Kunne ikke låse opp'); }
+                  });
+                });
+              }
+            } catch(e) { blockedListEl.innerHTML = '<span style="color:#ff6666;">Kunne ikke laste blokkerte brukere</span>'; }
+          }
+        })();
 
         overlay.querySelector('#profileCancelBtn').addEventListener('click', () => overlay.remove());
         overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
@@ -4459,6 +4915,25 @@
       }
 
       // ── Hook into openChat/openGroup for new features ──
+      async function updateNotifBtn(chatId, chatType) {
+        const btn = document.getElementById('muteBtn');
+        if (!btn) return;
+        const override = getChatNotifOverride(chatId, chatType);
+        if (override === 'always') { btn.textContent = '🔔✨'; btn.title = 'Alltid varsle'; }
+        else if (override === 'never' || isMutedChat(chatId)) { btn.textContent = '🔇'; btn.title = 'Aldri varsle'; }
+        else { btn.textContent = '🔔'; btn.title = 'Standard varsler'; }
+      }
+
+      async function loadAndApplyNotifOverride(chatId, chatType) {
+        try {
+          const data = await loadJSON('/notif/' + chatType + '/' + encodeURIComponent(chatId));
+          if (data.success && data.override) {
+            chatNotifOverrides[chatType + '_' + chatId] = data.override;
+          }
+        } catch(e) {}
+        updateNotifBtn(chatId, chatType);
+      }
+
       const _origOpenChat = openChat;
       openChat = async function(user) {
         await _origOpenChat(user);
@@ -4467,7 +4942,7 @@
         document.getElementById('pollBtn').style.display = 'none';
         document.getElementById('muteBtn').style.display = '';
         document.getElementById('chatSearchBtn').style.display = '';
-        document.getElementById('muteBtn').textContent = isMutedChat(user) ? '🔕' : '🔔';
+        loadAndApplyNotifOverride(user, 'user');
         silentMode = false;
         if (silentToggle) { silentToggle.classList.remove('active'); silentToggle.textContent = '🔇'; }
         await loadAndApplyWallpaper();
@@ -4483,7 +4958,7 @@
         document.getElementById('groupAdminBtn').style.display = '';
         document.getElementById('muteBtn').style.display = '';
         document.getElementById('chatSearchBtn').style.display = '';
-        document.getElementById('muteBtn').textContent = isMutedChat(groupId) ? '🔕' : '🔔';
+        loadAndApplyNotifOverride(groupId, 'group');
         await loadAndApplyWallpaper();
         initVoicePlayers();
       };
@@ -4496,27 +4971,55 @@
         document.getElementById('muteBtn').style.display = 'none';
       };
 
+      document.getElementById('muteBtn').title = 'Standard varsler';
+
+      async function setChatNotifOverride(chatId, chatType, override) {
+        try {
+          const res = await fetch('/notif/' + chatType + '/' + encodeURIComponent(chatId), {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ override: override })
+          });
+          const data = await res.json();
+          if (data.success) {
+            const key = chatType + '_' + chatId;
+            if (override === null) delete chatNotifOverrides[key];
+            else chatNotifOverrides[key] = override;
+          }
+        } catch(e) {}
+      }
+
       document.getElementById('muteBtn')?.addEventListener('click', async () => {
         if (!activeChat || !activeChat.target) return;
         const chatId = activeChat.target;
+        const chatType = activeChat.type || 'user';
+        const currentOverride = getChatNotifOverride(chatId, chatType);
         const currentlyMuted = isMutedChat(chatId);
-        try {
-          await fetch('/settings/mute', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ chatId, mute: !currentlyMuted })
-          });
+        if (currentOverride === 'always') {
+          await setChatNotifOverride(chatId, chatType, 'never');
+          document.getElementById('muteBtn').textContent = '🔇';
+          document.getElementById('muteBtn').title = 'Aldri varsle';
+          toast('Aldri varsle for denne samtalen', 'success');
+        } else if (currentOverride === 'never' || currentlyMuted) {
           if (currentlyMuted) {
+            await fetch('/settings/mute', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ chatId, mute: false })
+            });
             mutedChats = mutedChats.filter(id => id !== chatId);
-          } else {
-            mutedChats.push(chatId);
           }
-          document.getElementById('muteBtn').textContent = currentlyMuted ? '🔔' : '🔕';
-          toast(currentlyMuted ? 'Varsler aktivert' : 'Varsler dempet', 'success');
-          renderUsers();
-        } catch (e) {
-          toast('Kunne ikke endre varslingsinnstillinger');
+          await setChatNotifOverride(chatId, chatType, null);
+          document.getElementById('muteBtn').textContent = '🔔';
+          document.getElementById('muteBtn').title = 'Standard varsler';
+          toast('Standard varsler gjenopprettet', 'success');
+        } else {
+          await setChatNotifOverride(chatId, chatType, 'always');
+          document.getElementById('muteBtn').textContent = '🔔✨';
+          document.getElementById('muteBtn').title = 'Alltid varsle';
+          toast('Alltid varsle for denne samtalen', 'success');
         }
+        renderUsers();
       });
 
       // (silent flag now injected directly in sendMessage body)
@@ -5190,7 +5693,8 @@
       document.addEventListener('keydown', (e) => {
         if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
           e.preventDefault();
-          openChatSwitcher();
+          const sb = document.getElementById('sidebarSearch');
+          if (sb) { sb.focus(); sb.select(); }
         }
       });
 
@@ -5384,8 +5888,11 @@
       await loadFolders();
       await loadPinnedChats();
       await loadMutedChats();
+      await loadBlockedUsers();
+      await loadChatNotifOverrides();
       await loadChannels();
       await loadLabels();
+      await loadArchived();
       renderUsers();
       renderGroups();
       renderChannels();
@@ -5413,6 +5920,9 @@
       // ── Stealth mode ──
       document.body.classList.toggle('stealth-mode', stealthMode);
       document.getElementById('stealthToggle')?.addEventListener('click', toggleStealthMode);
+
+      // ── Global Search ──
+      document.getElementById('globalSearchBtn')?.addEventListener('click', showGlobalSearch);
 
       // ── AI summary placeholder ──
       document.getElementById('aiSummaryBtn')?.addEventListener('click', async () => {
@@ -5449,19 +5959,9 @@
         exitSelectionMode();
       });
 
-      const sidebarSearch = document.getElementById('sidebarSearch');
-      if (sidebarSearch) {
-        sidebarSearch.addEventListener('input', () => {
-          const q = sidebarSearch.value.toLowerCase().trim();
-          document.querySelectorAll('#usersList .item, #groupsList .item, #channelsList .item').forEach(el => {
-            const name = (el.dataset.user || el.dataset.groupId || el.querySelector('.name')?.textContent || '').toLowerCase();
-            const chatId = el.dataset.user || el.dataset.groupId || '';
-            const chatLabelsList = chatLabels[chatId] || [];
-            const labelMatch = chatLabelsList.some(l => l.toLowerCase().includes(q));
-            el.style.display = q && !name.includes(q) && !labelMatch ? 'none' : '';
-          });
-        });
-      }
+      document.getElementById('sidebarSearch')?.addEventListener('input', debounce((e) => {
+        filterSidebar(e.target.value);
+      }, 200));
 
       // ── Sidebar context menu (labels) ──
       document.querySelectorAll('#usersList, #groupsList, #channelsList').forEach(list => {
@@ -5472,11 +5972,15 @@
           document.querySelectorAll('.context-menu').forEach(el => el.remove());
           const chatId = item.dataset.user || item.dataset.groupId || '';
           if (!chatId) return;
+          const chatType = item.dataset.user ? 'user' : 'group';
+          const isArchived = archivedChats.some(e => e.target === chatId && e.type === chatType);
           const labels = chatLabels[chatId] || [];
           const menu = document.createElement('div');
           menu.className = 'context-menu sidebar-label-menu';
           const menuId = 'labelMenu_' + Date.now();
-          menu.innerHTML = '<div class="ctx-section-title">🏷️ Etiketter</div>'
+          menu.innerHTML = '<button class="ctx-item ctx-archive">' + (isArchived ? '📂 Avarkiver' : '📁 Arkiver') + '</button>'
+            + '<div class="ctx-sep"></div>'
+            + '<div class="ctx-section-title">🏷️ Etiketter</div>'
             + '<input class="sidebar-label-input label-input" placeholder="Ny etikett..." maxlength="20" />'
             + '<button class="ctx-item label-add-btn">➕ Legg til</button>'
             + (labels.length ? '<div class="ctx-sep"></div>' + labels.map(l => '<button class="ctx-item label-remove" data-label="' + escapeHtml(l) + '">✕ ' + escapeHtml(l) + '</button>').join('') : '<div class="ctx-empty">Ingen etiketter</div>');
@@ -5484,6 +5988,11 @@
           const rect = menu.getBoundingClientRect();
           menu.style.left = Math.min(e.clientX, window.innerWidth - rect.width - 8) + 'px';
           menu.style.top = Math.min(e.clientY, window.innerHeight - rect.height - 8) + 'px';
+          menu.querySelector('.ctx-archive')?.addEventListener('click', async () => {
+            if (isArchived) await unarchiveChat(chatId, chatType);
+            else await toggleArchive(chatId, chatType);
+            menu.remove();
+          });
           const input = menu.querySelector('.label-input');
           if (input) { input.focus(); input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') menu.querySelector('.label-add-btn')?.click(); }); }
           menu.querySelector('.label-add-btn')?.addEventListener('click', async () => {
@@ -5563,8 +6072,49 @@
       }
 
       document.getElementById('templateBtn')?.addEventListener('click', toggleTemplates);
+
+      // ── Push notifications for incoming messages ──
+      window.__onNewMessage = async (data) => {
+        const message = data.message || {};
+        const sender = data.sender || message.sender || '';
+        if (sender && isBlockedUser(sender)) return;
+        const override = getChatNotifOverride(sender, 'user');
+        if (override !== 'never' && (override === 'always' || (document.hidden && Notification.permission === 'granted'))) {
+          const text = message.ciphertext || message.text || 'Melding';
+          try { new Notification('CryptoChat', { body: sender + ': ' + text, icon: '/static/favicon.ico' }); } catch(e) {}
+        }
+        if (activeChat) {
+          const isRelevantUserChat = data.chatType === 'user' && (sender === activeChat.target || message.recipient === activeChat.target);
+          const isRelevantGroupChat = data.chatType === 'group' && data.groupId === activeChat.target;
+          if (isRelevantUserChat) {
+            await loadChat(activeChat.target);
+          } else if (isRelevantGroupChat) {
+            await loadGroup(activeChat.target);
+          }
+        }
+        renderUsers();
+      };
+
+      const onlineBadge = document.getElementById('onlineStatus');
+      window.addEventListener('online', () => {
+        document.body.classList.remove('offline');
+        if (onlineBadge) { onlineBadge.textContent = '● Online'; onlineBadge.style.color = '#4ade80'; }
+        toast('Tilkobling gjenopprettet', 'success');
+      });
+      window.addEventListener('offline', () => {
+        document.body.classList.add('offline');
+        if (onlineBadge) { onlineBadge.textContent = '● Offline'; onlineBadge.style.color = '#ff6b6b'; }
+        toast('Ingen internettilkobling — noen funksjoner er utilgjengelige');
+      });
+      if (!navigator.onLine) {
+        document.body.classList.add('offline');
+        if (onlineBadge) { onlineBadge.textContent = '● Offline'; onlineBadge.style.color = '#ff6b6b'; }
+      }
     } catch (e) {
-      document.getElementById('app').innerHTML = '<pre style="color:#ff8888;background:#0f1424;padding:16px;">' + escapeHtml(e.stack || e.message) + '</pre>';
+      const appEl = document.getElementById('app');
+      if (appEl) {
+        appEl.innerHTML = '<pre style="color:#ff8888;background:#0f1424;padding:16px;">' + escapeHtml(e.stack || e.message) + '</pre>';
+      }
     }
   }
 

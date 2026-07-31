@@ -2,6 +2,8 @@ from flask import request, session
 from flask_socketio import emit, join_room, leave_room, disconnect
 from functools import wraps
 
+online_users = set()
+
 def require_socket_auth(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
@@ -18,12 +20,15 @@ def register_socket_handlers(socketio):
     @require_socket_auth
     def handle_connect(username):
         join_room(f'user:{username}')
+        online_users.add(username)
         emit('connected', {'username': username})
+        socketio.emit('presence_update', {'username': username, 'status': 'online'})
 
     @socketio.on('disconnect')
     @require_socket_auth
     def handle_disconnect(username):
-        pass
+        online_users.discard(username)
+        socketio.emit('presence_update', {'username': username, 'status': 'offline'})
 
     @socketio.on('join')
     @require_socket_auth
@@ -77,6 +82,20 @@ def register_socket_handlers(socketio):
                 'type': signal_type,
                 'payload': payload,
             }, room=room)
+
+    @socketio.on('get_online')
+    @require_socket_auth
+    def handle_get_online(username, data):
+        users = data.get('users', [])
+        result = {u: u in online_users for u in users}
+        emit('online_status', result)
+
+    @socketio.on('read_receipt')
+    @require_socket_auth
+    def handle_read_receipt(username, data):
+        target = data.get('target')
+        if target:
+            emit('messages_read', {'by': username}, room=f'user:{target}')
 
 def notify_user(socketio, username, event, data):
     socketio.emit(event, data, room=f'user:{username}')

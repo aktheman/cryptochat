@@ -1,134 +1,155 @@
 # CryptoChat
 
-Ende-til-ende-kryptert chatteapplikasjon med fokus på personvern.
+Selv-hostet, ende-til-ende-kryptert chatteapplikasjon. Kjører på Raspberry Pi / Linux med Flask + Socket.IO + SQLite.
 
 ## Funksjoner
 
-- **Krypterte meldinger** — ECDH + AES-256-GCM med forward secrecy
-- **Grupper** — med admin/moderator-roller, invitasjonslenker, sakte modus
-- **Samtaler** — WebRTC video/audio med signaling via polling
-- **Filer og bilder** — opplasting og deling med forhåndsvisning
-- **Selvdestruerende meldinger** — tidsbestemt sletting
-- **2FA** — TOTP-basert tofaktorautentisering
-- **Gjenopprettingskoder** — for å komme inn igjen ved glemt passord
-- **Avstemninger** — med enkelt- eller flervalg
-- **Klistremerker og GIF** — for moro skyld
-- **Historier/Status** — 24-timers innlegg
-- **Kanaler** — broadcast til mange abonnenter
-- **Stedstjenester** — send posisjon og levende stedsdeling
-- **Multi-device** — synkroniser nøkler på tvers av enheter
-- **Mørk/lys-tema** — og tilpassede bakgrunnsbilder
-- **PWA** — installer som app, push-varsler, offline-støtte
-- **Adminpanel** — brukeradministrasjon, rapportering, statistikk
+- ✅ Ende-til-ende-kryptering (E2EE) for meldinger og filer
+- ✅ Sanntidsmeldinger via WebSocket (Socket.IO)
+- ✅ Gruppechatter med E2EE
+- ✅ Kanaler (broadcast)
+- ✅ Talemeldinger (opptak + avspilling)
+- ✅ Videosamtaler (WebRTC)
+- ✅ Skjermdeling
+- ✅ Trådsvar
+- ✅ Emoji-auto-complete
+- ✅ @-mention highlighting
+- ✅ Raske maler (hurtigmeldinger)
+- ✅ Tagger/labels
+- ✅ Chat-mapper
+- ✅ Arkivering av chatter
+- ✅ Planlagte meldinger
+- ✅ Globalt meldingssøk
+- ✅ Blokkering av brukere
+- ✅ Egendefinerte varsler per chat
+- ✅ App-lås (PIN-kode)
+- ✅ Stealth-modus
+- ✅ Slett historikk
+- ✅ Angre sletting
+- ✅ Selvødeleggende konto
+- ✅ PDF-forhåndsvisning
+- ✅ Videoavspiller i meldinger
+- ✅ Tofaktorautentisering (2FA)
+- ✅ Invitasjonslenker
+- ✅ Administrasjonspanel
+- ✅ Temaer (Flere fargetemaer)
+- ✅ Offline-støtte (Service Worker)
+- ✅ Progressiv Web App (PWA)
+- ✅ Mobilvennlig grensesnitt
+- ✅ Push-varsler (browser-notifikasjoner)
+- ✅ Tastatursnarveier (Esc, Ctrl+K, Ctrl+N)
+- ✅ Send på Enter (valgfritt)
 
-## Kom i gang
+## Installasjon
 
-### Lokalt (utvikling)
+### Krav
+- Python 3.10+
+- Linux (testet på Raspberry Pi OS / Ubuntu / Debian)
 
+### 1. Klon repoet
 ```bash
-# Generer hemmelig nøkkel
-python3 -c "import secrets; open('secrets/secret_key','wb').write(secrets.token_bytes(32))"
-
-# Installer avhengigheter
-pip install -r requirements.txt
-
-# Start (utviklingsmodus)
-python app.py
-
-# Åpne i nettleser
-open http://localhost:5000
+git clone https://github.com/dittbrukernavn/cryptochat.git
+cd cryptochat
 ```
 
-### Produksjon (systemd)
-
+### 2. Oppsett
 ```bash
-# Installer avhengigheter i virtuelt miljø
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-
-# Kopier og start systemd-tjeneste
-sudo cp cryptochat.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now cryptochat
+mkdir -p data
 ```
 
-### Produksjon (Docker)
-
+### 3. Konfigurasjon
 ```bash
-./start-prod.sh
-# eller
-docker compose up -d --build
+export SECRET_KEY="din-hemmelige-nokkel"
+export APP_VERSION="3.4.0"
 ```
 
-## Push-varsler (PWA)
-
-For push-varsler trenger du VAPID-nøkler:
-
+### 4. Kjør
 ```bash
-# Generer VAPID-nøkler
-pip install pywebpush
-python3 -c "
-from pywebpush import generate_vapid_keys
-keys = generate_vapid_keys()
-print('VAPID_PUBLIC_KEY=' + keys['public_key'])
-print('VAPID_PRIVATE_KEY=' + keys['private_key'])
-"
+gunicorn --bind 127.0.0.1:5000 --workers 2 app:app
 ```
 
-Sett miljøvariablene `VAPID_PUBLIC_KEY` og `VAPID_PRIVATE_KEY` før du starter appen.
+### Systemd-tjeneste (anbefalt)
+```ini
+[Unit]
+Description=CryptoChat
+After=network.target
 
-## API
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/cryptochat
+Environment=PATH=/home/pi/cryptochat/.venv/bin
+Environment=SECRET_KEY=din-hemmelige-nokkel
+ExecStart=/home/pi/cryptochat/.venv/bin/gunicorn --bind 127.0.0.1:5000 --workers 2 app:app
+Restart=always
+RestartSec=5
 
-Appen har et REST API. Alle endepunkter krever innlogging (session) med mindre annet er spesifisert.
+[Install]
+WantedBy=multi-user.target
+```
 
-### Autentisering
+### Tailscale Serve (anbefalt for HTTPS)
+```bash
+sudo tailscale serve --https 443 http://127.0.0.1:5000
+```
+
+## Arkitektur
+
+```
+cryptochat/
+├── app.py              # Flask-applikasjon + API-endepunkter
+├── sockets.py          # Socket.IO-hendelser (sanntid)
+├── config.py           # Konfigurasjon + fillagring
+├── requirements.txt    # Python-avhengigheter
+├── data/               # JSON-lagring (opprettes automatisk)
+├── static/
+│   ├── css/
+│   │   ├── style.css   # Hovedstilark
+│   │   └── login.css   # Innloggingsstil
+│   ├── js/
+│   │   ├── chat.js     # Hovedklient
+│   │   ├── socket.js   # Socket.IO-klient
+│   │   ├── auth.js     # Autentisering
+│   │   ├── crypto.js   # Kryptografi
+│   │   ├── bootstrap.js# Oppstart
+│   │   ├── admin.js    # Adminpanel
+│   │   └── offline.js  # Offline-støtte
+│   ├── sw.js           # Service Worker
+│   └── uploads/        # Filopplastinger
+└── templates/
+    ├── chat.html       # Hovedchat-grensesnitt
+    └── login.html      # Innloggingsside
+```
+
+## API-endepunkter (utvalgte)
 
 | Metode | Sti | Beskrivelse |
 |--------|-----|-------------|
-| POST | `/auth/register` | Opprett konto |
 | POST | `/auth/login` | Logg inn |
-| POST | `/auth/logout` | Logg ut |
-| POST | `/auth/logout-all` | Logg ut alle enheter |
-| POST | `/auth/2fa/enable` | Aktiver 2FA |
-| POST | `/auth/2fa/disable` | Deaktiver 2FA |
-| POST | `/auth/recovery` | Tilbakestill passord med gjenopprettingskode |
-
-### Meldinger
-
-| Metode | Sti | Beskrivelse |
-|--------|-----|-------------|
-| GET | `/messages/<bruker>` | Hent meldinger |
+| POST | `/auth/register` | Registrer bruker |
 | POST | `/send` | Send melding |
-| PUT | `/messages/<id>/edit` | Rediger melding |
-| DELETE | `/messages/<id>` | Slett melding |
+| GET | `/messages/<other_user>` | Hent meldinger |
+| POST | `/upload` | Last opp fil |
+| POST | `/groups/create` | Opprett gruppe |
+| POST | `/groups/<id>/send` | Send i gruppe |
+| GET | `/users/all` | List brukere |
+| GET | `/search?q=` | Globalt søk |
+| POST | `/pins` | Fastgjør melding |
+| POST | `/schedule` | Planlegg melding |
+| POST | `/block/<user>` | Blokker bruker |
+| POST | `/archive/<chat>` | Arkiver samtale |
+| GET | `/health` | Health check |
 
-### Gruppen
+## Kryptografi
 
-| Metode | Sti | Beskrivelse |
-|--------|-----|-------------|
-| GET | `/groups` | List grupper |
-| POST | `/groups` | Opprett gruppe |
-| POST | `/groups/<id>/send` | Send gruppemelding |
-| GET | `/groups/<id>/messages` | Hent gruppemeldinger |
-| DELETE | `/groups/<id>` | Slett gruppe |
-
-### Helse
-
-| Metode | Sti | Beskrivelse |
-|--------|-----|-------------|
-| GET | `/health` | Helse-sjekk |
-
-## Tester
-
-```bash
-pytest tests/ -v
-```
-
-## Deployment
-
-Se [DEPLOY.md](DEPLOY.md) for detaljer om deployment med Tailscale, Caddy og Docker.
+- **Meldinger**: AES-256-GCM + ECDH-nøkkelutveksling
+- **Grupper**: Felles AES-256-GCM-nøkkel delt med E2EE
+- **Filer**: Kryptert med samme nøkkel som meldinger
+- **Nøkkellagring**: IndexedDB i nettleseren
 
 ## Lisens
 
-Privat prosjekt.
+MIT
