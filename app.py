@@ -90,7 +90,7 @@ def set_security_headers(response):
 
 @app.route('/health')
 def health():
-    return jsonify({'status': 'ok', 'version': os.environ.get('APP_VERSION', '3.4.0')})
+    return jsonify({'success': True, 'status': 'ok', 'version': os.environ.get('APP_VERSION', '3.4.0')})
 
 def _rl_get(store, key):
     item = store.setdefault(key, {'ts': [], 'n': 0})
