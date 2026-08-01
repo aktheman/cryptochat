@@ -31,13 +31,13 @@ if secret_key_file:
     if key_path.exists():
         app.secret_key = key_path.read_bytes()
     else:
-        app.secret_key = os.environ.get('SECRET_KEY')
+        app.secret_key = os.environ.get('SECRET_KEY', '').encode()
         if not app.secret_key:
             raise SystemExit(f'SECRET_KEY_FILE "{secret_key_file}" finnes ikke, og SECRET_KEY er ikke satt.')
 elif Path('secrets/secret_key').exists():
     app.secret_key = Path('secrets/secret_key').read_bytes()
 else:
-    app.secret_key = os.environ.get('SECRET_KEY')
+    app.secret_key = os.environ.get('SECRET_KEY', '').encode()
     if not app.secret_key:
         raise SystemExit('SECRET_KEY eller SECRET_KEY_FILE må settes i produksjon')
 app.config.update(
