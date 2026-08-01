@@ -25,6 +25,10 @@ from sockets import register_socket_handlers, notify_user
 logger = logging.getLogger('cryptochat')
 
 app = Flask(__name__)
+
+@app.route('/favicon.ico')
+def favicon():
+    return app.send_static_file('favicon.ico')
 secret_key_file = os.environ.get('SECRET_KEY_FILE', '')
 if secret_key_file:
     key_path = Path(secret_key_file)
@@ -90,7 +94,7 @@ def set_security_headers(response):
 
 @app.route('/health')
 def health():
-    return jsonify({'success': True, 'status': 'ok', 'version': os.environ.get('APP_VERSION', '3.4.0')})
+    return jsonify({'success': True, 'status': 'ok', 'version': os.environ.get('APP_VERSION', '3.4.1')})
 
 def _rl_get(store, key):
     item = store.setdefault(key, {'ts': [], 'n': 0})
@@ -533,7 +537,7 @@ def login_page():
 
 @app.context_processor
 def inject_common():
-    return {'version': os.environ.get('APP_VERSION', '3.4.0')}
+    return {'version': os.environ.get('APP_VERSION', '3.4.1')}
 
 @app.route('/webrtc/turn')
 @require_login
@@ -996,6 +1000,18 @@ def presence_batch():
         result.append({'username': u, 'online': online, 'lastSeen': ts})
     return jsonify({'success': True, 'presence': result})
 
+@app.route('/presence/<username>', methods=['GET'])
+@rate_limit(max_requests=120, window_seconds=60)
+@require_login
+def presence_single(username):
+    presence = load_json(USER_PRESENCE_FILE, {})
+    entry = presence.get(username)
+    ts = entry.get('lastSeen') if isinstance(entry, dict) else entry
+    last_dt = parse_iso(ts)
+    now = datetime.utcnow()
+    online = bool(last_dt and (now - last_dt) < timedelta(minutes=5))
+    return jsonify({'success': True, 'username': username, 'online': online, 'lastSeen': ts})
+
 # ──────────────────────────────────────────────
 # Public key identity
 # ──────────────────────────────────────────────
@@ -1035,7 +1051,9 @@ def set_theme():
     username = session['username']
     data = request.get_json(force=True, silent=True) or {}
     theme = data.get('theme', 'dark')
-    users = load_json(USERS_FILE, {})
+    users = load_json(USERS_FILE, {}, ttl=5)
+    if not isinstance(users.get(username), dict):
+        users[username] = {}
     users[username]['theme'] = theme
     save_json(USERS_FILE, users)
     return jsonify({'success': True})
@@ -4726,7 +4744,7 @@ def health_check():
         'success': True,
         'status': 'healthy' if db_ok else 'degraded',
         'db': 'ok' if db_ok else 'error',
-        'version': '3.4.0',
+        'version': '3.4.1',
     })
 
 @app.route('/sw-test')
