@@ -526,6 +526,9 @@ def require_csrf(f):
 @app.route('/login')
 def login_page():
     if 'username' in session:
+        next_url = request.args.get('next')
+        if next_url and next_url.startswith('/') and not next_url.startswith('//'):
+            return redirect(next_url)
         return redirect(url_for('chat_page'))
     if not session.get('csrf_token'):
         session['csrf_token'] = secrets.token_hex(32)

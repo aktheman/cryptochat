@@ -328,6 +328,12 @@
 
   async function loadJSON(path, opts) {
     const res = await fetch(path, opts);
+    if (res.status === 401 && !sessionStorage.getItem('auth-redirecting')) {
+      sessionStorage.setItem('auth-redirecting', '1');
+      const ret = encodeURIComponent(window.location.pathname + window.location.hash);
+      window.location.href = '/login?next=' + ret;
+      throw new Error('Ikke innlogget');
+    }
     const data = await safeJson(res);
     if (!res.ok) throw new Error(data.message || data.error || 'HTTP ' + res.status);
     return data;
