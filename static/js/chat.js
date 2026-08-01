@@ -1401,8 +1401,10 @@
       function showFolderEditor() {
         const overlay = document.createElement('div');
         overlay.className = 'modal-overlay';
-        overlay.innerHTML = '<div class="modal" style="max-width:400px"><div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><strong>Rediger mapper</strong><button class="modal-close" onclick="this.closest(\'.modal-overlay\').remove()">✕</button></div><div id="folderEditorList" style="margin-bottom:12px"></div><div style="display:flex;gap:8px"><input id="folderEditorInput" class="input-text" placeholder="Nytt mappenavn..." style="flex:1" maxlength="20" /><button id="folderEditorAddBtn" class="btn btn-primary">Legg til</button></div><div style="text-align:right;margin-top:12px"><button class="btn btn-primary" onclick="saveFolderEditor()">Lagre</button></div></div>';
+        overlay.innerHTML = '<div class="modal" style="max-width:400px"><div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><strong>Rediger mapper</strong><button class="modal-close" data-close-folder-editor="1">✕</button></div><div id="folderEditorList" style="margin-bottom:12px"></div><div style="display:flex;gap:8px"><input id="folderEditorInput" class="input-text" placeholder="Nytt mappenavn..." style="flex:1" maxlength="20" /><button id="folderEditorAddBtn" class="btn btn-primary">Legg til</button></div><div style="text-align:right;margin-top:12px"><button id="folderEditorSaveBtn" class="btn btn-primary">Lagre</button></div></div>';
         document.body.appendChild(overlay);
+        overlay.querySelector('[data-close-folder-editor]')?.addEventListener('click', () => overlay.remove());
+        document.getElementById('folderEditorSaveBtn')?.addEventListener('click', saveFolderEditor);
         renderFolderEditorList();
         document.getElementById('folderEditorAddBtn')?.addEventListener('click', () => {
           const input = document.getElementById('folderEditorInput');
@@ -1420,7 +1422,13 @@
       function renderFolderEditorList() {
         const list = document.getElementById('folderEditorList');
         if (!list) return;
-        list.innerHTML = chatFolders.map((f, i) => '<div style="display:flex;align-items:center;gap:8px;padding:4px 0"><span style="flex:1">' + escapeHtml(f.name) + '</span><button class="btn btn-small btn-ghost" onclick="chatFolders.splice(' + i + ',1);renderFolderEditorList()">✕</button></div>').join('');
+        list.innerHTML = chatFolders.map((f, i) => '<div style="display:flex;align-items:center;gap:8px;padding:4px 0"><span style="flex:1">' + escapeHtml(f.name) + '</span><button class="btn btn-small btn-ghost" data-remove-folder="' + i + '">✕</button></div>').join('');
+        list.querySelectorAll('[data-remove-folder]').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            chatFolders.splice(Number(btn.dataset.removeFolder), 1);
+            renderFolderEditorList();
+          });
+        });
       }
 
       async function saveFolderEditor() {
@@ -1499,8 +1507,9 @@
           if (!activeChat) { toast('Velg en samtale foerst'); return; }
           const overlay = document.createElement('div');
           overlay.className = 'modal-overlay';
-          overlay.innerHTML = '<div class="modal" style="max-width:360px"><div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><strong>Planlegg melding</strong><button class="modal-close" onclick="this.closest(\'.modal-overlay\').remove()">✕</button></div><textarea id="scheduleModalText" class="input-text" placeholder="Skriv melding..." style="width:100%;min-height:80px;resize:vertical;margin-bottom:8px"></textarea><input id="scheduleModalTime" type="datetime-local" class="input-text" style="width:100%;margin-bottom:12px" /><button id="scheduleModalSendBtn" class="btn btn-primary" style="width:100%">Planlegg</button></div>';
+          overlay.innerHTML = '<div class="modal" style="max-width:360px"><div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><strong>Planlegg melding</strong><button class="modal-close" data-close-schedule="1">✕</button></div><textarea id="scheduleModalText" class="input-text" placeholder="Skriv melding..." style="width:100%;min-height:80px;resize:vertical;margin-bottom:8px"></textarea><input id="scheduleModalTime" type="datetime-local" class="input-text" style="width:100%;margin-bottom:12px" /><button id="scheduleModalSendBtn" class="btn btn-primary" style="width:100%">Planlegg</button></div>';
           document.body.appendChild(overlay);
+          overlay.querySelector('[data-close-schedule]')?.addEventListener('click', () => overlay.remove());
           document.getElementById('scheduleModalSendBtn')?.addEventListener('click', async () => {
             const text = document.getElementById('scheduleModalText')?.value.trim();
             const timeVal = document.getElementById('scheduleModalTime')?.value;
@@ -2465,7 +2474,7 @@
           } else if (/\.(mp4|webm|mov|avi|mkv|ogg)$/i.test(message.filename || '')) {
             fileHtml = '<div class="inline-video"><video src="/uploads/' + encodeURIComponent(message.filename) + '" controls preload="metadata" style="max-width:100%;max-height:300px;border-radius:12px;"></video></div>';
           } else if (/\.pdf$/i.test(message.filename || '')) {
-            fileHtml = '<div class="pdf-preview" onclick="window.open(\'/uploads/' + encodeURIComponent(message.filename) + '\',\'_blank\')"><div class="pdf-icon">📄</div><div class="pdf-name">' + escapeHtml(message.filename || 'dokument.pdf') + '</div><div class="pdf-open">Åpne</div></div>';
+            fileHtml = '<div class="pdf-preview" data-pdf-url="/uploads/' + encodeURIComponent(message.filename) + '"><div class="pdf-icon">📄</div><div class="pdf-name">' + escapeHtml(message.filename || 'dokument.pdf') + '</div><div class="pdf-open">Åpne</div></div>';
           } else {
             const audioExts = ['.webm', '.mp3', '.ogg', '.wav', '.opus', '.m4a'];
             const isVoice = message.filename && audioExts.some(ext => message.filename.toLowerCase().endsWith(ext));
@@ -2503,7 +2512,7 @@
                   } else if (/\.(mp4|webm|mov|avi|mkv|ogg)$/i.test(ext)) {
                     container.outerHTML = '<div class="inline-video"><video src="' + url + '" controls preload="metadata" style="max-width:100%;max-height:300px;border-radius:12px;"></video></div>';
                   } else if (/\.pdf$/i.test(ext)) {
-                    container.outerHTML = '<div class="pdf-preview" onclick="window.open(\'' + url + '\',\'_blank\')"><div class="pdf-icon">📄</div><div class="pdf-name">' + escapeHtml(message.filename || 'dokument.pdf') + '</div><div class="pdf-open">Åpne</div></div>';
+                    container.outerHTML = '<div class="pdf-preview" data-pdf-url="' + url + '"><div class="pdf-icon">📄</div><div class="pdf-name">' + escapeHtml(message.filename || 'dokument.pdf') + '</div><div class="pdf-open">Åpne</div></div>';
                   } else {
                     const audioExts = ['.webm', '.mp3', '.ogg', '.wav', '.opus', '.m4a'];
                     if (message.filename && audioExts.some(a => ext.endsWith(a))) {
@@ -4073,6 +4082,11 @@
       document.addEventListener('click', () => {
         const picker = document.getElementById('themePicker');
         if (picker) picker.classList.remove('open');
+      });
+
+      document.addEventListener('click', (e) => {
+        const pdf = e.target.closest('.pdf-preview[data-pdf-url]');
+        if (pdf) window.open(pdf.dataset.pdfUrl, '_blank');
       });
 
       populateThemePicker();
@@ -5937,8 +5951,9 @@
         toast('🤖 Sammendrag kommer i en fremtidig oppdatering', 'info');
         const overlay = document.createElement('div');
         overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center;';
-        overlay.innerHTML = '<div style="background:#17213b;border-radius:16px;padding:24px;max-width:400px;width:90%;text-align:center;"><div style="font-size:3rem;margin:8px 0;">🤖</div><h3 style="color:#e7e8f3;margin:8px 0;">AI-sammendrag</h3><p style="color:#6d8094;">AI-sammendrag kommer snart! Skal oppsummere uleste meldinger fra alle chatter.</p><button onclick="this.parentElement.parentElement.remove()" style="margin-top:12px;padding:8px 20px;background:#3390ec;border:none;border-radius:8px;color:#fff;cursor:pointer;">Lukk</button></div>';
+        overlay.innerHTML = '<div style="background:#17213b;border-radius:16px;padding:24px;max-width:400px;width:90%;text-align:center;"><div style="font-size:3rem;margin:8px 0;">🤖</div><h3 style="color:#e7e8f3;margin:8px 0;">AI-sammendrag</h3><p style="color:#6d8094;">AI-sammendrag kommer snart! Skal oppsummere uleste meldinger fra alle chatter.</p><button id="aiSummaryCloseBtn" style="margin-top:12px;padding:8px 20px;background:#3390ec;border:none;border-radius:8px;color:#fff;cursor:pointer;">Lukk</button></div>';
         document.body.appendChild(overlay);
+        overlay.querySelector('#aiSummaryCloseBtn')?.addEventListener('click', () => overlay.remove());
       });
 
       if (document.getElementById('mobileBackBtn')) {
@@ -6065,8 +6080,18 @@
         const templates = JSON.parse(localStorage.getItem('chat-templates') || '[]');
         if (!templates.length) { panel.style.display = 'none'; return; }
         panel.style.display = 'block';
-        panel.innerHTML = '<div class="template-panel-header"><span>📋 Maler</span><button class="template-close" onclick="this.closest(\'.template-panel\').style.display=\'none\'">✕</button></div>'
-          + templates.map(t => '<div class="template-item" onclick="insertTemplate(' + JSON.stringify(t.text).replace(/"/g, '&quot;') + ')"><span class="template-text">' + escapeHtml(t.text.substring(0, 60)) + '</span><button class="template-del" onclick="event.stopPropagation();deleteTemplate(\'' + t.id + '\')">✕</button></div>').join('');
+        panel.innerHTML = '<div class="template-panel-header"><span>📋 Maler</span><button class="template-close" data-close-templates="1">✕</button></div>'
+          + templates.map(t => '<div class="template-item" data-insert-template="' + escapeHtml(t.text).replace(/"/g, '&quot;') + '"><span class="template-text">' + escapeHtml(t.text.substring(0, 60)) + '</span><button class="template-del" data-delete-template="' + t.id + '">✕</button></div>').join('');
+        panel.querySelector('[data-close-templates]')?.addEventListener('click', () => { panel.style.display = 'none'; });
+        panel.querySelectorAll('[data-insert-template]').forEach(item => {
+          item.addEventListener('click', (e) => {
+            if (e.target.closest('[data-delete-template]')) return;
+            insertTemplate(item.dataset.insertTemplate);
+          });
+        });
+        panel.querySelectorAll('[data-delete-template]').forEach(btn => {
+          btn.addEventListener('click', (e) => { e.stopPropagation(); deleteTemplate(btn.dataset.deleteTemplate); });
+        });
       }
 
       function toggleTemplates() {
@@ -6131,7 +6156,8 @@
     if (ls && ls.parentElement) {
       const app = document.getElementById('app');
       if (app && app.querySelector('.loading-screen')) {
-        app.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:12px;color:#6d8094;"><div style="font-size:2rem;">⚠️</div><div style="font-weight:600;color:#e7e8f3;">Kunne ikke laste chat</div><div style="font-size:.85rem;">Prøv å oppdatere siden.</div><button onclick="location.reload()" style="margin-top:8px;padding:8px 20px;border:none;border-radius:8px;background:#5b8def;color:#fff;cursor:pointer;font-size:.9rem;">Last inn på nytt</button></div>';
+        app.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:12px;color:#6d8094;"><div style="font-size:2rem;">⚠️</div><div style="font-weight:600;color:#e7e8f3;">Kunne ikke laste chat</div><div style="font-size:.85rem;">Prøv å oppdatere siden.</div><button id="appReloadBtn" style="margin-top:8px;padding:8px 20px;border:none;border-radius:8px;background:#5b8def;color:#fff;cursor:pointer;font-size:.9rem;">Last inn på nytt</button></div>';
+        app.querySelector('#appReloadBtn')?.addEventListener('click', () => location.reload());
       }
     }
   }, 12000);
@@ -6142,8 +6168,9 @@
     const panel = document.createElement('div');
     panel.className = 'thread-panel';
     const me = window.__APP__?.username || '';
-    panel.innerHTML = '<div class="thread-panel-header"><button class="close-thread" onclick="closeThread()">✕</button><span class="thread-title">Tråd</span></div><div class="thread-messages"><div class="spinner" style="margin:20px auto;"></div></div><div class="thread-composer"><input id="threadInput" placeholder="Svar i tråden..." /><button id="threadSendBtn">Send</button></div>';
+    panel.innerHTML = '<div class="thread-panel-header"><button class="close-thread" data-close-thread="1">✕</button><span class="thread-title">Tråd</span></div><div class="thread-messages"><div class="spinner" style="margin:20px auto;"></div></div><div class="thread-composer"><input id="threadInput" placeholder="Svar i tråden..." /><button id="threadSendBtn">Send</button></div>';
     document.body.appendChild(panel);
+    panel.querySelector('[data-close-thread]')?.addEventListener('click', () => closeThread());
     window.__threadMsgId = msgId;
     window.addEventListener('click', _closeThreadOutside, true);
     loadJSON('/thread/' + encodeURIComponent(msgId)).then(data => {
