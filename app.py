@@ -404,8 +404,16 @@ def generate_identity_keypair():
         'public': base64.urlsafe_b64encode(pub_bytes).decode(),
     }
 
+def _aes_key():
+    key = app.secret_key or b''
+    if not isinstance(key, bytes):
+        key = str(key).encode('utf-8')
+    if len(key) >= 32:
+        return key[:32]
+    return hashlib.sha256(key).digest()
+
 def _encrypt_2fa_secret(plaintext: str) -> str:
-    key = app.secret_key[:32]
+    key = _aes_key()
     aes = AESGCM(key)
     nonce = secrets.token_bytes(12)
     ct = aes.encrypt(nonce, plaintext.encode('utf-8'), None)
@@ -415,12 +423,12 @@ def _encrypt_2fa_secret(plaintext: str) -> str:
 def _decrypt_2fa_secret(enc: str) -> str:
     data = base64.urlsafe_b64decode(enc)
     nonce, ct = data[:12], data[12:]
-    aes = AESGCM(app.secret_key[:32])
+    aes = AESGCM(_aes_key())
     return aes.decrypt(nonce, ct, None).decode('utf-8')
 
 
 def _encrypt_payload(plaintext: str) -> str:
-    key = app.secret_key[:32]
+    key = _aes_key()
     aes = AESGCM(key)
     nonce = secrets.token_bytes(12)
     ct = aes.encrypt(nonce, plaintext.encode('utf-8'), None)
@@ -430,7 +438,7 @@ def _encrypt_payload(plaintext: str) -> str:
 def _decrypt_payload(enc: str) -> str:
     data = base64.urlsafe_b64decode(enc)
     nonce, ct = data[:12], data[12:]
-    aes = AESGCM(app.secret_key[:32])
+    aes = AESGCM(_aes_key())
     return aes.decrypt(nonce, ct, None).decode('utf-8')
 
 def encrypt_symmetric(plaintext, key_b64):
