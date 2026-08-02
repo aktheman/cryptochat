@@ -90,7 +90,7 @@ def load_json(path, default=None, ttl=None):
     now = time.time()
     with _cache_lock:
         if key in _cache:
-            if ttl is None or (key in _cache_ttl and now - _cache_ttl[key] < ttl):
+            if ttl is not None and (key in _cache_ttl and now - _cache_ttl[key] < ttl):
                 return _cache[key]
 
     data = _read_from_sqlite(key)
