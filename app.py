@@ -1227,7 +1227,7 @@ def _llm_summary(digest):
     req.add_header('Content-Type', 'application/json')
     if api_key:
         req.add_header('Authorization', 'Bearer ' + api_key)
-    with urllib.request.urlopen(req, timeout=20) as resp:
+    with urllib.request.urlopen(req, timeout=90) as resp:
         data = json.loads(resp.read().decode('utf-8'))
     return (data.get('choices') or [{}])[0].get('message', {}).get('content', '').strip() or 'Ingen oppsummering.'
 
