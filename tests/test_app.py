@@ -1427,6 +1427,56 @@ class TestSessionManagement:
         r = client.post(f'/sessions/{sid}/revoke')
         assert r.status_code == 400
 
+    def test_sliding_session_stays_active(self, client):
+        from db import load_json, save_json
+        from config import SESSIONS_FILE
+        from datetime import datetime, timedelta
+        _register(client, 'alice')
+        s = load_json(SESSIONS_FILE, {})
+        sid = next(iter(s['alice']))
+        s['alice'][sid]['created'] = (datetime.utcnow() - timedelta(minutes=40)).isoformat() + 'Z'
+        s['alice'][sid]['last_active'] = datetime.utcnow().isoformat() + 'Z'
+        save_json(SESSIONS_FILE, s)
+        r = client.get('/admin/stats')
+        assert r.status_code == 403
+
+    def test_session_expires_after_inactivity(self, client):
+        from db import load_json, save_json, invalidate_cache
+        from config import SESSIONS_FILE
+        from datetime import datetime, timedelta
+        _register(client, 'alice')
+        s = load_json(SESSIONS_FILE, {})
+        sid = next(iter(s['alice']))
+        s['alice'][sid]['created'] = (datetime.utcnow() - timedelta(minutes=40)).isoformat() + 'Z'
+        s['alice'][sid]['last_active'] = (datetime.utcnow() - timedelta(minutes=40)).isoformat() + 'Z'
+        save_json(SESSIONS_FILE, s)
+        invalidate_cache()
+        r = client.get('/admin/stats')
+        assert r.status_code == 401
+
+
+class TestAISummary:
+    def test_ai_summary_no_unread(self, client):
+        _register(client, 'alice')
+        r = client.post('/ai/summary')
+        assert r.status_code == 200
+        assert 'Ingen uleste' in r.get_json()['summary']
+
+    def test_ai_summary_with_unread(self, client):
+        client2 = _setup_pair(client)
+        client.post('/send', json={'recipient': 'bob', 'ciphertext': 'Hei bob, mottes i morgen?', 'type': 'text'})
+        r = client2.post('/ai/summary')
+        assert r.status_code == 200
+        data = r.get_json()
+        assert data['success'] is True
+        assert len(data['chats']) == 1
+        assert data['chats'][0]['name'] == 'alice'
+        assert data['chats'][0]['count'] == 1
+
+    def test_ai_summary_requires_login(self, client):
+        r = client.post('/ai/summary')
+        assert r.status_code == 401
+
 
 class TestUpload:
     def test_upload_without_login(self, client):

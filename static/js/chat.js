@@ -5944,16 +5944,32 @@
       // ── Global Search ──
       document.getElementById('globalSearchBtn')?.addEventListener('click', showGlobalSearch);
 
-      // ── AI summary placeholder ──
+      // ── AI summary ──
       document.getElementById('aiSummaryBtn')?.addEventListener('click', async () => {
-        const unread = document.querySelectorAll('.item.unread, .badge-new, .unread-count');
-        if (!unread.length) { toast('Ingen uleste meldinger'); return; }
-        toast('🤖 Sammendrag kommer i en fremtidig oppdatering', 'info');
         const overlay = document.createElement('div');
         overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center;';
-        overlay.innerHTML = '<div style="background:#17213b;border-radius:16px;padding:24px;max-width:400px;width:90%;text-align:center;"><div style="font-size:3rem;margin:8px 0;">🤖</div><h3 style="color:#e7e8f3;margin:8px 0;">AI-sammendrag</h3><p style="color:#6d8094;">AI-sammendrag kommer snart! Skal oppsummere uleste meldinger fra alle chatter.</p><button id="aiSummaryCloseBtn" style="margin-top:12px;padding:8px 20px;background:#3390ec;border:none;border-radius:8px;color:#fff;cursor:pointer;">Lukk</button></div>';
+        overlay.innerHTML = '<div style="background:#17213b;border-radius:16px;padding:24px;max-width:420px;width:90%;text-align:center;"><div style="font-size:3rem;margin:8px 0;">🤖</div><h3 style="color:#e7e8f3;margin:8px 0;">AI-sammendrag</h3><div id="aiSummaryBody" style="color:#aab6c4;font-size:.9rem;line-height:1.5;max-height:300px;overflow:auto;text-align:left;white-space:pre-wrap;">Laster... </div><button id="aiSummaryCloseBtn" style="margin-top:12px;padding:8px 20px;background:#3390ec;border:none;border-radius:8px;color:#fff;cursor:pointer;">Lukk</button></div>';
         document.body.appendChild(overlay);
         overlay.querySelector('#aiSummaryCloseBtn')?.addEventListener('click', () => overlay.remove());
+        const body = overlay.querySelector('#aiSummaryBody');
+        try {
+          const d = await loadJSON('/ai/summary', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+          let html = escapeHtml(d.summary || 'Ingen oppsummering.');
+          if (d.chats && d.chats.length) {
+            html += '\n\n';
+            d.chats.forEach(c => {
+              html += '— ' + escapeHtml(c.name) + ' (' + c.count + ' ulest)\n';
+              c.last.forEach(m => {
+                const t = escapeHtml(m.text || '').substring(0, 80);
+                html += '  ' + escapeHtml(m.sender) + ': ' + t + '\n';
+              });
+            });
+          }
+          body.textContent = '';
+          body.innerHTML = html;
+        } catch(e) {
+          body.textContent = e.message || 'Kunne ikke lage sammendrag.';
+        }
       });
 
       if (document.getElementById('mobileBackBtn')) {

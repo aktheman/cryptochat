@@ -230,34 +230,58 @@ def is_online(username, timeout_minutes=5):
         return False
     return (datetime.utcnow() - last) < timedelta(minutes=timeout_minutes)
 
+def _session_active(sdata):
+    if not sdata or not sdata.get('active', False):
+        return False
+    if convert_to_bool(sdata.get('revoked', False), False):
+        return False
+    last = parse_iso(sdata.get('last_active') or sdata.get('created'))
+    if not last:
+        return False
+    if last.tzinfo:
+        last = last.replace(tzinfo=None)
+    return (datetime.utcnow() - last) < timedelta(minutes=app.config['SESSION_TIMEOUT_MINUTES'])
+
 def is_user_session_active(username):
     sessions = load_json(SESSIONS_FILE, {})
     user_sessions = sessions.get(username, {})
     if isinstance(user_sessions, dict) and 'token' in user_sessions:
-        if not user_sessions.get('active', False):
-            return False
-        if convert_to_bool(user_sessions.get('revoked', False), False):
-            return False
-        created = parse_iso(user_sessions.get('created'))
-        if not created:
-            return False
-        if created.tzinfo:
-            created = created.replace(tzinfo=None)
-        return (datetime.utcnow() - created) < timedelta(minutes=app.config['SESSION_TIMEOUT_MINUTES'])
+        return _session_active(user_sessions)
     if isinstance(user_sessions, dict):
         for sid, sdata in user_sessions.items():
             if not isinstance(sdata, dict):
                 continue
-            if sdata.get('token') == session.get('session_token') and sdata.get('active', False):
-                if convert_to_bool(sdata.get('revoked', False), False):
-                    return False
-                created = parse_iso(sdata.get('created'))
-                if not created:
-                    return False
-                if created.tzinfo:
-                    created = created.replace(tzinfo=None)
-                return (datetime.utcnow() - created) < timedelta(minutes=app.config['SESSION_TIMEOUT_MINUTES'])
+            if sdata.get('token') == session.get('session_token') and _session_active(sdata):
+                return True
     return False
+
+_SESSION_TOUCH_SECONDS = 300
+
+def touch_session_active(username):
+    sessions = load_json(SESSIONS_FILE, {})
+    user_sessions = sessions.get(username, {})
+    if isinstance(user_sessions, dict) and 'token' in user_sessions:
+        if user_sessions.get('token') != session.get('session_token'):
+            return
+        last = parse_iso(user_sessions.get('last_active'))
+        if last and (datetime.utcnow() - last.replace(tzinfo=None) if last.tzinfo else datetime.utcnow() - last).total_seconds() < _SESSION_TOUCH_SECONDS:
+            return
+        user_sessions['last_active'] = now_iso()
+        save_json(SESSIONS_FILE, sessions)
+        return
+    if isinstance(user_sessions, dict):
+        sid = session.get('session_token')
+        sdata = user_sessions.get(sid) if sid else None
+        if not isinstance(sdata, dict):
+            return
+        last = parse_iso(sdata.get('last_active'))
+        if last:
+            if last.tzinfo:
+                last = last.replace(tzinfo=None)
+            if (datetime.utcnow() - last).total_seconds() < _SESSION_TOUCH_SECONDS:
+                return
+        sdata['last_active'] = now_iso()
+        save_json(SESSIONS_FILE, sessions)
 
 def invalidate_all_sessions(username):
     sessions = load_json(SESSIONS_FILE, {})
@@ -286,21 +310,19 @@ def get_user_sessions(username):
     sessions = load_json(SESSIONS_FILE, {})
     user_sessions = sessions.get(username, {})
     if isinstance(user_sessions, dict) and 'token' in user_sessions:
-        return [{'id': 'default', 'created': user_sessions.get('created'), 'active': user_sessions.get('active', False)}]
+        return [{'id': 'default', 'created': user_sessions.get('created'), 'last_active': user_sessions.get('last_active'), 'active': _session_active(user_sessions)}]
     result = []
-    now = datetime.utcnow()
     for sid, sdata in user_sessions.items():
         if not isinstance(sdata, dict):
             continue
         created = parse_iso(sdata.get('created'))
         if created and created.tzinfo:
             created = created.replace(tzinfo=None)
-        active = sdata.get('active', False) and not convert_to_bool(sdata.get('revoked', False), False)
-        if created and (now - created) > timedelta(minutes=app.config['SESSION_TIMEOUT_MINUTES']):
-            active = False
+        active = _session_active(sdata)
         result.append({
             'id': sid,
             'created': sdata.get('created'),
+            'last_active': sdata.get('last_active'),
             'active': active,
             'device': sdata.get('device', 'Unknown'),
             'ip': sdata.get('ip', ''),
@@ -318,6 +340,7 @@ def require_login(f):
         if not username or not is_user_session_active(username):
             session.clear()
             return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
+        touch_session_active(username)
         return f(*args, **kwargs)
     return wrapper
 
@@ -392,6 +415,7 @@ def require_admin(f):
             return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
         if not is_admin(username):
             return jsonify({'success': False, 'message': 'Ingen admin-tilgang.'}), 403
+        touch_session_active(username)
         return f(*args, **kwargs)
     return wrapper
 
@@ -1162,6 +1186,105 @@ def get_messages(other_user):
     for f in filtered:
         f['reactions'] = all_reactions.get(f['id'], {})
     return jsonify({'success': True, 'messages': filtered, 'pair_key': pk, 'total': total, 'has_more': (offset + limit) < total})
+
+def _local_summary(digest):
+    total = sum(c['count'] for c in digest)
+    lines = [f"Du har {total} uleste melding{'' if total == 1 else 'er'} i {len(digest)} samtale{'' if len(digest) == 1 else 'r'}."]
+    for c in digest:
+        parts = []
+        for m in c['last'][-2:]:
+            snippet = (m['text'] or '')[:60]
+            parts.append(f"{m['sender']}: {snippet}")
+        lines.append(f"• {c['name']} ({c['count']} ulest): {' | '.join(parts)}")
+    return ' '.join(lines)
+
+def _llm_summary(digest):
+    import urllib.request
+    base_url = (os.environ.get('AI_BASE_URL') or 'https://api.openai.com/v1/chat/completions').rstrip('/')
+    api_key = os.environ.get('AI_API_KEY')
+    model = os.environ.get('AI_MODEL') or 'gpt-4o-mini'
+    if not api_key and 'localhost' not in base_url and '127.0.0.1' not in base_url:
+        raise ValueError('AI_API_KEY mangler')
+    conv = []
+    for c in digest:
+        for m in c['last']:
+            conv.append(f"[{c['name']}] {m['sender']}: {m['text']}")
+    prompt = (
+        "Oppsummer de uleste meldingene nedenfor på norsk. Kort og presist, 2-4 setninger. "
+        "Nevn hvem som har skrevet, om hva, og eventuelle spørsmål eller handlinger som venter.\n\n"
+        + '\n'.join(conv[-30:])
+    )
+    payload = json.dumps({
+        'model': model,
+        'messages': [
+            {'role': 'system', 'content': 'Du er en kortfattet assistent som oppsummerer chatter.'},
+            {'role': 'user', 'content': prompt},
+        ],
+        'temperature': 0.4,
+        'max_tokens': 250,
+    }).encode('utf-8')
+    req = urllib.request.Request(base_url, data=payload, method='POST')
+    req.add_header('Content-Type', 'application/json')
+    if api_key:
+        req.add_header('Authorization', 'Bearer ' + api_key)
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        data = json.loads(resp.read().decode('utf-8'))
+    return (data.get('choices') or [{}])[0].get('message', {}).get('content', '').strip() or 'Ingen oppsummering.'
+
+@app.route('/ai/summary', methods=['POST'])
+@rate_limit(max_requests=10, window_seconds=120)
+@require_login
+def ai_summary():
+    me = session['username']
+    messages = load_json(MESSAGES_FILE, [])
+    groups = load_json(GROUPS_FILE, [])
+    group_map = {}
+    for g in groups:
+        if isinstance(g, dict):
+            group_map[g.get('id')] = g
+    unread = [m for m in messages
+              if m.get('sender') != me
+              and not convert_to_bool(m.get('read'), False)
+              and not convert_to_bool(m.get('deleted'), False)]
+    chats = {}
+    for m in unread:
+        if m.get('group_id'):
+            key = 'g:' + m['group_id']
+            g = group_map.get(m['group_id']) or {}
+            name = g.get('name') or 'Gruppe'
+            kind = 'group'
+        else:
+            key = 'u:' + (m.get('pair_key') or m.get('sender') or '')
+            name = m.get('sender') or 'Ukjent'
+            kind = 'user'
+        entry = chats.setdefault(key, {'name': name, 'kind': kind, 'msgs': []})
+        entry['msgs'].append(m)
+    if not chats:
+        return jsonify({'success': True, 'summary': 'Ingen uleste meldinger.', 'chats': []})
+    digest = []
+    for key, c in chats.items():
+        msgs = sorted(c['msgs'], key=lambda x: x.get('timestamp', ''))
+        digest.append({
+            'name': c['name'],
+            'kind': c['kind'],
+            'count': len(msgs),
+            'last': [
+                {
+                    'sender': x.get('sender', ''),
+                    'text': x.get('ciphertext') or x.get('filename') or '[melding]',
+                    'timestamp': x.get('timestamp', ''),
+                }
+                for x in msgs[-3:]
+            ],
+        })
+    digest.sort(key=lambda c: c['last'][-1]['timestamp'], reverse=True)
+    summary = _local_summary(digest)
+    if os.environ.get('AI_API_KEY') or os.environ.get('AI_BASE_URL'):
+        try:
+            summary = _llm_summary(digest)
+        except Exception as e:
+            logger.warning('ai summary llm failed: %s', e)
+    return jsonify({'success': True, 'summary': summary, 'chats': digest})
 
 @app.route('/send', methods=['POST'])
 @rate_limit(max_requests=30, window_seconds=60)
