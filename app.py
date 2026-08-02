@@ -94,7 +94,7 @@ def set_security_headers(response):
 
 @app.route('/health')
 def health():
-    return jsonify({'success': True, 'status': 'ok', 'version': os.environ.get('APP_VERSION', '3.4.1')})
+    return jsonify({'success': True, 'status': 'ok', 'version': os.environ.get('APP_VERSION', '3.5.0')})
 
 def _rl_get(store, key):
     item = store.setdefault(key, {'ts': [], 'n': 0})
@@ -564,7 +564,7 @@ def login_page():
 
 @app.context_processor
 def inject_common():
-    return {'version': os.environ.get('APP_VERSION', '3.4.1')}
+    return {'version': os.environ.get('APP_VERSION', '3.5.0')}
 
 @app.route('/webrtc/turn')
 @require_login
@@ -1198,13 +1198,35 @@ def _local_summary(digest):
         lines.append(f"• {c['name']} ({c['count']} ulest): {' | '.join(parts)}")
     return ' '.join(lines)
 
-def _llm_summary(digest):
+def _ai_enabled():
+    return bool(os.environ.get('AI_API_KEY') or os.environ.get('AI_BASE_URL'))
+
+def _llm_chat(prompt, system=None, max_tokens=250, temperature=0.4):
     import urllib.request
     base_url = (os.environ.get('AI_BASE_URL') or 'https://api.openai.com/v1/chat/completions').rstrip('/')
     api_key = os.environ.get('AI_API_KEY')
     model = os.environ.get('AI_MODEL') or 'gpt-4o-mini'
     if not api_key and 'localhost' not in base_url and '127.0.0.1' not in base_url:
         raise ValueError('AI_API_KEY mangler')
+    messages = []
+    if system:
+        messages.append({'role': 'system', 'content': system})
+    messages.append({'role': 'user', 'content': prompt})
+    payload = json.dumps({
+        'model': model,
+        'messages': messages,
+        'temperature': temperature,
+        'max_tokens': max_tokens,
+    }).encode('utf-8')
+    req = urllib.request.Request(base_url, data=payload, method='POST')
+    req.add_header('Content-Type', 'application/json')
+    if api_key:
+        req.add_header('Authorization', 'Bearer ' + api_key)
+    with urllib.request.urlopen(req, timeout=90) as resp:
+        data = json.loads(resp.read().decode('utf-8'))
+    return (data.get('choices') or [{}])[0].get('message', {}).get('content', '').strip() or ''
+
+def _llm_summary(digest):
     conv = []
     for c in digest:
         for m in c['last']:
@@ -1214,22 +1236,7 @@ def _llm_summary(digest):
         "Nevn hvem som har skrevet, om hva, og eventuelle spørsmål eller handlinger som venter.\n\n"
         + '\n'.join(conv[-30:])
     )
-    payload = json.dumps({
-        'model': model,
-        'messages': [
-            {'role': 'system', 'content': 'Du er en kortfattet assistent som oppsummerer chatter.'},
-            {'role': 'user', 'content': prompt},
-        ],
-        'temperature': 0.4,
-        'max_tokens': 250,
-    }).encode('utf-8')
-    req = urllib.request.Request(base_url, data=payload, method='POST')
-    req.add_header('Content-Type', 'application/json')
-    if api_key:
-        req.add_header('Authorization', 'Bearer ' + api_key)
-    with urllib.request.urlopen(req, timeout=90) as resp:
-        data = json.loads(resp.read().decode('utf-8'))
-    return (data.get('choices') or [{}])[0].get('message', {}).get('content', '').strip() or 'Ingen oppsummering.'
+    return _llm_chat(prompt, system='Du er en kortfattet assistent som oppsummerer chatter.', max_tokens=250, temperature=0.4) or 'Ingen oppsummering.'
 
 @app.route('/ai/summary', methods=['POST'])
 @rate_limit(max_requests=10, window_seconds=120)
@@ -1279,12 +1286,56 @@ def ai_summary():
         })
     digest.sort(key=lambda c: c['last'][-1]['timestamp'], reverse=True)
     summary = _local_summary(digest)
-    if os.environ.get('AI_API_KEY') or os.environ.get('AI_BASE_URL'):
+    if _ai_enabled():
         try:
             summary = _llm_summary(digest)
         except Exception as e:
             logger.warning('ai summary llm failed: %s', e)
     return jsonify({'success': True, 'summary': summary, 'chats': digest})
+
+@app.route('/ai/chat', methods=['POST'])
+@rate_limit(max_requests=10, window_seconds=120)
+@require_login
+def ai_chat():
+    data = request.get_json(force=True, silent=True) or {}
+    prompt = sanitize_input(data.get('prompt', ''), 4000)
+    if not prompt:
+        return jsonify({'success': False, 'message': 'Ingen spørsmål.'}), 400
+    if not _ai_enabled():
+        return jsonify({'success': False, 'message': 'AI er ikke konfigurert på serveren.'}), 501
+    try:
+        reply = _llm_chat(prompt, system='Du er en hjelpsom og kortfattet assistent. Svar på norsk med mindre noe annet er bedt om.', max_tokens=500, temperature=0.5)
+    except Exception as e:
+        logger.warning('ai chat failed: %s', e)
+        return jsonify({'success': False, 'message': 'AI-tjenesten er utilgjengelig akkurat nå.'}), 502
+    if not reply:
+        return jsonify({'success': False, 'message': 'Ingen svar fra AI.'}), 502
+    return jsonify({'success': True, 'reply': reply})
+
+@app.route('/ai/replies', methods=['POST'])
+@rate_limit(max_requests=6, window_seconds=120)
+@require_login
+def ai_replies():
+    data = request.get_json(force=True, silent=True) or {}
+    text = sanitize_input(data.get('text', ''), 4000)
+    if not text:
+        return jsonify({'success': False, 'message': 'Ingen tekst.'}), 400
+    if not _ai_enabled():
+        suggestions = ['Høres fint ut 👍', 'Det forstår jeg, kan du utdype?', 'Litt opptatt nå, kommer tilbake']
+        return jsonify({'success': True, 'replies': suggestions})
+    try:
+        raw = _llm_chat(
+            "Foreslå 3 korte, naturlige svarmuligheter på norsk for meldingen nedenfor. Én per linje, uten nummerering, maks 15 ord hver.\n\nMelding: " + text,
+            system='Du foreslår chat-svar som høres menneskelige ut.',
+            max_tokens=120, temperature=0.6,
+        )
+    except Exception as e:
+        logger.warning('ai replies failed: %s', e)
+        return jsonify({'success': False, 'message': 'AI-tjenesten er utilgjengelig akkurat nå.'}), 502
+    suggestions = [ln.strip() for ln in re.split(r'\n+', raw) if ln.strip()][:3]
+    if not suggestions:
+        return jsonify({'success': False, 'message': 'Ingen svar fra AI.'}), 502
+    return jsonify({'success': True, 'replies': suggestions})
 
 @app.route('/send', methods=['POST'])
 @rate_limit(max_requests=30, window_seconds=60)
@@ -2333,6 +2384,32 @@ def admin_stats():
             for sid, sdata in user_sessions.items():
                 if isinstance(sdata, dict) and sdata.get('active'):
                     active_sessions += 1
+    top_senders = {}
+    per_day = {}
+    per_hour = [0] * 24
+    file_count = 0
+    e2ee_count = 0
+    for m in messages:
+        sender = m.get('sender', '?')
+        top_senders[sender] = top_senders.get(sender, 0) + 1
+        ts = m.get('timestamp', '')
+        day = ts[:10]
+        per_day[day] = per_day.get(day, 0) + 1
+        try:
+            hour = int(ts[11:13])
+            per_hour[hour] += 1
+        except (ValueError, TypeError):
+            pass
+        if m.get('type') == 'file':
+            file_count += 1
+        if convert_to_bool(m.get('e2ee'), False):
+            e2ee_count += 1
+    last_days = sorted(per_day.keys())[-14:]
+    per_user = []
+    for name, count in top_senders.items():
+        per_user.append({'username': name, 'count': count})
+    per_user.sort(key=lambda x: x['count'], reverse=True)
+    messages_last_24h = sum(v for k, v in per_day.items() if k >= (datetime.utcnow() - timedelta(days=1)).isoformat()[:10])
     return jsonify({
         'success': True,
         'stats': {
@@ -2342,6 +2419,12 @@ def admin_stats():
             'active_sessions': active_sessions,
             'admin_users': sum(1 for u in users.values() if u.get('is_admin', False)),
             'current_admin': session.get('username', ''),
+            'file_messages': file_count,
+            'e2ee_messages': e2ee_count,
+            'messages_last_24h': messages_last_24h,
+            'top_senders': per_user[:10],
+            'messages_per_day': [{'date': d, 'count': per_day[d]} for d in last_days],
+            'messages_per_hour': per_hour,
         }
     })
 
@@ -2749,6 +2832,92 @@ def cancel_scheduled(schedule_id):
     save_json(SCHEDULED_FILE, scheduled)
     return jsonify({'success': True})
 
+@app.route('/reminders', methods=['GET'])
+@rate_limit(max_requests=30, window_seconds=60)
+@require_login
+def list_reminders():
+    me = session['username']
+    reminders = load_json(REMINDERS_FILE, [])
+    mine = [r for r in reminders if r.get('username') == me]
+    return jsonify({'success': True, 'reminders': sorted(mine, key=lambda r: r.get('remind_at', ''))})
+
+@app.route('/reminders', methods=['POST'])
+@rate_limit(max_requests=20, window_seconds=120)
+@require_login
+@require_csrf
+def create_reminder():
+    me = session['username']
+    data = request.get_json(force=True, silent=True) or {}
+    text = sanitize_input(data.get('text', ''), 1000)
+    remind_at = (data.get('remind_at') or '').strip()
+    minutes = (data.get('minutes') or '').strip()
+    if not text:
+        return jsonify({'success': False, 'message': 'Ingen tekst.'}), 400
+    if remind_at:
+        try:
+            remind_dt = datetime.fromisoformat(remind_at.replace('Z', '+00:00')).replace(tzinfo=None)
+        except Exception:
+            return jsonify({'success': False, 'message': 'Ugyldig tidspunkt.'}), 400
+    elif minutes and str(minutes).isdigit():
+        m = int(minutes)
+        if m < 1 or m > 10080:
+            return jsonify({'success': False, 'message': 'Ugyldig minutter.'}), 400
+        remind_dt = datetime.utcnow() + timedelta(minutes=m)
+    else:
+        return jsonify({'success': False, 'message': 'Mangler tidspunkt.'}), 400
+    if remind_dt <= datetime.utcnow():
+        return jsonify({'success': False, 'message': 'Tidspunkt maa vaere i fremtiden.'}), 400
+    reminders = load_json(REMINDERS_FILE, [])
+    entry = {
+        'id': secrets.token_hex(8),
+        'username': me,
+        'text': text,
+        'remind_at': remind_dt.isoformat(),
+        'created': now_iso(),
+    }
+    reminders.append(entry)
+    save_json(REMINDERS_FILE, reminders)
+    audit('reminder_created', actor=me)
+    return jsonify({'success': True, 'reminder': entry})
+
+@app.route('/reminders/<reminder_id>', methods=['DELETE'])
+@rate_limit(max_requests=20, window_seconds=60)
+@require_login
+@require_csrf
+def cancel_reminder(reminder_id):
+    me = session['username']
+    reminders = load_json(REMINDERS_FILE, [])
+    reminders = [r for r in reminders if not (r.get('id') == reminder_id and r.get('username') == me)]
+    save_json(REMINDERS_FILE, reminders)
+    return jsonify({'success': True})
+
+def deliver_reminders():
+    now = datetime.utcnow()
+    reminders = load_json(REMINDERS_FILE, [])
+    due = []
+    remaining = []
+    for r in reminders:
+        try:
+            dt = datetime.fromisoformat(r.get('remind_at', '').replace('Z', '+00:00')).replace(tzinfo=None)
+        except Exception:
+            continue
+        if dt <= now:
+            due.append(r)
+        else:
+            remaining.append(r)
+    if not due:
+        return
+    save_json(REMINDERS_FILE, remaining)
+    for r in due:
+        username = r.get('username', '')
+        text = r.get('text', '')
+        create_notification(username, 'reminder', text, {'reminder_id': r.get('id'), 'text': text})
+        audit('reminder_delivered', actor=username)
+        try:
+            notify_user(socketio, username, 'reminder', {'text': text, 'reminder_id': r.get('id')})
+        except Exception:
+            pass
+
 def deliver_scheduled_messages():
     now = datetime.utcnow()
     scheduled = load_json(SCHEDULED_FILE, [])
@@ -2839,9 +3008,10 @@ def cleanup_typing_indicators():
 
 def _background_worker():
     while True:
-        time.sleep(60)
+        time.sleep(30)
         try:
             deliver_scheduled_messages()
+            deliver_reminders()
             cleanup_disappearing_messages()
             cleanup_typing_indicators()
         except Exception:
@@ -3040,6 +3210,96 @@ def export_chat(chat_type, chat_id):
     export_text = '\n'.join(lines)
     return Response(export_text, mimetype='text/plain',
                     headers={'Content-Disposition': f'attachment; filename=export_{chat_type}_{chat_id}.txt'})
+
+def _decrypt_for_export(m, me):
+    try:
+        if m.get('type') in ('file', 'file_e2ee'):
+            return '[Fil: %s]' % (m.get('filename') or '?')
+        ct = str(m.get('ciphertext', ''))
+        if convert_to_bool(m.get('e2ee'), False) or re.match(r'^[A-Za-z0-9+/=_-]+\.[A-Za-z0-9+/=_-]+$', ct):
+            return '[E2EE-kryptert]'
+        if m.get('group_id'):
+            key = get_or_create_group_key(m['group_id'])
+        else:
+            partner = m['recipient'] if m['sender'] == me else m['sender']
+            key = get_or_create_pair_key(me, partner)
+        return decrypt_symmetric(m['ciphertext'], key)
+    except Exception:
+        return '[Kunne ikke dekryptere]'
+
+@app.route('/backup')
+@rate_limit(max_requests=10, window_seconds=60)
+@require_login
+def backup_all():
+    me = session['username']
+    messages = load_json(MESSAGES_FILE, [])
+    groups = load_json(GROUPS_FILE, [])
+    group_map = {g['id']: g for g in groups if isinstance(g, dict)}
+    data = {'username': me, 'exported_at': now_iso(), 'chats': {}}
+    for m in messages:
+        if m.get('group_id'):
+            if me not in (group_map.get(m['group_id']) or {}).get('members', []):
+                continue
+            chat_key = 'g:' + m['group_id']
+            chat_name = (group_map.get(m['group_id']) or {}).get('name') or m['group_id']
+        else:
+            partner = m['recipient'] if m['sender'] == me else m['sender']
+            if m['sender'] != me and m['recipient'] != me:
+                continue
+            chat_key = 'u:' + partner
+            chat_name = partner
+        chat = data['chats'].setdefault(chat_key, {'type': 'group' if m.get('group_id') else 'user', 'name': chat_name, 'messages': []})
+        chat['messages'].append({
+            'id': m.get('id'),
+            'sender': m.get('sender', ''),
+            'text': _decrypt_for_export(m, me),
+            'type': m.get('type', 'text'),
+            'timestamp': m.get('timestamp', ''),
+            'read': convert_to_bool(m.get('read'), False),
+        })
+    for chat in data['chats'].values():
+        chat['messages'].sort(key=lambda x: x['timestamp'])
+    return Response(json.dumps(data, ensure_ascii=False, indent=2), mimetype='application/json',
+                    headers={'Content-Disposition': 'attachment; filename=backup_%s.json' % me})
+
+@app.route('/export/<chat_type>/<chat_id>/pdf')
+@require_login
+def export_chat_pdf(chat_type, chat_id):
+    me = session['username']
+    messages = load_json(MESSAGES_FILE, [])
+    if chat_type == 'user':
+        pk = pair_key(me, chat_id)
+        filtered = [m for m in messages if m.get('pair_key') == pk]
+        title = 'Samtale med %s' % chat_id
+    elif chat_type == 'group':
+        groups = load_json(GROUPS_FILE, [])
+        group = next((g for g in groups if g['id'] == chat_id), None)
+        if not group or me not in group.get('members', []):
+            return jsonify({'success': False, 'message': 'Ingen tilgang.'}), 403
+        filtered = [m for m in messages if m.get('group_id') == chat_id]
+        title = group.get('name') or chat_id
+    else:
+        return jsonify({'success': False, 'message': 'Ugyldig type.'}), 400
+    filtered.sort(key=lambda m: m.get('timestamp', ''))
+    body_rows = []
+    for m in filtered:
+        ts = m.get('timestamp', '')[:16].replace('T', ' ')
+        text = _decrypt_for_export(m, me)
+        body_rows.append('<div class="msg"><div class="meta">%s · %s</div><div class="txt">%s</div></div>' % (
+            escape_html(m.get('sender', '')), escape_html(ts), escape_html(text)))
+    html = ('<!DOCTYPE html><html lang="no"><head><meta charset="utf-8"><title>%s</title>'
+            '<style>body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:720px;margin:24px auto;padding:0 16px;color:#111}'
+            'h1{font-size:1.4rem;margin-bottom:4px}.sub{color:#666;font-size:.85rem;margin-bottom:24px}'
+            '.msg{margin-bottom:12px}.meta{font-size:.75rem;color:#666}.txt{background:#f2f4f7;border-radius:8px;padding:8px 10px;white-space:pre-wrap;word-wrap:break-word;font-size:.9rem}'
+            '@media print{.no-print{display:none}}</style></head><body>'
+            '<p class="no-print" style="margin-bottom:16px;color:#555">Bruk Ctrl+P / ⌘+P og velg &laquo;Lagre som PDF&raquo;.</p>'
+            '<h1>%s</h1><div class="sub">Eksportert %s · %d meldinger</div>%s</body></html>') % (
+                escape_html(title), escape_html(title), escape_html(now_iso()), len(filtered), ''.join(body_rows))
+    return Response(html, mimetype='text/html')
+
+def escape_html(s):
+    return (str(s or '').replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+            .replace('"', '&quot;').replace("'", '&#39;'))
 
 # ──────────────────────────────────────────────
 # Polls
@@ -4234,6 +4494,56 @@ def get_muted_chats():
     return jsonify({'success': True, 'muted': mutes.get(me, [])})
 
 # ──────────────────────────────────────────────
+# Quiet Hours (stille-timer)
+# ──────────────────────────────────────────────
+@app.route('/settings/quiet', methods=['POST'])
+@rate_limit(max_requests=20, window_seconds=120)
+@require_login
+@require_csrf
+def set_quiet_hours():
+    me = session['username']
+    data = request.get_json(force=True, silent=True) or {}
+    enabled = convert_to_bool(data.get('enabled', False), False)
+    start = (data.get('start') or '').strip()
+    end = (data.get('end') or '').strip()
+    if enabled:
+        time_pattern = re.compile(r'^\d{2}:\d{2}$')
+        if not time_pattern.match(start) or not time_pattern.match(end):
+            return jsonify({'success': False, 'message': 'Ugyldig tidsformat.'}), 400
+        if start == end:
+            return jsonify({'success': False, 'message': 'Start og slutt kan ikke være like.'}), 400
+    quiet = load_json(QUIET_HOURS_FILE, {})
+    if enabled:
+        quiet[me] = {'enabled': True, 'start': start, 'end': end}
+    else:
+        quiet.pop(me, None)
+    save_json(QUIET_HOURS_FILE, quiet)
+    return jsonify({'success': True, 'quiet': quiet.get(me)})
+
+@app.route('/settings/quiet')
+@require_login
+def get_quiet_hours():
+    me = session['username']
+    quiet = load_json(QUIET_HOURS_FILE, {})
+    return jsonify({'success': True, 'quiet': quiet.get(me, {'enabled': False})})
+
+def is_quiet_hours(username):
+    quiet = load_json(QUIET_HOURS_FILE, {})
+    q = quiet.get(username)
+    if not q or not q.get('enabled'):
+        return False
+    try:
+        now = datetime.utcnow()
+        current = now.strftime('%H:%M')
+        start = q['start']
+        end = q['end']
+        if start < end:
+            return start <= current < end
+        return current >= start or current < end
+    except Exception:
+        return False
+
+# ──────────────────────────────────────────────
 # Per-Chat Notification Override
 # ──────────────────────────────────────────────
 @app.route('/notif/<chat_type>/<chat_id>', methods=['GET'])
@@ -4398,6 +4708,19 @@ def translate_message():
     target_lang = sanitize_input(data.get('target', 'en'), 5)
     if not text:
         return jsonify({'success': False, 'message': 'Ingen tekst.'}), 400
+    if _ai_enabled():
+        try:
+            lang_names = {'en': 'English', 'no': 'Norsk', 'de': 'Deutsch', 'fr': 'Français', 'es': 'Español', 'sv': 'Svenska', 'da': 'Dansk'}
+            target_name = lang_names.get(target_lang, target_lang)
+            translated = _llm_chat(
+                f"Oversett teksten nedenfor til {target_name}. Svar KUN med oversettelsen, ingen ekstra tekst.\n\n{text}",
+                system='Du er en oversetter.',
+                max_tokens=300, temperature=0.2,
+            )
+            if translated:
+                return jsonify({'success': True, 'translated': translated, 'sourceLang': 'ai', 'targetLang': target_lang})
+        except Exception as e:
+            logger.warning('ai translate failed, falling back: %s', e)
     try:
         import urllib.request, urllib.parse
         url = 'https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=' + urllib.parse.quote(target_lang) + '&dt=t&q=' + urllib.parse.quote(text)
@@ -4870,7 +5193,7 @@ def health_check():
         'success': True,
         'status': 'healthy' if db_ok else 'degraded',
         'db': 'ok' if db_ok else 'error',
-        'version': '3.4.1',
+        'version': '3.5.0',
     })
 
 @app.route('/sw-test')
@@ -4983,3 +5306,5 @@ app.polls_file = POLLS_FILE
 app.reports_file = REPORTS_FILE
 app.chat_notif_file = CHAT_NOTIF_FILE
 app.labels_file = LABELS_FILE
+app.reminders_file = REMINDERS_FILE
+app.quiet_hours_file = QUIET_HOURS_FILE

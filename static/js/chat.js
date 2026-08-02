@@ -636,6 +636,7 @@
           </div>
           <div class="header-actions">
             <button id="adminBtn" class="btn btn-small btn-ghost" style="display:none">⚙️ Admin</button>
+            <button id="remindersBtn" class="btn btn-small btn-ghost" title="Påminnelser" aria-label="Påminnelser">⏰</button>
             <button id="profileBtn" class="btn btn-small btn-ghost">Min profil</button>
             <button id="audioCallBtn" class="btn btn-small btn-primary" title="Lydsamtale">📞</button>
             <button id="videoCallBtn" class="btn btn-small btn-primary" title="Videosamtale">📹</button>
@@ -759,11 +760,12 @@
                   <div id="emojiCategories" class="emoji-categories"></div>
                   <div id="emojiGrid" class="emoji-grid" role="grid" aria-label="Emoji"></div>
                 </div>
-                <input id="messageInput" class="input-text" placeholder="Skriv en melding..." autocomplete="off" aria-label="Skriv en melding" />
+                <input id="messageInput" class="input-text" placeholder="Skriv en melding... (skriv /ai for å spørre AI)" autocomplete="off" aria-label="Skriv en melding" />
                 <button id="voiceRecordBtn" class="btn btn-small btn-ghost" title="Talebeskjed" aria-label="Talebeskjed">🎙️</button>
                 <button id="videoRecordBtn" class="btn btn-small btn-ghost" title="Videomelding" aria-label="Videomelding">📹</button>
                 <button id="locationBtn" class="btn btn-small btn-ghost" title="Del posisjon" aria-label="Del posisjon">📍</button>
                 <button id="templateBtn" class="btn-attach" title="Maler" style="font-size:1rem;">📋</button>
+                <button id="aiRepliesBtn" class="btn btn-small btn-ghost" title="Foreslå svar med AI" aria-label="Foreslå svar med AI">✨</button>
                 <button id="pollBtn" class="btn btn-small btn-ghost" title="Opprett avstemning" aria-label="Opprett avstemning" style="display:none">📊</button>
                 <span id="silentToggle" class="silent-toggle" title="Lydløs melding" aria-label="Lydløs melding">🔇</span>
                 <span style="position:relative;">
@@ -2282,13 +2284,20 @@
               toast('Lagret', 'success');
             } catch(e) { toast('Kunne ikke lagre'); }
           }},
+          { icon: '⏰', label: 'Påminn meg', action: () => showReminderPicker(msgId) },
           { icon: '🌐', label: 'Oversett', action: async () => {
-            const text = msgEl.querySelector('.msg-text');
-            if (!text) return;
+            const textEl = msgEl.querySelector('.msg-text');
+            if (!textEl) return;
+            const existing = msgEl.querySelector('.msg-translation');
+            if (existing) { existing.remove(); return; }
             const target = localStorage.getItem('translateLang') || 'en';
             try {
-              const r = await loadJSON('/translate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: text.textContent, target }) });
-              toast('🌐 ' + r.translated, 'success');
+              const r = await loadJSON('/translate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: textEl.textContent, target }) });
+              if (!r.success) { toast(r.message || 'Kunne ikke oversette'); return; }
+              const div = document.createElement('div');
+              div.className = 'msg-translation';
+              div.textContent = '🌐 ' + r.translated;
+              textEl.after(div);
             } catch(e) { toast('Kunne ikke oversette'); }
           }},
           ...(isOwn ? [{ icon: '✏️', label: 'Rediger', action: () => editMessage(msgId) }] : []),
@@ -2334,6 +2343,36 @@
           };
           document.addEventListener('click', close);
         }, 10);
+      }
+
+      function showReminderPicker(msgId) {
+        const el = messagesBox.querySelector('.msg[data-msg-id="' + msgId + '"] .msg-text');
+        const text = el ? el.textContent.trim().substring(0, 200) : 'Påminnelse';
+        const overlay = document.createElement('div');
+        overlay.className = 'reminder-picker-overlay';
+        overlay.innerHTML = '<div class="reminder-picker"><h3>⏰ Påminn meg</h3>'
+          + '<p class="reminder-picker-text">' + escapeHtml(text.substring(0, 80)) + '</p>'
+          + '<button data-min="60">Om 1 time</button>'
+          + '<button data-min="180">Om 3 timer</button>'
+          + '<button data-min="1440">I morgen</button>'
+          + '<button data-custom="1">Tilpasset (minutter)…</button>'
+          + '<button class="cancel">Avbryt</button></div>';
+        document.body.appendChild(overlay);
+        overlay.addEventListener('click', async (e) => {
+          if (e.target.classList.contains('reminder-picker-overlay') || e.target.classList.contains('cancel')) { overlay.remove(); return; }
+          let minutes = e.target.dataset.min;
+          if (e.target.dataset.custom) {
+            const input = window.prompt('Påminn meg om (minutter):', '60');
+            if (input === null) { overlay.remove(); return; }
+            minutes = input.trim();
+          }
+          if (!minutes) { overlay.remove(); return; }
+          try {
+            await loadJSON('/reminders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, minutes }) });
+            toast('Påminnelse satt ✓', 'success');
+          } catch (err) { toast('Kunne ikke sette påminnelse: ' + (err.message || '')); }
+          overlay.remove();
+        });
       }
 
       function renderReactionBadges(reactions) {
@@ -2663,6 +2702,60 @@
         if (!userScrolledUp) messagesBox.scrollTop = messagesBox.scrollHeight;
       }
 
+      async function postTextMessage(text) {
+        if (activeChat.type === 'channel') {
+          const url = '/channels/' + encodeURIComponent(activeChat.target) + '/send';
+          const body = { ciphertext: text, type: 'text' };
+          if (silentMode) body.silent = true;
+          if (replyingTo) body.reply_to = replyingTo.id;
+          await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+          const item = document.createElement('div');
+          item.className = 'msg sent';
+          item.innerHTML = '<div class="meta"><span class="sender">' + escapeHtml(window.__APP__?.username || '') + '</span><span class="time">' + escapeHtml(formatTime(new Date().toISOString())) + '</span></div>'
+            + '<div class="text">' + escapeHtml(text) + '</div>';
+          messagesBox.appendChild(item);
+          messagesBox.scrollTop = messagesBox.scrollHeight;
+        } else if (activeChat.type === 'user' || activeChat.type === 'group') {
+          const url = activeChat.type === 'group' ? '/groups/' + encodeURIComponent(activeChat.target) + '/send' : '/send';
+          const body = { ciphertext: text };
+          if (silentMode) body.silent = true;
+          if (activeChat.type === 'user') {
+            const ciphertext = await encryptForPeer(text, activeChat.peerPublicKey);
+            body.ciphertext = ciphertext;
+            body.recipient = activeChat.target;
+          } else if (activeChat.type === 'group' && activeChat.groupE2EEKey) {
+            const iv = window.crypto.getRandomValues(new Uint8Array(12));
+            const enc = await window.crypto.subtle.encrypt({ name: 'AES-GCM', iv }, activeChat.groupE2EEKey, new TextEncoder().encode(text));
+            body.ciphertext = arrayBufferToBase64(iv) + '.' + arrayBufferToBase64(enc);
+            body.e2ee = true;
+          }
+          if (replyingTo) body.reply_to = replyingTo.id;
+          if (window._disappearMinutes && activeChat.type === 'user') body.self_destruct_minutes = window._disappearMinutes;
+          if (window._selectedEffect) { body.effect = window._selectedEffect; window._selectedEffect = null; }
+          await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        }
+      }
+
+      async function sendAiMessage(prompt) {
+        const bubble = document.createElement('div');
+        bubble.className = 'msg ai-thinking';
+        bubble.innerHTML = '<div class="text"><span class="ai-dots">🤖 AI tenker<span>.</span><span>.</span><span>.</span></span></div>';
+        messagesBox.appendChild(bubble);
+        messagesBox.scrollTop = messagesBox.scrollHeight;
+        try {
+          const data = await loadJSON('/ai/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt }) });
+          if (data.success && data.reply) {
+            await postTextMessage(data.reply);
+          } else {
+            toast(data.message || 'AI svarte ikke', 'info');
+          }
+        } catch (e) {
+          toast('AI er utilgjengelig: ' + (e.message || ''));
+        } finally {
+          if (bubble.parentElement) bubble.remove();
+        }
+      }
+
       async function sendMessage() {
         const input = document.getElementById('messageInput');
         const fileInput = document.getElementById('fileInput');
@@ -2675,6 +2768,15 @@
         droppedFile = null;
         if (!text && !file) { input.disabled = false; return; }
         try {
+          const aiMatch = text.match(/^\/ai(?:\s+(.+))?$/s);
+          if (aiMatch && !file) {
+            input.value = '';
+            updateSendButton();
+            const prompt = (aiMatch[1] || '').trim();
+            if (!prompt) { toast('Bruk: /ai <spørsmål>', 'info'); input.disabled = false; sendBtn.disabled = false; return; }
+            await sendAiMessage(prompt);
+            return;
+          }
           if (file) {
             if (activeChat.type === 'user' && activeChat.peerPublicKey) {
               const buf = await file.arrayBuffer();
@@ -2699,37 +2801,7 @@
               await fetch('/upload', { method: 'POST', body: form });
             }
           } else {
-            if (activeChat.type === 'channel') {
-              const url = '/channels/' + encodeURIComponent(activeChat.target) + '/send';
-              const body = { ciphertext: text, type: 'text' };
-              if (silentMode) body.silent = true;
-              if (replyingTo) body.reply_to = replyingTo.id;
-              await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-              const item = document.createElement('div');
-              item.className = 'msg sent';
-              item.innerHTML = '<div class="meta"><span class="sender">' + escapeHtml(window.__APP__?.username || '') + '</span><span class="time">' + escapeHtml(formatTime(new Date().toISOString())) + '</span></div>'
-                + '<div class="text">' + escapeHtml(text) + '</div>';
-              messagesBox.appendChild(item);
-              messagesBox.scrollTop = messagesBox.scrollHeight;
-            } else if (activeChat.type === 'user' || activeChat.type === 'group') {
-              const url = activeChat.type === 'group' ? '/groups/' + encodeURIComponent(activeChat.target) + '/send' : '/send';
-              const body = { ciphertext: text };
-              if (silentMode) body.silent = true;
-              if (activeChat.type === 'user') {
-                const ciphertext = await encryptForPeer(text, activeChat.peerPublicKey);
-                body.ciphertext = ciphertext;
-                body.recipient = activeChat.target;
-              } else if (activeChat.type === 'group' && activeChat.groupE2EEKey) {
-                const iv = window.crypto.getRandomValues(new Uint8Array(12));
-                const enc = await window.crypto.subtle.encrypt({ name: 'AES-GCM', iv }, activeChat.groupE2EEKey, new TextEncoder().encode(text));
-                body.ciphertext = arrayBufferToBase64(iv) + '.' + arrayBufferToBase64(enc);
-                body.e2ee = true;
-              }
-              if (replyingTo) body.reply_to = replyingTo.id;
-              if (window._disappearMinutes && activeChat.type === 'user') body.self_destruct_minutes = window._disappearMinutes;
-              if (window._selectedEffect) { body.effect = window._selectedEffect; window._selectedEffect = null; }
-              await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-            }
+            await postTextMessage(text);
           }
 
           input.value = '';
@@ -3558,6 +3630,11 @@
       }
       if ('Notification' in window) initPushNotifications();
 
+      loadJSON('/settings/quiet').then(d => {
+        const q = (d && d.quiet) || {};
+        localStorage.setItem('quietHours', JSON.stringify(q.enabled ? { start: q.start, end: q.end } : null));
+      }).catch(() => {});
+
       // ── Socket.IO callback stubs ──
       window.__onTyping = window.__onTyping || ((data) => {
         const indicator = document.getElementById('typingIndicator');
@@ -3753,10 +3830,25 @@
         }
       }
 
+      function isInQuietHours() {
+        try {
+          const raw = localStorage.getItem('quietHours');
+          if (!raw) return false;
+          const q = JSON.parse(raw);
+          if (!q || !q.start || !q.end) return false;
+          const now = new Date();
+          const cur = ('0' + now.getHours()).slice(-2) + ':' + ('0' + now.getMinutes()).slice(-2);
+          const s = q.start, e = q.end;
+          if (s < e) return s <= cur && cur < e;
+          return cur >= s || cur < e;
+        } catch (e) { return false; }
+      }
+
       function showMessageNotification(message) {
         try {
           if (stealthMode) return;
           if (message.silent) return;
+          if (isInQuietHours()) return;
           playNotificationSound();
           if (Notification.permission !== 'granted') return;
           if (message.sender === (window.__APP__?.username || '')) return;
@@ -3897,15 +3989,38 @@
            + '</div>'
             + '<div class="setting-section" style="border-top:1px solid var(--c-border);padding-top:10px;margin-top:6px;">'
             + '<h3>Meldingsinnstillinger</h3>'
-            + '<label style="display:flex;align-items:center;gap:8px;margin-top:6px;cursor:pointer;">'
-            + '<input type="checkbox" id="sendOnEnterToggle" ' + (sendOnEnter ? 'checked' : '') + ' style="width:18px;height:18px;accent-color:var(--c-primary);" />'
-            + 'Send med Enter</label>'
-            + '</div>'
-            + '<div class="setting-section" style="border-top:1px solid var(--c-border);padding-top:10px;margin-top:6px;">'
-            + '<h3>Blokkerte brukere</h3>'
-            + '<div id="blockedUsersList" style="font-size:.85rem;color:#6d8094;">Laster...</div>'
-            + '</div>'
-            + '<div class="modal-actions">'
+             + '<label style="display:flex;align-items:center;gap:8px;margin-top:6px;cursor:pointer;">'
+             + '<input type="checkbox" id="sendOnEnterToggle" ' + (sendOnEnter ? 'checked' : '') + ' style="width:18px;height:18px;accent-color:var(--c-primary);" />'
+             + 'Send med Enter</label>'
+             + '</div>'
+             + '<div class="setting-section" style="border-top:1px solid var(--c-border);padding-top:10px;margin-top:6px;">'
+             + '<h3>Oversettelse</h3>'
+             + '<p style="font-size:.85rem;color:#6d8094;">Språk for «Oversett» i meldingsmenyen</p>'
+             + '<select id="translateLangSelect" class="input-text" style="margin-top:6px;width:100%;"></select>'
+             + '</div>'
+             + '<div class="setting-section" style="border-top:1px solid var(--c-border);padding-top:10px;margin-top:6px;">'
+             + '<h3>Blokkerte brukere</h3>'
+             + '<div id="blockedUsersList" style="font-size:.85rem;color:#6d8094;">Laster...</div>'
+             + '</div>'
+             + '<div class="setting-section" style="border-top:1px solid var(--c-border);padding-top:10px;margin-top:6px;">'
+             + '<h3>Stille-timer</h3>'
+             + '<p style="font-size:.85rem;color:#6d8094;">Demp varsler i et tidsrom hver dag</p>'
+             + '<label style="display:flex;align-items:center;gap:8px;margin-top:6px;cursor:pointer;">'
+             + '<input type="checkbox" id="quietEnabled" style="width:18px;height:18px;accent-color:var(--c-primary);" />Aktiv</label>'
+             + '<div style="display:flex;gap:8px;margin-top:6px;align-items:center;">'
+             + '<input id="quietStart" type="time" class="input-text" value="22:00" style="flex:1;" />'
+             + '<span style="color:#6d8094;">til</span>'
+             + '<input id="quietEnd" type="time" class="input-text" value="07:00" style="flex:1;" />'
+             + '</div>'
+             + '<button id="saveQuietBtn" class="btn btn-small btn-primary" style="margin-top:8px;">Lagre</button>'
+             + '<div id="quietStatus" style="font-size:.8rem;color:#6d8094;margin-top:4px;"></div>'
+             + '</div>'
+             + '<div class="setting-section" style="border-top:1px solid var(--c-border);padding-top:10px;margin-top:6px;">'
+             + '<h3>Sikkerhetskopi</h3>'
+             + '<p style="font-size:.85rem;color:#6d8094;">Last ned alle samtalene dine som JSON. E2EE-meldinger merkes som krypterte.</p>'
+             + '<a href="/backup" class="btn btn-small btn-ghost" style="margin-top:8px;display:inline-block;">⬇️ Last ned backup</a>'
+             + '</div>'
+             + '<div class="modal-actions">'
            + '<button id="profileCancelBtn" class="btn btn-ghost">Avbryt</button>'
            + '<button id="profileSaveBtn" class="btn btn-primary">Lagre</button>'
            + '</div></div>';
@@ -3995,6 +4110,50 @@
           sendOnEnter = this.checked;
           localStorage.setItem('sendOnEnter', sendOnEnter);
         });
+
+        (async () => {
+          const translateSelect = overlay.querySelector('#translateLangSelect');
+          if (translateSelect) {
+            try {
+              const d = await loadJSON('/translate/languages');
+              const current = localStorage.getItem('translateLang') || 'en';
+              translateSelect.innerHTML = (d.languages || []).map(l =>
+                '<option value="' + escapeHtml(l.code) + '"' + (l.code === current ? ' selected' : '') + '>' + escapeHtml(l.name) + '</option>'
+              ).join('');
+              translateSelect.addEventListener('change', () => {
+                localStorage.setItem('translateLang', translateSelect.value);
+                toast('Oversettelsesspråk: ' + translateSelect.options[translateSelect.selectedIndex].text, 'success');
+              });
+            } catch (e) {}
+          }
+        })();
+
+        (async () => {
+          const quietEnabled = overlay.querySelector('#quietEnabled');
+          const quietStart = overlay.querySelector('#quietStart');
+          const quietEnd = overlay.querySelector('#quietEnd');
+          const saveQuietBtn = overlay.querySelector('#saveQuietBtn');
+          const quietStatus = overlay.querySelector('#quietStatus');
+          if (quietEnabled) {
+            try {
+              const d = await loadJSON('/settings/quiet');
+              const q = d.quiet || {};
+              quietEnabled.checked = !!q.enabled;
+              if (q.start) quietStart.value = q.start;
+              if (q.end) quietEnd.value = q.end;
+              if (q.enabled) quietStatus.textContent = 'Stille-timer aktiv: ' + q.start + '–' + q.end;
+            } catch (e) {}
+            saveQuietBtn.addEventListener('click', async () => {
+              const enabled = quietEnabled.checked;
+              try {
+                await loadJSON('/settings/quiet', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled, start: quietStart.value, end: quietEnd.value }) });
+                localStorage.setItem('quietHours', JSON.stringify(enabled ? { start: quietStart.value, end: quietEnd.value } : null));
+                quietStatus.textContent = enabled ? 'Stille-timer aktiv: ' + quietStart.value + '–' + quietEnd.value : 'Stille-timer av';
+                toast('Stille-timer lagret', 'success');
+              } catch (e) { toast('Kunne ikke lagre stille-timer'); }
+            });
+          }
+        })();
 
         (async () => {
           const blockedListEl = overlay.querySelector('#blockedUsersList');
@@ -6120,6 +6279,49 @@
 
       document.getElementById('templateBtn')?.addEventListener('click', toggleTemplates);
 
+      // ── AI smart-reply forslag ──
+      function lastIncomingText() {
+        const msgs = messagesBox.querySelectorAll('.msg:not(.sent) .msg-text');
+        if (!msgs.length) return '';
+        return (msgs[msgs.length - 1].textContent || '').trim();
+      }
+
+      async function toggleAiReplies() {
+        let panel = document.querySelector('.ai-replies-panel');
+        if (panel) { panel.remove(); return; }
+        if (!activeChat) { toast('Velg en kontakt først', 'info'); return; }
+        const text = lastIncomingText();
+        if (!text) { toast('Ingen innkommende melding å svare på', 'info'); return; }
+        panel = document.createElement('div');
+        panel.className = 'ai-replies-panel';
+        panel.innerHTML = '<span class="ai-replies-title">✨ Forslag</span><button class="ai-reply-chip" disabled>Laster…</button>';
+        const composerEl = document.getElementById('composer');
+        composerEl.parentElement.insertBefore(panel, composerEl);
+        try {
+          const data = await loadJSON('/ai/replies', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
+          panel.innerHTML = '<span class="ai-replies-title">✨ Forslag</span>';
+          (data.replies || []).forEach(r => {
+            const b = document.createElement('button');
+            b.className = 'ai-reply-chip';
+            b.textContent = r;
+            b.addEventListener('click', () => {
+              const input = document.getElementById('messageInput');
+              input.value = r;
+              input.focus();
+              updateSendButton();
+              panel.remove();
+            });
+            panel.appendChild(b);
+          });
+          if (!(data.replies || []).length) panel.remove();
+        } catch (e) {
+          panel.remove();
+          toast('Kunne ikke hente forslag: ' + (e.message || ''));
+        }
+      }
+
+      document.getElementById('aiRepliesBtn')?.addEventListener('click', toggleAiReplies);
+
       // ── Push notifications for incoming messages ──
       window.__onNewMessage = async (data) => {
         const message = data.message || {};
@@ -6127,8 +6329,10 @@
         if (sender && isBlockedUser(sender)) return;
         const override = getChatNotifOverride(sender, 'user');
         if (override !== 'never' && (override === 'always' || (document.hidden && Notification.permission === 'granted'))) {
-          const text = message.ciphertext || message.text || 'Melding';
-          try { new Notification('CryptoChat', { body: sender + ': ' + text, icon: '/static/favicon.ico' }); } catch(e) {}
+          if (!isInQuietHours()) {
+            const text = message.ciphertext || message.text || 'Melding';
+            try { new Notification('CryptoChat', { body: sender + ': ' + text, icon: '/static/favicon.ico' }); } catch(e) {}
+          }
         }
         if (activeChat) {
           const isRelevantUserChat = data.chatType === 'user' && (sender === activeChat.target || message.recipient === activeChat.target);
@@ -6142,9 +6346,53 @@
         renderUsers();
       };
 
+      window.__onReminder = (data) => {
+        const text = (data && data.text) || 'Påminnelse';
+        toast('⏰ ' + text, 'info');
+        try {
+          if (Notification.permission === 'granted') new Notification('⏰ Påminnelse', { body: text, icon: '/static/favicon.ico' });
+        } catch (e) {}
+        try { playNotificationSound(); } catch (e) {}
+      };
+
+      async function openRemindersPanel() {
+        let panel = document.querySelector('.reminders-panel');
+        if (panel) { panel.style.display = panel.style.display === 'none' ? 'block' : 'none'; return; }
+        panel = document.createElement('div');
+        panel.className = 'reminders-panel';
+        panel.innerHTML = '<div class="reminders-panel-head"><span>⏰ Påminnelser</span><button class="reminders-close">✕</button></div><div class="reminders-list">Laster…</div>';
+        document.body.appendChild(panel);
+        panel.querySelector('.reminders-close').addEventListener('click', () => panel.remove());
+        try {
+          const data = await loadJSON('/reminders');
+          const list = panel.querySelector('.reminders-list');
+          if (!(data.reminders || []).length) {
+            list.innerHTML = '<div class="reminders-empty">Ingen påminnelser.<br>Høyreklikk en melding → Påminn meg.</div>';
+            return;
+          }
+          list.innerHTML = '';
+          data.reminders.forEach(r => {
+            const row = document.createElement('div');
+            row.className = 'reminder-row';
+            row.innerHTML = '<div class="reminder-text">' + escapeHtml(r.text) + '</div><div class="reminder-when">' + escapeHtml(formatTime(r.remind_at)) + '</div><button class="reminder-del" title="Fjern">✕</button>';
+            row.querySelector('.reminder-del').addEventListener('click', async () => {
+              try {
+                await loadJSON('/reminders/' + encodeURIComponent(r.id), { method: 'DELETE' });
+                row.remove();
+                toast('Påminnelse fjernet', 'success');
+              } catch (e) { toast('Kunne ikke fjerne påminnelsen'); }
+            });
+            list.appendChild(row);
+          });
+        } catch (e) {
+          panel.querySelector('.reminders-list').innerHTML = '<div class="reminders-empty">Kunne ikke laste påminnelser.</div>';
+        }
+      }
+
+      document.getElementById('remindersBtn')?.addEventListener('click', openRemindersPanel);
+
       const onlineBadge = document.getElementById('onlineStatus');
-      window.addEventListener('online', () => {
-        document.body.classList.remove('offline');
+      window.addEventListener('online', () => {        document.body.classList.remove('offline');
         if (onlineBadge) { onlineBadge.textContent = '● Online'; onlineBadge.style.color = '#4ade80'; }
         toast('Tilkobling gjenopprettet', 'success');
       });

@@ -17,8 +17,40 @@
     currentAdmin = d.stats.current_admin || '';
     const s = d.stats;
     document.getElementById('stats').innerHTML = [
-      ['Brukere', s.total_users], ['Meldinger', s.total_messages], ['Grupper', s.total_groups], ['Aktive økter', s.active_sessions], ['Admins', s.admin_users]
+      ['Brukere', s.total_users], ['Meldinger', s.total_messages], ['Grupper', s.total_groups], ['Aktive økter', s.active_sessions], ['Admins', s.admin_users],
+      ['Sist 24 t', s.messages_last_24h], ['Filer', s.file_messages], ['E2EE', s.e2ee_messages]
     ].map(([l,v]) => '<div class="stat-card"><div class="stat-value">'+escape(v)+'</div><div class="stat-label">'+escape(l)+'</div></div>').join('');
+    renderInsights(s);
+  }
+
+  function renderInsights(s) {
+    const topSenders = document.getElementById('topSendersTable');
+    if (topSenders) {
+      const rows = (s.top_senders || []).map(x =>
+        '<tr><td>'+escape(x.username)+'</td><td>'+escape(x.count)+'</td></tr>'
+      ).join('');
+      topSenders.innerHTML = rows || '<tr><td colspan="2">Ingen data ennå</td></tr>';
+    }
+    const perDay = document.getElementById('perDayChart');
+    if (perDay) {
+      const days = (s.messages_per_day || []);
+      const maxDay = Math.max(1, ...days.map(d => d.count));
+      perDay.innerHTML = '<div class="insights-bars-row">' + days.map(d =>
+        '<div class="insights-bar-col" title="'+escape(d.date)+': '+escape(d.count)+'">' +
+        '<div class="insights-bar" style="height:'+Math.max(2, Math.round((d.count/maxDay)*100))+'%"></div>' +
+        '<span class="insights-bar-label">'+escape((d.date||'').slice(5))+'</span></div>'
+      ).join('') + '</div>';
+    }
+    const perHour = document.getElementById('perHourChart');
+    if (perHour) {
+      const hours = s.messages_per_hour || [];
+      const maxHour = Math.max(1, ...hours);
+      perHour.innerHTML = '<div class="insights-bars-row">' + hours.map((c, h) =>
+        '<div class="insights-bar-col" title="'+h+':00 → '+escape(c)+'">' +
+        '<div class="insights-bar" style="height:'+Math.max(2, Math.round((c/maxHour)*100))+'%"></div>' +
+        '<span class="insights-bar-label">'+escape(h)+'</span></div>'
+      ).join('') + '</div>';
+    }
   }
 
   async function loadUsers() {
@@ -46,6 +78,7 @@
     if (tab) tab.classList.add('active');
     if (id === 'users') loadUsers();
     if (id === 'messages') loadMessages();
+    if (id === 'insights') loadStats();
   }
 
   function showToast(msg) {

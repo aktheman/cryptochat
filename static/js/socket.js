@@ -45,6 +45,10 @@ function initSocketIO() {
     if (window.__onPresenceUpdate) window.__onPresenceUpdate(data);
   });
 
+  socket.on('reminder', (data) => {
+    if (window.__onReminder) window.__onReminder(data);
+  });
+
   window.__SOCKET = socket;
 }
 

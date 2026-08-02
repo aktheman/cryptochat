@@ -4,6 +4,7 @@ import json
 import pytest
 import tempfile
 import shutil
+from datetime import datetime, timedelta
 from pathlib import Path
 
 os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -44,7 +45,7 @@ def clean_data():
         'muted_chats.json', 'contacts.json', 'stories.json', 'blocked_users.json',
         'deleted_for_me.json', 'live_locations.json', 'wallpapers.json',
         'slowmode.json', 'drafts.json', 'polls.json', 'folders.json',
-        'archive.json',
+        'archive.json', 'quiet_hours.json',
     }
     for path in [
         app.users_file, app.messages_file, app.keys_file, app.groups_file,
@@ -56,7 +57,7 @@ def clean_data():
         app.muted_chats_file, app.contacts_file, app.stories_file,
         app.blocked_file, app.deleted_for_me_file, app.live_location_file,
         app.wallpapers_file, app.slowmode_file, app.polls_file,
-        app.archive_file,
+        app.archive_file, app.reminders_file, app.quiet_hours_file,
     ]:
         path.write_text('{}' if path.name in dict_files else '[]', encoding='utf-8')
     yield
@@ -1504,3 +1505,159 @@ class TestAdminRoutes:
         _register(client, 'alice')
         r = client.post('/admin/rotate-secret')
         assert r.status_code == 403
+
+
+class TestAIChat:
+    def test_ai_chat_requires_login(self, client):
+        r = client.post('/ai/chat', json={'prompt': 'hei'})
+        assert r.status_code in (401, 302)
+
+    def test_ai_chat_no_prompt(self, client):
+        _register(client, 'alice')
+        r = client.post('/ai/chat', json={'prompt': ''})
+        assert r.status_code == 400
+
+    def test_ai_chat_returns_501_when_disabled(self, client):
+        _register(client, 'alice')
+        r = client.post('/ai/chat', json={'prompt': 'hva er 2+2?'})
+        assert r.status_code in (501, 502)
+
+
+class TestAIReplies:
+    def test_ai_replies_requires_login(self, client):
+        r = client.post('/ai/replies', json={'text': 'hei'})
+        assert r.status_code in (401, 302)
+
+    def test_ai_replies_no_text(self, client):
+        _register(client, 'alice')
+        r = client.post('/ai/replies', json={'text': ''})
+        assert r.status_code == 400
+
+    def test_ai_replies_local_fallback(self, client):
+        _register(client, 'alice')
+        r = client.post('/ai/replies', json={'text': 'Vil du møtes i morgen?'})
+        assert r.status_code == 200
+        assert len(r.get_json()['replies']) >= 3
+
+
+class TestReminders:
+    def test_reminder_requires_login(self, client):
+        r = client.post('/reminders', json={'text': 'test', 'minutes': '5'})
+        assert r.status_code in (401, 302)
+
+    def test_reminder_create_and_list(self, client):
+        _register(client, 'alice')
+        r = client.post('/reminders', json={'text': 'Kjøp melk', 'minutes': '60'})
+        assert r.status_code == 200
+        data = r.get_json()
+        assert data['success'] is True
+        rid = data['reminder']['id']
+        r2 = client.get('/reminders')
+        assert r2.status_code == 200
+        ids = [x['id'] for x in r2.get_json()['reminders']]
+        assert rid in ids
+
+    def test_reminder_requires_future(self, client):
+        _register(client, 'alice')
+        r = client.post('/reminders', json={'text': 'fortid', 'minutes': '0'})
+        assert r.status_code == 400
+
+    def test_reminder_cancel(self, client):
+        _register(client, 'alice')
+        r = client.post('/reminders', json={'text': 'Slett meg', 'minutes': '30'})
+        rid = r.get_json()['reminder']['id']
+        r2 = client.delete('/reminders/' + rid)
+        assert r2.status_code == 200
+        r3 = client.get('/reminders')
+        assert r3.get_json()['reminders'] == []
+
+    def test_reminder_delivery_creates_notification(self, client):
+        _register(client, 'alice')
+        r = client.post('/reminders', json={'text': 'Påminnelse', 'minutes': '1'})
+        rid = r.get_json()['reminder']['id']
+        import app as app_mod
+        reminders = app_mod.load_json(app_mod.REMINDERS_FILE, [])
+        for item in reminders:
+            if item['id'] == rid:
+                item['remind_at'] = (datetime.utcnow() - timedelta(seconds=5)).isoformat()
+        app_mod.save_json(app_mod.REMINDERS_FILE, reminders)
+        app_mod.deliver_reminders()
+        notif = app_mod.load_json(app_mod.NOTIFICATIONS_FILE, {})
+        types = [n.get('type') for n in notif.get('alice', [])]
+        assert 'reminder' in types
+
+
+class TestQuietHours:
+    def test_quiet_hours_set_and_get(self, client):
+        _register(client, 'alice')
+        r = client.post('/settings/quiet', json={'enabled': True, 'start': '22:00', 'end': '07:00'})
+        assert r.status_code == 200
+        assert r.get_json()['quiet']['enabled'] is True
+        r2 = client.get('/settings/quiet')
+        assert r2.get_json()['quiet']['enabled'] is True
+
+    def test_quiet_hours_invalid_time(self, client):
+        _register(client, 'alice')
+        r = client.post('/settings/quiet', json={'enabled': True, 'start': 'sju', 'end': '07:00'})
+        assert r.status_code == 400
+
+    def test_quiet_hours_disable(self, client):
+        _register(client, 'alice')
+        client.post('/settings/quiet', json={'enabled': True, 'start': '22:00', 'end': '07:00'})
+        r = client.post('/settings/quiet', json={'enabled': False})
+        assert r.status_code == 200
+        r2 = client.get('/settings/quiet')
+        assert r2.get_json()['quiet']['enabled'] is False
+
+    def test_is_quiet_hours_helper(self, client):
+        import app as app_mod
+        assert app_mod.is_quiet_hours('no_such_user') is False
+
+
+class TestBackup:
+    def test_backup_requires_login(self, client):
+        r = client.get('/backup')
+        assert r.status_code in (401, 302)
+
+    def test_backup_contains_messages(self, client):
+        import app as app_mod
+        _setup_pair(client)
+        key = app_mod.get_or_create_pair_key('alice', 'bob')
+        ciphertext = app_mod.encrypt_symmetric('backup meg', key)
+        client.post('/send', json={'recipient': 'bob', 'ciphertext': ciphertext, 'type': 'text'})
+        r = client.get('/backup')
+        assert r.status_code == 200
+        data = json.loads(r.data)
+        assert 'u:bob' in data['chats']
+        texts = [m['text'] for m in data['chats']['u:bob']['messages']]
+        assert any('backup meg' in t for t in texts)
+
+    def test_export_pdf_user(self, client):
+        import app as app_mod
+        _setup_pair(client)
+        key = app_mod.get_or_create_pair_key('alice', 'bob')
+        ciphertext = app_mod.encrypt_symmetric('pdf meg', key)
+        client.post('/send', json={'recipient': 'bob', 'ciphertext': ciphertext, 'type': 'text'})
+        r = client.get('/export/user/bob/pdf')
+        assert r.status_code == 200
+        assert 'text/html' in r.content_type
+        assert b'pdf meg' in r.data
+        assert b'onclick' not in r.data
+
+
+class TestAdminStatsExtended:
+    def test_admin_stats_has_chat_insights(self, client):
+        import app as app_mod
+        _setup_pair(client)
+        key = app_mod.get_or_create_pair_key('alice', 'bob')
+        client.post('/send', json={'recipient': 'bob', 'ciphertext': app_mod.encrypt_symmetric('hei', key), 'type': 'text'})
+        users = app_mod.load_json(app_mod.USERS_FILE, {})
+        users['alice']['is_admin'] = True
+        app_mod.save_json(app_mod.USERS_FILE, users)
+        r = client.get('/admin/stats')
+        assert r.status_code == 200
+        s = r.get_json()['stats']
+        assert 'top_senders' in s
+        assert 'messages_per_hour' in s
+        assert 'messages_per_day' in s
+        assert s['total_messages'] >= 1

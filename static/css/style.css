@@ -874,3 +874,41 @@ body.offline .online-status { color:#ff6b6b; }
 body.offline .composer { opacity:.5; pointer-events:none; }
 body.offline .messages .msg.sent { opacity:.6; }
 #messagesContainer { contain: layout style; }
+
+/* AI-assistent */
+.ai-thinking { opacity:.7; }
+.ai-thinking .text { font-style:italic; color:var(--c-text-muted); }
+.ai-dots span { animation:aiBlink 1.2s infinite; }
+.ai-dots span:nth-child(2) { animation-delay:.2s; }
+.ai-dots span:nth-child(3) { animation-delay:.4s; }
+@keyframes aiBlink { 0%,100%{opacity:.2} 50%{opacity:1} }
+
+/* Smart-reply forslag */
+.ai-replies-panel { display:flex; flex-wrap:wrap; gap:6px; align-items:center; padding:6px 10px; border-top:1px solid var(--c-border); background:var(--c-surface); }
+.ai-replies-title { font-size:.75rem; color:var(--c-text-muted); margin-right:2px; }
+.ai-reply-chip { border:1px solid var(--c-border-item); background:var(--c-surface-2); color:var(--c-text); border-radius:14px; padding:5px 12px; font-size:.78rem; cursor:pointer; transition:background .15s; }
+.ai-reply-chip:hover { background:var(--c-surface-hover); }
+.ai-reply-chip:disabled { opacity:.5; cursor:default; }
+
+/* Påminnelser-panel */
+.reminders-panel { position:fixed; top:60px; right:12px; width:320px; max-width:92vw; max-height:70vh; overflow-y:auto; background:var(--c-card); border:1px solid var(--c-border); border-radius:14px; box-shadow:0 8px 30px rgba(0,0,0,.35); z-index:2000; }
+.reminders-panel-head { display:flex; align-items:center; justify-content:space-between; padding:12px 14px; border-bottom:1px solid var(--c-border); font-weight:600; font-size:.9rem; }
+.reminders-close { background:none; border:none; color:var(--c-text-muted); font-size:1rem; cursor:pointer; }
+.reminders-list { padding:8px; }
+.reminders-empty { text-align:center; color:var(--c-text-muted); font-size:.8rem; padding:16px 8px; line-height:1.5; }
+.reminder-row { display:flex; align-items:center; gap:8px; padding:8px 10px; border-radius:10px; margin-bottom:4px; background:var(--c-surface-2); }
+.reminder-text { flex:1; font-size:.82rem; color:var(--c-text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.reminder-when { font-size:.7rem; color:var(--c-text-muted); white-space:nowrap; }
+.reminder-del { background:none; border:none; color:var(--c-text-muted); cursor:pointer; font-size:.9rem; }
+.reminder-del:hover { color:#ff6b6b; }
+
+/* Påminn-velger */
+.reminder-picker-overlay { position:fixed; inset:0; background:rgba(0,0,0,.5); display:flex; align-items:center; justify-content:center; z-index:5000; }
+.reminder-picker { background:var(--c-card); border:1px solid var(--c-border); border-radius:16px; padding:20px; width:320px; max-width:92vw; display:flex; flex-direction:column; gap:8px; }
+.reminder-picker h3 { margin:0 0 4px; font-size:1rem; }
+.reminder-picker-text { font-size:.82rem; color:var(--c-text-muted); background:var(--c-surface-2); padding:8px 10px; border-radius:8px; max-height:80px; overflow:hidden; word-wrap:break-word; }
+.reminder-picker button { border:1px solid var(--c-border-item); background:var(--c-surface-2); color:var(--c-text); border-radius:10px; padding:9px 12px; font-size:.85rem; cursor:pointer; text-align:left; }
+.reminder-picker button:hover { background:var(--c-surface-hover); }
+.reminder-picker button.cancel { background:none; color:var(--c-text-muted); }
+
+.msg-translation { margin-top:4px; font-size:.8rem; color:var(--c-text-muted); font-style:italic; border-top:1px dashed var(--c-border-item); padding-top:4px; }
