@@ -45,7 +45,7 @@ def clean_data():
         'muted_chats.json', 'contacts.json', 'stories.json', 'blocked_users.json',
         'deleted_for_me.json', 'live_locations.json', 'wallpapers.json',
         'slowmode.json', 'drafts.json', 'polls.json', 'folders.json',
-        'archive.json', 'quiet_hours.json',
+        'archive.json', 'quiet_hours.json', 'digest.json',
     }
     for path in [
         app.users_file, app.messages_file, app.keys_file, app.groups_file,
@@ -58,6 +58,7 @@ def clean_data():
         app.blocked_file, app.deleted_for_me_file, app.live_location_file,
         app.wallpapers_file, app.slowmode_file, app.polls_file,
         app.archive_file, app.reminders_file, app.quiet_hours_file,
+        app.digest_file,
     ]:
         path.write_text('{}' if path.name in dict_files else '[]', encoding='utf-8')
     yield
@@ -1661,3 +1662,141 @@ class TestAdminStatsExtended:
         assert 'messages_per_hour' in s
         assert 'messages_per_day' in s
         assert s['total_messages'] >= 1
+
+
+class TestDigestSettings:
+    def test_digest_requires_login(self, client):
+        r = client.get('/settings/digest')
+        assert r.status_code in (401, 302)
+
+    def test_digest_set_and_get(self, client):
+        _register(client, 'alice')
+        r = client.post('/settings/digest', json={'enabled': True, 'time': '08:30'})
+        assert r.status_code == 200
+        assert r.get_json()['enabled'] is True
+        r2 = client.get('/settings/digest')
+        assert r2.get_json()['enabled'] is True
+        assert r2.get_json()['time'] == '08:30'
+
+    def test_digest_invalid_time(self, client):
+        _register(client, 'alice')
+        r = client.post('/settings/digest', json={'enabled': True, 'time': 'sju'})
+        assert r.status_code == 400
+
+    def test_digest_delivery_creates_notification(self, client):
+        import app as app_mod
+        client2 = _setup_pair(client)
+        key = app_mod.get_or_create_pair_key('alice', 'bob')
+        client2.post('/send', json={'recipient': 'alice', 'ciphertext': app_mod.encrypt_symmetric('hei dag', key), 'type': 'text'})
+        now = datetime.utcnow()
+        time_str = now.strftime('%H:%M')
+        r = client.post('/settings/digest', json={'enabled': True, 'time': time_str})
+        assert r.status_code == 200
+        app_mod.deliver_digests()
+        notif = app_mod.load_json(app_mod.NOTIFICATIONS_FILE, {})
+        types = [n.get('type') for n in notif.get('alice', [])]
+        assert 'digest' in types
+
+
+class TestAIThreadSummary:
+    def test_thread_summary_requires_login(self, client):
+        r = client.post('/ai/chat/summary', json={'chat_type': 'user', 'chat_id': 'bob'})
+        assert r.status_code in (401, 302)
+
+    def test_thread_summary_missing_chat(self, client):
+        _register(client, 'alice')
+        r = client.post('/ai/chat/summary', json={})
+        assert r.status_code == 400
+
+    def test_thread_summary_user_local_fallback(self, client):
+        import app as app_mod
+        _setup_pair(client)
+        key = app_mod.get_or_create_pair_key('alice', 'bob')
+        client.post('/send', json={'recipient': 'bob', 'ciphertext': app_mod.encrypt_symmetric('Hva skal vi gjøre i helgen?', key), 'type': 'text'})
+        r = client.post('/ai/chat/summary', json={'chat_type': 'user', 'chat_id': 'bob'})
+        assert r.status_code == 200
+        data = r.get_json()
+        assert data['success'] is True
+        assert data['summary']
+
+    def test_thread_summary_group_denied(self, client):
+        _setup_pair(client)
+        r = client.post('/ai/chat/summary', json={'chat_type': 'group', 'chat_id': 'nope'})
+        assert r.status_code == 403
+
+
+class TestAITheme:
+    def test_theme_requires_login(self, client):
+        r = client.post('/ai/theme', json={'description': 'skog'})
+        assert r.status_code in (401, 302)
+
+    def test_theme_no_description(self, client):
+        _register(client, 'alice')
+        r = client.post('/ai/theme', json={'description': ''})
+        assert r.status_code == 400
+
+    def test_theme_disabled_ai(self, client):
+        _register(client, 'alice')
+        r = client.post('/ai/theme', json={'description': 'skog'})
+        assert r.status_code == 501
+
+
+class TestAIFolderSuggest:
+    def test_folder_suggest_requires_login(self, client):
+        r = client.post('/ai/folder-suggest', json={'chat_name': 'bob'})
+        assert r.status_code in (401, 302)
+
+    def test_folder_suggest_no_chat_name(self, client):
+        _register(client, 'alice')
+        r = client.post('/ai/folder-suggest', json={'chat_name': ''})
+        assert r.status_code == 400
+
+    def test_folder_suggest_disabled_ai_returns_name(self, client):
+        _register(client, 'alice')
+        r = client.post('/ai/folder-suggest', json={'chat_name': 'Kari'})
+        assert r.status_code == 200
+        assert r.get_json()['suggestion'] == 'Kari'
+
+
+class TestHTMLExport:
+    def test_export_html_user(self, client):
+        import app as app_mod
+        _setup_pair(client)
+        key = app_mod.get_or_create_pair_key('alice', 'bob')
+        ciphertext = app_mod.encrypt_symmetric('html meg', key)
+        client.post('/send', json={'recipient': 'bob', 'ciphertext': ciphertext, 'type': 'text'})
+        r = client.get('/export/user/bob/html')
+        assert r.status_code == 200
+        assert 'text/html' in r.content_type
+        assert b'html meg' in r.data
+        assert b'onclick' not in r.data
+        assert 'attachment' in r.headers.get('Content-Disposition', '')
+
+
+class TestAdminBroadcast:
+    def test_broadcast_requires_admin(self, client):
+        _register(client, 'alice')
+        r = client.post('/admin/broadcast', json={'text': 'hei alle'})
+        assert r.status_code == 403
+
+    def test_broadcast_no_text(self, client):
+        import app as app_mod
+        _setup_pair(client)
+        users = app_mod.load_json(app_mod.USERS_FILE, {})
+        users['alice']['is_admin'] = True
+        app_mod.save_json(app_mod.USERS_FILE, users)
+        r = client.post('/admin/broadcast', json={'text': ''})
+        assert r.status_code == 400
+
+    def test_broadcast_sends_to_others(self, client):
+        import app as app_mod
+        client2 = _setup_pair(client)
+        users = app_mod.load_json(app_mod.USERS_FILE, {})
+        users['alice']['is_admin'] = True
+        app_mod.save_json(app_mod.USERS_FILE, users)
+        r = client.post('/admin/broadcast', json={'text': 'Viktig kunngjøring'})
+        assert r.status_code == 200
+        assert r.get_json()['success'] is True
+        notif = app_mod.load_json(app_mod.NOTIFICATIONS_FILE, {})
+        types = [n.get('type') for n in notif.get('bob', [])]
+        assert 'broadcast' in types

@@ -94,7 +94,7 @@ def set_security_headers(response):
 
 @app.route('/health')
 def health():
-    return jsonify({'success': True, 'status': 'ok', 'version': os.environ.get('APP_VERSION', '3.5.0')})
+    return jsonify({'success': True, 'status': 'ok', 'version': os.environ.get('APP_VERSION', '3.6.0')})
 
 def _rl_get(store, key):
     item = store.setdefault(key, {'ts': [], 'n': 0})
@@ -564,7 +564,7 @@ def login_page():
 
 @app.context_processor
 def inject_common():
-    return {'version': os.environ.get('APP_VERSION', '3.5.0')}
+    return {'version': os.environ.get('APP_VERSION', '3.6.0')}
 
 @app.route('/webrtc/turn')
 @require_login
@@ -1238,21 +1238,24 @@ def _llm_summary(digest):
     )
     return _llm_chat(prompt, system='Du er en kortfattet assistent som oppsummerer chatter.', max_tokens=250, temperature=0.4) or 'Ingen oppsummering.'
 
-@app.route('/ai/summary', methods=['POST'])
-@rate_limit(max_requests=10, window_seconds=120)
-@require_login
-def ai_summary():
-    me = session['username']
+def _collect_unread(me, since=None):
     messages = load_json(MESSAGES_FILE, [])
     groups = load_json(GROUPS_FILE, [])
     group_map = {}
     for g in groups:
         if isinstance(g, dict):
             group_map[g.get('id')] = g
-    unread = [m for m in messages
-              if m.get('sender') != me
-              and not convert_to_bool(m.get('read'), False)
-              and not convert_to_bool(m.get('deleted'), False)]
+    unread = []
+    for m in messages:
+        if m.get('sender') != me and not convert_to_bool(m.get('read'), False) and not convert_to_bool(m.get('deleted'), False):
+            if since is not None:
+                try:
+                    ts = datetime.fromisoformat((m.get('timestamp') or '').replace('Z', '+00:00')).replace(tzinfo=None)
+                    if ts < since:
+                        continue
+                except Exception:
+                    continue
+            unread.append(m)
     chats = {}
     for m in unread:
         if m.get('group_id'):
@@ -1267,7 +1270,7 @@ def ai_summary():
         entry = chats.setdefault(key, {'name': name, 'kind': kind, 'msgs': []})
         entry['msgs'].append(m)
     if not chats:
-        return jsonify({'success': True, 'summary': 'Ingen uleste meldinger.', 'chats': []})
+        return None
     digest = []
     for key, c in chats.items():
         msgs = sorted(c['msgs'], key=lambda x: x.get('timestamp', ''))
@@ -1285,6 +1288,16 @@ def ai_summary():
             ],
         })
     digest.sort(key=lambda c: c['last'][-1]['timestamp'], reverse=True)
+    return digest
+
+@app.route('/ai/summary', methods=['POST'])
+@rate_limit(max_requests=10, window_seconds=120)
+@require_login
+def ai_summary():
+    me = session['username']
+    digest = _collect_unread(me)
+    if not digest:
+        return jsonify({'success': True, 'summary': 'Ingen uleste meldinger.', 'chats': []})
     summary = _local_summary(digest)
     if _ai_enabled():
         try:
@@ -1336,6 +1349,112 @@ def ai_replies():
     if not suggestions:
         return jsonify({'success': False, 'message': 'Ingen svar fra AI.'}), 502
     return jsonify({'success': True, 'replies': suggestions})
+
+@app.route('/ai/chat/summary', methods=['POST'])
+@rate_limit(max_requests=6, window_seconds=120)
+@require_login
+def ai_chat_summary():
+    me = session['username']
+    data = request.get_json(force=True, silent=True) or {}
+    chat_type = data.get('chat_type')
+    chat_id = sanitize_input(data.get('chat_id', ''), 60)
+    if chat_type not in ('user', 'group') or not chat_id:
+        return jsonify({'success': False, 'message': 'Manglende chat.'}), 400
+    messages = load_json(MESSAGES_FILE, [])
+    if chat_type == 'user':
+        pk = pair_key(me, chat_id)
+        filtered = [m for m in messages if m.get('pair_key') == pk]
+    else:
+        groups = load_json(GROUPS_FILE, [])
+        group = next((g for g in groups if g['id'] == chat_id), None)
+        if not group or me not in group.get('members', []):
+            return jsonify({'success': False, 'message': 'Ingen tilgang.'}), 403
+        filtered = [m for m in messages if m.get('group_id') == chat_id]
+    filtered = [m for m in filtered if not convert_to_bool(m.get('deleted'), False)][-60:]
+    if not filtered:
+        return jsonify({'success': True, 'summary': 'Ingen meldinger i denne samtalen.'})
+    lines = []
+    for m in filtered:
+        lines.append(f"{m.get('sender', '')}: {_decrypt_for_export(m, me)}")
+    prompt = "Oppsummer følgende samtale på norsk. 3-6 setninger: hva handlet den om, hva ble bestemt, hvilke spørsmål venter.\n\n" + '\n'.join(lines)
+    summary = None
+    if _ai_enabled():
+        try:
+            summary = _llm_chat(prompt, system='Du er en kortfattet samtale-oppsummerer.', max_tokens=300, temperature=0.4)
+        except Exception as e:
+            logger.warning('ai chat summary failed: %s', e)
+    if not summary:
+        summary = _local_summary([{'name': chat_id, 'kind': chat_type, 'count': len(filtered),
+                                   'last': [{'sender': m.get('sender', ''), 'text': _decrypt_for_export(m, me), 'timestamp': m.get('timestamp', '')} for m in filtered[-3:]]}])
+    return jsonify({'success': True, 'summary': summary})
+
+@app.route('/ai/theme', methods=['POST'])
+@rate_limit(max_requests=6, window_seconds=120)
+@require_login
+def ai_theme():
+    data = request.get_json(force=True, silent=True) or {}
+    description = sanitize_input(data.get('description', ''), 500)
+    if not description:
+        return jsonify({'success': False, 'message': 'Ingen beskrivelse.'}), 400
+    if not _ai_enabled():
+        return jsonify({'success': False, 'message': 'AI er ikke konfigurert på serveren.'}), 501
+    prompt = (
+        "Lag et fargetema for en chat-app basert på beskrivelsen: '" + description + "'. "
+        "Svar KUN med et JSON-objekt uten kodeblokkmerking, med nøyaktig disse nøklene: "
+        "--c-bg, --c-card, --c-surface, --c-text, --c-text-muted, --c-border, --c-primary, --c-sender, --c-sent-bg, --c-received-bg. "
+        "Verdier skal være hex-farger (f.eks. #123456). Velg harmoniske, kontrastrike farger."
+    )
+    try:
+        raw = _llm_chat(prompt, system='Du er en designassistent som svarer med gyldig JSON.', max_tokens=300, temperature=0.7)
+    except Exception as e:
+        logger.warning('ai theme failed: %s', e)
+        return jsonify({'success': False, 'message': 'AI-tjenesten er utilgjengelig.'}), 502
+    raw = raw.strip()
+    if raw.startswith('```'):
+        raw = re.sub(r'^```[a-zA-Z]*\n?', '', raw)
+        raw = re.sub(r'\n?```$', '', raw)
+    try:
+        theme = json.loads(raw)
+    except Exception:
+        try:
+            start, end = raw.index('{'), raw.rindex('}')
+            theme = json.loads(raw[start:end + 1])
+        except Exception:
+            return jsonify({'success': False, 'message': 'AI ga ikke gyldig tema.'}), 502
+    allowed_keys = {'--c-bg', '--c-card', '--c-surface', '--c-text', '--c-text-muted', '--c-border', '--c-primary', '--c-sender', '--c-sent-bg', '--c-received-bg'}
+    clean = {}
+    for k, v in theme.items():
+        if k in allowed_keys and isinstance(v, str) and re.match(r'^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$', v.strip()):
+            clean[k] = v.strip()
+    if len(clean) < 4:
+        return jsonify({'success': False, 'message': 'AI ga ikke gyldig tema.'}), 502
+    return jsonify({'success': True, 'theme': clean})
+
+@app.route('/ai/folder-suggest', methods=['POST'])
+@rate_limit(max_requests=6, window_seconds=120)
+@require_login
+def ai_folder_suggest():
+    data = request.get_json(force=True, silent=True) or {}
+    chat_name = sanitize_input(data.get('chat_name', ''), 100)
+    preview = sanitize_input(data.get('preview', ''), 600)
+    if not chat_name:
+        return jsonify({'success': False, 'message': 'Manglende chat-navn.'}), 400
+    if not _ai_enabled():
+        return jsonify({'success': True, 'suggestion': chat_name})
+    prompt = (
+        "Foreslå én kort mappenavn (1-3 ord) for å sortere chatten '" + chat_name + "'"
+        + (" med følgende meldinger: " + preview if preview else "")
+        + ". Svar KUN med mappenavnet, uten anførselstegn."
+    )
+    try:
+        raw = _llm_chat(prompt, system='Du foreslår korte, beskrivende mappenavn på norsk.', max_tokens=20, temperature=0.4)
+    except Exception as e:
+        logger.warning('ai folder suggest failed: %s', e)
+        return jsonify({'success': False, 'message': 'AI-tjenesten er utilgjengelig.'}), 502
+    suggestion = re.sub(r'["\'\n]', '', (raw or '').strip())[:40]
+    if not suggestion:
+        return jsonify({'success': False, 'message': 'Ingen forslag fra AI.'}), 502
+    return jsonify({'success': True, 'suggestion': suggestion})
 
 @app.route('/send', methods=['POST'])
 @rate_limit(max_requests=30, window_seconds=60)
@@ -2443,6 +2562,30 @@ def admin_list_users():
         })
     return jsonify({'success': True, 'users': result})
 
+@app.route('/admin/broadcast', methods=['POST'])
+@rate_limit(max_requests=10, window_seconds=300)
+@require_admin
+@require_csrf
+def admin_broadcast():
+    admin_user = session.get('username')
+    data = request.get_json(force=True, silent=True) or {}
+    text = sanitize_input(data.get('text', ''), 2000)
+    if not text:
+        return jsonify({'success': False, 'message': 'Ingen tekst.'}), 400
+    users = load_json(USERS_FILE, {})
+    sent = 0
+    for u in users:
+        if u == admin_user:
+            continue
+        create_notification(u, 'broadcast', 'Kunngjøring', {'text': text, 'by': admin_user})
+        audit('broadcast_sent', actor=admin_user, target=u)
+        try:
+            notify_user(socketio, u, 'broadcast', {'text': text, 'by': admin_user})
+            sent += 1
+        except Exception:
+            pass
+    return jsonify({'success': True, 'sent': sent})
+
 @app.route('/admin/users/<username>/toggle-admin', methods=['POST'])
 @rate_limit(max_requests=10, window_seconds=300)
 @require_admin
@@ -2918,6 +3061,73 @@ def deliver_reminders():
         except Exception:
             pass
 
+@app.route('/settings/digest', methods=['GET'])
+@require_login
+def get_digest_settings():
+    me = session['username']
+    settings = load_json(DIGEST_FILE, {})
+    s = settings.get(me) or {}
+    return jsonify({'success': True, 'enabled': convert_to_bool(s.get('enabled'), False), 'time': s.get('time') or '09:00'})
+
+@app.route('/settings/digest', methods=['POST'])
+@rate_limit(max_requests=10, window_seconds=60)
+@require_login
+@require_csrf
+def set_digest_settings():
+    me = session['username']
+    data = request.get_json(force=True, silent=True) or {}
+    enabled = convert_to_bool(data.get('enabled'), False)
+    time_str = (data.get('time') or '09:00').strip()
+    if not re.match(r'^([01]\d|2[0-3]):[0-5]\d$', time_str):
+        return jsonify({'success': False, 'message': 'Ugyldig tidspunkt (HH:MM).'}), 400
+    settings = load_json(DIGEST_FILE, {})
+    settings.setdefault(me, {})
+    settings[me]['enabled'] = enabled
+    settings[me]['time'] = time_str
+    if not enabled:
+        settings[me].pop('last_sent', None)
+    save_json(DIGEST_FILE, settings)
+    return jsonify({'success': True, 'enabled': enabled, 'time': time_str})
+
+def deliver_digests():
+    now = datetime.utcnow()
+    settings = load_json(DIGEST_FILE, {})
+    for username, s in settings.items():
+        if not convert_to_bool(s.get('enabled'), False):
+            continue
+        time_str = (s.get('time') or '09:00').strip()
+        if not re.match(r'^([01]\d|2[0-3]):[0-5]\d$', time_str):
+            continue
+        try:
+            target = datetime(now.year, now.month, now.day, int(time_str[:2]), int(time_str[3:]))
+        except Exception:
+            continue
+        if now.hour != target.hour or now.minute != target.minute:
+            continue
+        if s.get('last_sent') == now.date().isoformat():
+            continue
+        since = now - timedelta(hours=24)
+        digest = _collect_unread(username, since=since)
+        if not digest:
+            settings[username]['last_sent'] = now.date().isoformat()
+            save_json(DIGEST_FILE, settings)
+            continue
+        summary = _local_summary(digest)
+        if _ai_enabled():
+            try:
+                summary = _llm_summary(digest)
+            except Exception as e:
+                logger.warning('digest llm failed: %s', e)
+        title = f"Dagsoppsummering {now.strftime('%d.%m.%Y')}"
+        create_notification(username, 'digest', title, {'summary': summary, 'chats': len(digest)})
+        audit('digest_delivered', actor=username)
+        settings[username]['last_sent'] = now.date().isoformat()
+        save_json(DIGEST_FILE, settings)
+        try:
+            notify_user(socketio, username, 'digest', {'summary': summary, 'chats': len(digest), 'title': title})
+        except Exception:
+            pass
+
 def deliver_scheduled_messages():
     now = datetime.utcnow()
     scheduled = load_json(SCHEDULED_FILE, [])
@@ -3012,6 +3222,7 @@ def _background_worker():
         try:
             deliver_scheduled_messages()
             deliver_reminders()
+            deliver_digests()
             cleanup_disappearing_messages()
             cleanup_typing_indicators()
         except Exception:
@@ -3265,7 +3476,21 @@ def backup_all():
 @app.route('/export/<chat_type>/<chat_id>/pdf')
 @require_login
 def export_chat_pdf(chat_type, chat_id):
-    me = session['username']
+    html, error, status = _build_export_html(chat_type, chat_id, session['username'])
+    if error:
+        return jsonify({'success': False, 'message': error}), status
+    return Response(html, mimetype='text/html')
+
+@app.route('/export/<chat_type>/<chat_id>/html')
+@require_login
+def export_chat_html(chat_type, chat_id):
+    html, error, status = _build_export_html(chat_type, chat_id, session['username'])
+    if error:
+        return jsonify({'success': False, 'message': error}), status
+    return Response(html, mimetype='text/html',
+                    headers={'Content-Disposition': 'attachment; filename=export_%s_%s.html' % (chat_type, chat_id)})
+
+def _build_export_html(chat_type, chat_id, me):
     messages = load_json(MESSAGES_FILE, [])
     if chat_type == 'user':
         pk = pair_key(me, chat_id)
@@ -3275,11 +3500,11 @@ def export_chat_pdf(chat_type, chat_id):
         groups = load_json(GROUPS_FILE, [])
         group = next((g for g in groups if g['id'] == chat_id), None)
         if not group or me not in group.get('members', []):
-            return jsonify({'success': False, 'message': 'Ingen tilgang.'}), 403
+            return None, 'Ingen tilgang.', 403
         filtered = [m for m in messages if m.get('group_id') == chat_id]
         title = group.get('name') or chat_id
     else:
-        return jsonify({'success': False, 'message': 'Ugyldig type.'}), 400
+        return None, 'Ugyldig type.', 400
     filtered.sort(key=lambda m: m.get('timestamp', ''))
     body_rows = []
     for m in filtered:
@@ -3295,7 +3520,7 @@ def export_chat_pdf(chat_type, chat_id):
             '<p class="no-print" style="margin-bottom:16px;color:#555">Bruk Ctrl+P / ⌘+P og velg &laquo;Lagre som PDF&raquo;.</p>'
             '<h1>%s</h1><div class="sub">Eksportert %s · %d meldinger</div>%s</body></html>') % (
                 escape_html(title), escape_html(title), escape_html(now_iso()), len(filtered), ''.join(body_rows))
-    return Response(html, mimetype='text/html')
+    return html, None, 200
 
 def escape_html(s):
     return (str(s or '').replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
@@ -5193,7 +5418,7 @@ def health_check():
         'success': True,
         'status': 'healthy' if db_ok else 'degraded',
         'db': 'ok' if db_ok else 'error',
-        'version': '3.5.0',
+        'version': '3.6.0',
     })
 
 @app.route('/sw-test')
@@ -5308,3 +5533,4 @@ app.chat_notif_file = CHAT_NOTIF_FILE
 app.labels_file = LABELS_FILE
 app.reminders_file = REMINDERS_FILE
 app.quiet_hours_file = QUIET_HOURS_FILE
+app.digest_file = DIGEST_FILE

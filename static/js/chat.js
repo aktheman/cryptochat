@@ -322,6 +322,13 @@
   `;
   document.head.appendChild(_featureCSS);
 
+  const _customTheme = localStorage.getItem('customThemeCSS');
+  if (_customTheme) {
+    const _themeStyle = document.createElement('style');
+    _themeStyle.textContent = _customTheme;
+    document.head.appendChild(_themeStyle);
+  }
+
   async function safeJson(res) {
     try { return await res.json(); } catch { return {}; }
   }
@@ -708,6 +715,8 @@
                 <button id="myKeyBtn" class="btn btn-small btn-ghost" aria-label="Vis min offentlige noekkel">Min noekkel</button>
                 <button id="verifyBtn" class="btn btn-small btn-ghost verify-btn" style="display:none" title="Sikkerhetsnummer" aria-label="Verifiser samtale">🛡️</button>
                 <button id="exportBtn" class="btn btn-small btn-ghost" title="Eksporter samtale" aria-label="Eksporter chat" style="display:none">💾</button>
+                <button id="threadSummaryBtn" class="btn btn-small btn-ghost" title="Oppsummer samtale med AI" aria-label="Oppsummer samtale med AI" style="display:none">📝</button>
+                <button id="folderSuggestBtn" class="btn btn-small btn-ghost" title="Foreslå mappe med AI" aria-label="Foreslå mappe med AI" style="display:none">📁✨</button>
                 <button id="wallpaperBtn" class="btn btn-small btn-ghost" title="Bakgrunn" aria-label="Velg bakgrunn" style="display:none">🖼️</button>
                 <button id="muteBtn" class="btn btn-small btn-ghost" title="Demp varsler" style="display:none">🔔</button>
                 <button id="chatSearchBtn" class="btn btn-small btn-ghost" title="Soek i chat" aria-label="Soek i chat" style="display:none">🔍</button>
@@ -762,6 +771,7 @@
                 </div>
                 <input id="messageInput" class="input-text" placeholder="Skriv en melding... (skriv /ai for å spørre AI)" autocomplete="off" aria-label="Skriv en melding" />
                 <button id="voiceRecordBtn" class="btn btn-small btn-ghost" title="Talebeskjed" aria-label="Talebeskjed">🎙️</button>
+                <button id="dictateBtn" class="btn btn-small btn-ghost" title="Tale-til-tekst (diktat)" aria-label="Tale-til-tekst">🎤</button>
                 <button id="videoRecordBtn" class="btn btn-small btn-ghost" title="Videomelding" aria-label="Videomelding">📹</button>
                 <button id="locationBtn" class="btn btn-small btn-ghost" title="Del posisjon" aria-label="Del posisjon">📍</button>
                 <button id="templateBtn" class="btn-attach" title="Maler" style="font-size:1rem;">📋</button>
@@ -1165,6 +1175,8 @@
         messagesBox.innerHTML = '<div class="empty-state"><div class="empty-icon">💬</div><h3>Ingen samtale valgt</h3><p>Velg en kontakt eller gruppe.</p></div>';
         composer.style.display = 'none';
         document.getElementById('exportBtn').style.display = 'none';
+        document.getElementById('threadSummaryBtn').style.display = 'none';
+        document.getElementById('folderSuggestBtn').style.display = 'none';
         document.getElementById('wallpaperBtn').style.display = 'none';
         document.getElementById('muteBtn').style.display = 'none';
         document.getElementById('groupAdminBtn').style.display = 'none';
@@ -1683,6 +1695,8 @@
         setMobileChat(true);
         clearImagePreview();
         document.getElementById('exportBtn').style.display = 'none';
+        document.getElementById('threadSummaryBtn').style.display = 'none';
+        document.getElementById('folderSuggestBtn').style.display = 'none';
         document.getElementById('pollBtn').style.display = 'none';
         try {
           const data = await loadJSON('/saved');
@@ -1795,6 +1809,54 @@
         window.open('/export/' + activeChat.type + '/' + encodeURIComponent(activeChat.target), '_blank');
       });
 
+      // ── AI-thread summary ──
+      document.getElementById('threadSummaryBtn').addEventListener('click', async () => {
+        if (!activeChat || activeChat.type === 'saved') return;
+        const btn = document.getElementById('threadSummaryBtn');
+        btn.textContent = '⏳';
+        try {
+          const r = await loadJSON('/ai/chat/summary', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_type: activeChat.type, chat_id: activeChat.target }) });
+          if (!r.success) { toast(r.message || 'Kunne ikke oppsummere'); return; }
+          let panel = document.querySelector('.ai-thread-panel');
+          if (panel) panel.remove();
+          panel = document.createElement('div');
+          panel.className = 'ai-thread-panel';
+          panel.innerHTML = '<div class="ai-thread-head"><span>📝 AI-oppsummering</span><button class="ai-thread-close">✕</button></div><div class="ai-thread-body">' + escapeHtml(r.summary) + '</div>';
+          document.body.appendChild(panel);
+          panel.querySelector('.ai-thread-close').addEventListener('click', () => panel.remove());
+          setTimeout(() => { if (panel.isConnected) panel.remove(); }, 60000);
+        } catch (e) { toast('Kunne ikke oppsummere'); }
+        finally { btn.textContent = '📝'; }
+      });
+
+      // ── AI folder suggestion ──
+      document.getElementById('folderSuggestBtn').addEventListener('click', async () => {
+        if (!activeChat || activeChat.type === 'saved') return;
+        const btn = document.getElementById('folderSuggestBtn');
+        btn.textContent = '⏳';
+        try {
+          const preview = [];
+          messagesBox.querySelectorAll('.msg').forEach(msg => {
+            const t = msg.querySelector('.msg-text, .text');
+            if (t && t.textContent) preview.push(t.textContent.substring(0, 120));
+          });
+          const chatName = activeChat.type === 'user'
+            ? getDisplayName(activeChat.target)
+            : ((groups.find(g => g.id === activeChat.target) || {}).name || activeChat.target);
+          const r = await loadJSON('/ai/folder-suggest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_name: chatName, preview: preview.slice(-8).join(' | ') }) });
+          if (!r.success) { toast(r.message || 'Kunne ikke foreslå mappe'); return; }
+          const suggestion = r.suggestion || '';
+          if (confirm('✨ AI foreslår mappen «' + suggestion + '» for denne samtalen.\n\nLegge til mappen?')) {
+            chatFolders = chatFolders.filter(f => f.id !== 'all' && f.id !== 'personal' && f.id !== 'groups' && f.id !== 'channels');
+            chatFolders.push({ id: 'f' + Date.now().toString(36), name: suggestion.substring(0, 20), filters: [] });
+            await loadJSON('/folders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ folders: chatFolders }) });
+            toast('Mappe «' + suggestion.substring(0, 20) + '» lagt til', 'success');
+            loadFolders();
+          }
+        } catch (e) { toast('Kunne ikke foreslå mappe'); }
+        finally { btn.textContent = '📁✨'; }
+      });
+
       async function openChat(user) {
         activeChat = { type: 'user', target: user };
         replyingTo = null;
@@ -1823,6 +1885,8 @@
         composer.style.display = 'flex';
         clearImagePreview();
         document.getElementById('exportBtn').style.display = '';
+        document.getElementById('threadSummaryBtn').style.display = '';
+        document.getElementById('folderSuggestBtn').style.display = '';
         document.getElementById('pollBtn').style.display = 'none';
         await fetchVerificationStatus(user);
         updateVerifyButton();
@@ -1964,6 +2028,8 @@
         setChatMeta(e2eeHtml);
         updateVerifyButton();
         document.getElementById('exportBtn').style.display = '';
+        document.getElementById('threadSummaryBtn').style.display = '';
+        document.getElementById('folderSuggestBtn').style.display = '';
         document.getElementById('pollBtn').style.display = '';
         await loadGroup(groupId);
         loadPinnedMessages(groupId);
@@ -2285,6 +2351,15 @@
             } catch(e) { toast('Kunne ikke lagre'); }
           }},
           { icon: '⏰', label: 'Påminn meg', action: () => showReminderPicker(msgId) },
+          { icon: '🔗', label: 'Kopier lenke', action: () => {
+            if (!activeChat || activeChat.type === 'saved') return;
+            const route = activeChat.type === 'group'
+              ? '#group/' + encodeURIComponent(activeChat.target)
+              : '#chat/' + encodeURIComponent(activeChat.target);
+            const url = window.location.origin + window.location.pathname + route + '&mid=' + encodeURIComponent(msgId);
+            navigator.clipboard.writeText(url);
+            toast('Lenke til melding kopiert', 'success');
+          }},
           { icon: '🌐', label: 'Oversett', action: async () => {
             const textEl = msgEl.querySelector('.msg-text');
             if (!textEl) return;
@@ -3008,6 +3083,65 @@
         isRecording = false;
         const btn = document.getElementById('voiceRecordBtn');
         if (btn) { btn.textContent = '🎙️'; btn.classList.remove('recording'); }
+      }
+
+      let dictationActive = false;
+      let dictationRecognition = null;
+      const dictateBtn = document.getElementById('dictateBtn');
+      if (dictateBtn) {
+        dictateBtn.addEventListener('click', () => {
+          const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+          if (!SR) { toast('Tale-gjenkjenning støttes ikke i denne nettleseren'); return; }
+          const input = document.getElementById('messageInput');
+          if (dictationActive) {
+            dictationActive = false;
+            if (dictationRecognition) dictationRecognition.stop();
+            dictateBtn.style.color = '';
+            dictateBtn.style.background = '';
+            toast('Diktat stoppet');
+            return;
+          }
+          const rec = new SR();
+          dictationRecognition = rec;
+          rec.lang = localStorage.getItem('dictationLang') || 'nb-NO';
+          rec.interimResults = true;
+          rec.continuous = true;
+          let finalTranscript = (input && input.value ? input.value : '');
+          let hadResult = false;
+          dictationActive = true;
+          dictateBtn.style.color = 'var(--c-primary)';
+          dictateBtn.style.background = 'rgba(91,141,239,0.15)';
+          toast('🎤 Lytt... klikk 🎤 igjen for å stoppe');
+          rec.onresult = (e) => {
+            hadResult = true;
+            let interim = '';
+            for (let i = e.resultIndex; i < e.results.length; i++) {
+              const r = e.results[i];
+              if (r.isFinal) finalTranscript += (finalTranscript ? ' ' : '') + r[0].transcript;
+              else interim += r[0].transcript;
+            }
+            if (input) input.value = finalTranscript + (interim ? ' ' + interim : '');
+          };
+          rec.onerror = (e) => {
+            dictationActive = false;
+            dictateBtn.style.color = '';
+            dictateBtn.style.background = '';
+            if (e.error === 'not-allowed' || e.error === 'service-not-allowed') toast('Ingen mikrofontilgang');
+            else if (e.error !== 'aborted') toast('Diktatfeil: ' + e.error);
+          };
+          rec.onend = () => {
+            dictationActive = false;
+            dictateBtn.style.color = '';
+            dictateBtn.style.background = '';
+            if (hadResult) toast('Diktat ferdig', 'success');
+          };
+          try {
+            rec.start();
+          } catch (e) {
+            dictationActive = false;
+            toast('Kunne ikke starte diktat');
+          }
+        });
       }
 
       async function sendVoiceMessage(blob) {
@@ -4016,6 +4150,25 @@
              + '<div id="quietStatus" style="font-size:.8rem;color:#6d8094;margin-top:4px;"></div>'
              + '</div>'
              + '<div class="setting-section" style="border-top:1px solid var(--c-border);padding-top:10px;margin-top:6px;">'
+             + '<h3>📊 Dagsoppsummering</h3>'
+             + '<p style="font-size:.85rem;color:#6d8094;">Få en AI-oppsummering av uleste meldinger hver dag</p>'
+             + '<label style="display:flex;align-items:center;gap:8px;margin-top:6px;cursor:pointer;">'
+             + '<input type="checkbox" id="digestEnabled" style="width:18px;height:18px;accent-color:var(--c-primary);" />Aktiv</label>'
+             + '<div style="display:flex;gap:8px;margin-top:6px;align-items:center;">'
+             + '<input id="digestTime" type="time" class="input-text" value="09:00" style="flex:1;" />'
+             + '<span style="color:#6d8094;">klokkeslett</span>'
+             + '</div>'
+             + '<button id="saveDigestBtn" class="btn btn-small btn-primary" style="margin-top:8px;">Lagre</button>'
+             + '<div id="digestStatus" style="font-size:.8rem;color:#6d8094;margin-top:4px;"></div>'
+             + '</div>'
+             + '<div class="setting-section" style="border-top:1px solid var(--c-border);padding-top:10px;margin-top:6px;">'
+             + '<h3>🎨 AI-tema</h3>'
+             + '<p style="font-size:.85rem;color:#6d8094;">Beskriv et tema og la AI lage fargepaletten</p>'
+             + '<input id="themeDesc" class="input-text" placeholder="f.eks. rolig skog, mørk cyberpunk..." maxlength="500" style="margin-top:6px;" />'
+             + '<button id="generateThemeBtn" class="btn btn-small btn-primary" style="margin-top:8px;">Generer tema</button>'
+             + '<div id="themeStatus" style="font-size:.8rem;color:#6d8094;margin-top:4px;"></div>'
+             + '</div>'
+             + '<div class="setting-section" style="border-top:1px solid var(--c-border);padding-top:10px;margin-top:6px;">'
              + '<h3>Sikkerhetskopi</h3>'
              + '<p style="font-size:.85rem;color:#6d8094;">Last ned alle samtalene dine som JSON. E2EE-meldinger merkes som krypterte.</p>'
              + '<a href="/backup" class="btn btn-small btn-ghost" style="margin-top:8px;display:inline-block;">⬇️ Last ned backup</a>'
@@ -4151,6 +4304,75 @@
                 quietStatus.textContent = enabled ? 'Stille-timer aktiv: ' + quietStart.value + '–' + quietEnd.value : 'Stille-timer av';
                 toast('Stille-timer lagret', 'success');
               } catch (e) { toast('Kunne ikke lagre stille-timer'); }
+            });
+          }
+        })();
+
+        (async () => {
+          const digestEnabled = overlay.querySelector('#digestEnabled');
+          const digestTime = overlay.querySelector('#digestTime');
+          const saveDigestBtn = overlay.querySelector('#saveDigestBtn');
+          const digestStatus = overlay.querySelector('#digestStatus');
+          if (digestEnabled) {
+            try {
+              const d = await loadJSON('/settings/digest');
+              digestEnabled.checked = !!d.enabled;
+              if (d.time) digestTime.value = d.time;
+              if (d.enabled) digestStatus.textContent = 'Dagsoppsummering: ' + d.time + ' (server-tid)';
+            } catch (e) {}
+            saveDigestBtn.addEventListener('click', async () => {
+              const enabled = digestEnabled.checked;
+              const localVal = digestTime.value;
+              const [hh, mm] = localVal.split(':').map(Number);
+              const conv = new Date();
+              conv.setHours(hh, mm, 0, 0);
+              const utcVal = String(conv.getUTCHours()).padStart(2, '0') + ':' + String(conv.getUTCMinutes()).padStart(2, '0');
+              try {
+                await loadJSON('/settings/digest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled, time: utcVal }) });
+                digestStatus.textContent = enabled ? 'Dagsoppsummering: ' + localVal + ' (lokal tid)' : 'Dagsoppsummering av';
+                toast('Dagsoppsummering lagret', 'success');
+              } catch (e) { toast('Kunne ikke lagre dagsoppsummering'); }
+            });
+          }
+        })();
+
+        (async () => {
+          const themeDesc = overlay.querySelector('#themeDesc');
+          const generateThemeBtn = overlay.querySelector('#generateThemeBtn');
+          const themeStatus = overlay.querySelector('#themeStatus');
+          if (generateThemeBtn) {
+            generateThemeBtn.addEventListener('click', async () => {
+              const description = themeDesc.value.trim();
+              if (!description) { toast('Beskriv et tema først'); return; }
+              generateThemeBtn.disabled = true;
+              themeStatus.textContent = 'Genererer med AI... (kan ta ~1 minutt)';
+              try {
+                const r = await loadJSON('/ai/theme', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ description }) });
+                if (!r.success) { themeStatus.textContent = r.message || 'Kunne ikke generere tema'; return; }
+                const t = r.theme || {};
+                let css = ':root {\n';
+                const map = [
+                  ['--c-bg', ['--c-bg', '--c-chat-bg']],
+                  ['--c-card', ['--c-card', '--c-surface-2', '--c-badge-bg', '--c-badge-border']],
+                  ['--c-surface', ['--c-surface']],
+                  ['--c-text', ['--c-text', '--c-text-chat', '--c-sent-text']],
+                  ['--c-text-muted', ['--c-text-muted', '--c-text-meta', '--c-text-preview', '--c-badge-text']],
+                  ['--c-border', ['--c-border', '--c-border-item']],
+                  ['--c-primary', ['--c-brand', '--c-accent', '--c-accent2', '--c-accent5', '--c-primary']],
+                  ['--c-sender', ['--c-sender']],
+                  ['--c-sent-bg', ['--c-sent-bg', '--c-sent-border']],
+                  ['--c-received-bg', ['--c-received-bg', '--c-received-border']],
+                ];
+                for (const [src, targets] of map) {
+                  if (!t[src]) continue;
+                  for (const target of targets) css += '  ' + target + ': ' + t[src] + ';\n';
+                }
+                css += '}';
+                localStorage.setItem('customThemeCSS', css);
+                themeStatus.textContent = 'Tema lagret! Last inn siden for å se det.';
+                toast('Tema generert ✓', 'success');
+              } catch (e) { themeStatus.textContent = 'Kunne ikke generere tema'; }
+              finally { generateThemeBtn.disabled = false; }
             });
           }
         })();
@@ -5915,14 +6137,35 @@
       });
       if (window.location.hash) {
         const hash = window.location.hash.substring(1);
-        if (hash.startsWith('chat/')) {
-          const user = decodeURIComponent(hash.substring(5));
+        let targetMsgId = '';
+        const parts = hash.split('&');
+        for (const p of parts) {
+          if (p.startsWith('mid=')) targetMsgId = decodeURIComponent(p.substring(4));
+        }
+        const route = parts[0] || '';
+        const scrollToTarget = () => {
+          if (!targetMsgId) return;
+          const tryScroll = () => {
+            const el = messagesBox.querySelector('[data-msg-id="' + CSS.escape(targetMsgId) + '"]');
+            if (el) {
+              el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              el.classList.add('msg-flash');
+              setTimeout(() => el.classList.remove('msg-flash'), 2500);
+              return;
+            }
+            if (window.__scrollAttempts === undefined) window.__scrollAttempts = 0;
+            if (window.__scrollAttempts++ < 60) setTimeout(tryScroll, 100);
+          };
+          setTimeout(tryScroll, 300);
+        };
+        if (route.startsWith('chat/')) {
+          const user = decodeURIComponent(route.substring(5));
           const item = document.querySelector('.item[data-user="' + CSS.escape(user) + '"]');
-          if (item) setTimeout(() => item.click(), 100);
-        } else if (hash.startsWith('group/')) {
-          const gid = decodeURIComponent(hash.substring(6));
+          if (item) setTimeout(() => { item.click(); scrollToTarget(); }, 100);
+        } else if (route.startsWith('group/')) {
+          const gid = decodeURIComponent(route.substring(6));
           const item = document.querySelector('.item[data-group-id="' + CSS.escape(gid) + '"]');
-          if (item) setTimeout(() => item.click(), 100);
+          if (item) setTimeout(() => { item.click(); scrollToTarget(); }, 100);
         }
       }
 
@@ -6351,6 +6594,34 @@
         toast('⏰ ' + text, 'info');
         try {
           if (Notification.permission === 'granted') new Notification('⏰ Påminnelse', { body: text, icon: '/static/favicon.ico' });
+        } catch (e) {}
+        try { playNotificationSound(); } catch (e) {}
+      };
+
+      window.__onDigest = (data) => {
+        const summary = (data && data.summary) || '';
+        const title = (data && data.title) || 'Dagsoppsummering';
+        if (!summary) return;
+        toast('📊 ' + title, 'info');
+        try {
+          if (Notification.permission === 'granted') new Notification('📊 ' + title, { body: summary.substring(0, 140), icon: '/static/favicon.ico' });
+        } catch (e) {}
+        let panel = document.querySelector('.digest-panel');
+        if (panel) panel.remove();
+        panel = document.createElement('div');
+        panel.className = 'digest-panel';
+        panel.innerHTML = '<div class="digest-head"><span>📊 ' + escapeHtml(title) + '</span><button class="digest-close">✕</button></div><div class="digest-body">' + escapeHtml(summary).replace(/\n/g, '<br>') + '</div>';
+        document.body.appendChild(panel);
+        panel.querySelector('.digest-close').addEventListener('click', () => panel.remove());
+        setTimeout(() => { if (panel.isConnected) panel.remove(); }, 60000);
+      };
+
+      window.__onBroadcast = (data) => {
+        const text = (data && data.text) || '';
+        if (!text) return;
+        toast('📢 ' + text, 'info');
+        try {
+          if (Notification.permission === 'granted') new Notification('📢 Kunngjøring', { body: text.substring(0, 140), icon: '/static/favicon.ico' });
         } catch (e) {}
         try { playNotificationSound(); } catch (e) {}
       };

@@ -912,3 +912,11 @@ body.offline .messages .msg.sent { opacity:.6; }
 .reminder-picker button.cancel { background:none; color:var(--c-text-muted); }
 
 .msg-translation { margin-top:4px; font-size:.8rem; color:var(--c-text-muted); font-style:italic; border-top:1px dashed var(--c-border-item); padding-top:4px; }
+
+.ai-thread-panel, .digest-panel { position:fixed; top:60px; right:12px; width:340px; max-width:92vw; max-height:55vh; overflow-y:auto; background:var(--c-card); border:1px solid var(--c-border); border-radius:14px; box-shadow:0 8px 30px rgba(0,0,0,.35); z-index:2000; }
+.ai-thread-head, .digest-head { display:flex; align-items:center; justify-content:space-between; padding:12px 14px; border-bottom:1px solid var(--c-border); font-weight:600; font-size:.9rem; }
+.ai-thread-close, .digest-close { background:none; border:none; color:var(--c-text-muted); cursor:pointer; font-size:1rem; }
+.ai-thread-body, .digest-body { padding:12px 14px; font-size:.85rem; line-height:1.5; color:var(--c-text); white-space:pre-wrap; }
+
+.msg-flash { animation: msgFlash 2.5s ease; border-radius:10px; }
+@keyframes msgFlash { 0% { background:rgba(51,144,236,.35); } 100% { background:transparent; } }

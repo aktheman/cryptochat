@@ -37,3 +37,10 @@ a { color:#cf6fef; text-decoration:none; }
 .insights-bar-col { flex:1; display:flex; flex-direction:column; align-items:center; height:100%; justify-content:flex-end; min-width:0; }
 .insights-bar { width:100%; background:#3390ec; border-radius:3px 3px 0 0; min-height:2px; }
 .insights-bar-label { font-size:.6rem; color:#6d8094; margin-top:4px; white-space:nowrap; overflow:hidden; }
+
+.broadcast-box { background:#17213b; border:1px solid #1c2436; border-radius:10px; padding:16px; margin-bottom:16px; }
+.broadcast-box h2 { margin:0 0 10px; font-size:1rem; color:#e7e8f3; }
+.broadcast-input { width:100%; min-height:60px; background:#0e1621; border:1px solid #1e2c3a; border-radius:8px; color:#fff; padding:10px; font-size:.9rem; resize:vertical; box-sizing:border-box; }
+.broadcast-input:focus { outline:none; border-color:#3390ec; }
+.broadcast-row { display:flex; align-items:center; gap:12px; margin-top:10px; }
+.broadcast-status { font-size:.8rem; color:#22c55e; }

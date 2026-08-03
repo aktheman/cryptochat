@@ -113,6 +113,22 @@
 
   function escape(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
+  document.getElementById('broadcastBtn')?.addEventListener('click', async () => {
+    const text = document.getElementById('broadcastText').value.trim();
+    if (!text) return showToast('Skriv noe først');
+    const status = document.getElementById('broadcastStatus');
+    status.textContent = 'Sender...';
+    const d = await api('/admin/broadcast', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
+    if (d.success) {
+      document.getElementById('broadcastText').value = '';
+      status.textContent = 'Sent til ' + d.sent + ' bruker' + (d.sent === 1 ? '' : 'e') + ' ✓';
+      showToast('Kunngjøring sendt til ' + d.sent + ' bruker' + (d.sent === 1 ? '' : 'e'));
+      setTimeout(() => { status.textContent = ''; }, 5000);
+    } else {
+      status.textContent = d.message || 'Kunne ikke sende';
+    }
+  });
+
   document.addEventListener('click', (e) => {
     const tab = e.target.closest('[data-section]');
     if (tab) showSection(tab.getAttribute('data-section'));

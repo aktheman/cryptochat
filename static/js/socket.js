@@ -49,6 +49,14 @@ function initSocketIO() {
     if (window.__onReminder) window.__onReminder(data);
   });
 
+  socket.on('digest', (data) => {
+    if (window.__onDigest) window.__onDigest(data);
+  });
+
+  socket.on('broadcast', (data) => {
+    if (window.__onBroadcast) window.__onBroadcast(data);
+  });
+
   window.__SOCKET = socket;
 }
 
