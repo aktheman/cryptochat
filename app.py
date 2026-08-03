@@ -1424,8 +1424,9 @@ def ai_theme():
     allowed_keys = {'--c-bg', '--c-card', '--c-surface', '--c-text', '--c-text-muted', '--c-border', '--c-primary', '--c-sender', '--c-sent-bg', '--c-received-bg'}
     clean = {}
     for k, v in theme.items():
-        if k in allowed_keys and isinstance(v, str) and re.match(r'^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$', v.strip()):
-            clean[k] = v.strip()
+        norm = k if k.startswith('--') else '--' + k
+        if norm in allowed_keys and isinstance(v, str) and re.match(r'^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$', v.strip()):
+            clean[norm] = v.strip()
     if len(clean) < 4:
         return jsonify({'success': False, 'message': 'AI ga ikke gyldig tema.'}), 502
     return jsonify({'success': True, 'theme': clean})
