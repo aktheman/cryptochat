@@ -7,7 +7,7 @@ from pathlib import Path
 import logging
 
 BASE_DIR = Path(__file__).resolve().parent
-DATA_DIR = BASE_DIR / 'data'
+DATA_DIR = Path(os.environ.get('CRYPTOCHAT_DATA_DIR', str(BASE_DIR / 'data')))
 
 _cache = {}
 _cache_ttl = {}

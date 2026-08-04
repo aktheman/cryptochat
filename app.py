@@ -55,12 +55,28 @@ app.config.update(
 )
 app.config.update(
     MAX_CONTENT_LENGTH=50 * 1024 * 1024,
-    UPLOAD_FOLDER=os.path.join(os.path.dirname(__file__), 'data/uploads'),
+    UPLOAD_FOLDER=os.path.join(str(DATA_DIR), 'uploads'),
     ALLOWED_EXTENSIONS={'png', 'jpg', 'jpeg', 'gif', 'webp', 'pdf', 'txt', 'zip', 'mp3', 'wav', 'ogg', 'webm', 'opus', 'm4a'}
 )
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
+def _strip_server_private_keys():
+    try:
+        users = load_json(USERS_FILE, {})
+        changed = False
+        for u in users:
+            ik = users[u].get('identity_keypair')
+            if isinstance(ik, dict) and 'private' in ik:
+                ik.pop('private', None)
+                changed = True
+        if changed:
+            save_json(USERS_FILE, users)
+    except Exception as e:
+        logger.warning('private-key cleanup failed: %s', e)
+
 init_db()
 migrate_json_files()
+_strip_server_private_keys()
 app._start_time = time.time()
 
 socketio = SocketIO(app, cors_allowed_origins=app.config.get('CSRF_TRUSTED_ORIGINS', []), async_mode='eventlet')
@@ -639,7 +655,7 @@ def register():
         'is_admin': False,
         'twofa_enabled': False,
         'twofa_secret_hash': None,
-        'identity_keypair': generate_identity_keypair(),
+        'identity_keypair': {'public': generate_identity_keypair()['public']},
         'notifications_enabled': True,
         'recovery_codes': recovery_codes_hashed,
     }
@@ -688,7 +704,7 @@ def login():
         try:
             dest_at = datetime.fromisoformat(user['self_destruct_at'])
             if dest_at <= datetime.utcnow():
-                users[:] = [u for u in users if u.get('username') != username]
+                users = {u: v for u, v in users.items() if u != username}
                 save_json(USERS_FILE, users)
                 messages = load_json(MESSAGES_FILE, [])
                 messages[:] = [m for m in messages if m.get('sender') != username and m.get('recipient') != username]
@@ -2039,7 +2055,7 @@ def set_typing():
         typing.get(username, {}).pop(target, None)
     save_json(TYPING_FILE, typing)
     notify_user(socketio, target, 'typing', {
-        'sender': username,
+        'username': username,
         'isTyping': is_typing,
     })
     return jsonify({'success': True})
@@ -4300,7 +4316,7 @@ def rotate_key():
     if me not in users:
         return jsonify({'success': False, 'message': 'Bruker ikke funnet.'}), 404
     new_keypair = generate_identity_keypair()
-    users[me]['identity_keypair'] = new_keypair
+    users[me]['identity_keypair'] = {'public': new_keypair['public']}
     users[me]['key_rotated_at'] = now_iso()
     save_json(USERS_FILE, users)
     audit('key_rotated', actor=me, target=me)

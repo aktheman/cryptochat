@@ -15,8 +15,8 @@ enc() {
   python3 ./backup_crypto.py enc "$1" "$2"
 }
 
-if [ -f "$DATA_DIR/cryptochat.db" ]; then
-  enc "$DATA_DIR/cryptochat.db" "$BACKUP_DIR/db_${TIMESTAMP}${ENC_SUFFIX}"
+if [ -f "$DATA_DIR/cryptochat.sqlite3" ]; then
+  enc "$DATA_DIR/cryptochat.sqlite3" "$BACKUP_DIR/db_${TIMESTAMP}${ENC_SUFFIX}"
   echo "[$(date)] Database encrypted backup: db_${TIMESTAMP}${ENC_SUFFIX}"
 fi
 

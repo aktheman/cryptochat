@@ -1295,7 +1295,7 @@
           const lastSeenText = presence[name] ? '' : (window.__lastSeenTimes && window.__lastSeenTimes[name] ? '<div class="last-seen">Sist sett: ' + escapeHtml(formatTime(window.__lastSeenTimes[name])) + '</div>' : '');
           const pinIcon = isPinnedChat(name, 'user') ? '<span class="pin-indicator" style="font-size:.65rem;margin-left:4px;" title="Festet">📌</span>' : '';
           const key = window.__allUsers?.find ? window.__allUsers.find(x => (x && x.username) === name) : undefined;
-          const hasKey = (typeof key === 'object' && key && key.identity_public_key);
+          const hasKey = (typeof key === 'object' && key && key.publicKey);
           const lockIcon = hasKey ? '<span class="e2ee" title="E2EE">🔒</span>' : '';
           const labels = chatLabels[name] || [];
           const labelBadges = labels.length ? '<div class="label-badges">' + labels.map(l => '<span class="label-badge">' + escapeHtml(l) + '</span>').join('') + '</div>' : '';
@@ -2001,9 +2001,9 @@
         try {
           const keyData = await loadJSON('/groups/' + encodeURIComponent(groupId) + '/keys');
           if (keyData.encryptedKey) {
-            const creatorPub = await getPeerPublicKeyPem(group.created_by);
-            if (creatorPub) {
-              const sharedKey = await window.__CRYPTO__.getSharedKey(creatorPub);
+            const ownPub = await getPeerPublicKeyPem(window.__APP__?.username || '');
+            if (ownPub) {
+              const sharedKey = await window.__CRYPTO__.getSharedKey(ownPub);
               const parts = keyData.encryptedKey.split('.');
               if (parts.length === 2) {
                 const iv = base64ToArrayBuffer(parts[0]);

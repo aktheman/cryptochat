@@ -52,7 +52,7 @@ def register_socket_handlers(socketio):
         is_typing = data.get('isTyping', True)
         if target:
             room = f'user:{target}'
-            emit('typing_notification', {
+            emit('typing', {
                 'username': username,
                 'chatType': chat_type,
                 'isTyping': is_typing,

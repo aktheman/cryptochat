@@ -8,6 +8,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+test_data_dir = tempfile.mkdtemp(prefix='cryptochat-test-data-')
+os.environ['CRYPTOCHAT_DATA_DIR'] = test_data_dir
 secret_key_path = Path(__file__).resolve().parent.parent / 'tests' / 'test_secret.key'
 if secret_key_path.exists():
     os.environ['SECRET_KEY_FILE'] = str(secret_key_path)
