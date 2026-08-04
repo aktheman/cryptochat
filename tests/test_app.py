@@ -1802,3 +1802,99 @@ class TestAdminBroadcast:
         notif = app_mod.load_json(app_mod.NOTIFICATIONS_FILE, {})
         types = [n.get('type') for n in notif.get('bob', [])]
         assert 'broadcast' in types
+
+
+class TestDigestE2eePlaceholder:
+    def test_plain_text_passthrough(self):
+        import app as app_mod
+        assert app_mod._digest_text({'type': 'text', 'ciphertext': 'Hei, hvordan går det?'}) == 'Hei, hvordan går det?'
+
+    def test_e2ee_ciphertext_masked(self):
+        import app as app_mod
+        fake_ct = 'MDEyMzQ1Njc4OWFiY2RlZg==.cT8pR3dsNkZ0anNsbWRvcXRoZm50d2N6bVFLTHk3MmV4eA=='
+        assert app_mod._digest_text({'type': 'text', 'ciphertext': fake_ct}) == '[kryptert melding]'
+
+    def test_file_uses_filename(self):
+        import app as app_mod
+        assert app_mod._digest_text({'type': 'file', 'filename': 'rapport.pdf'}) == '📎 rapport.pdf'
+
+
+class TestPushSubscribe:
+    def test_vapid_key_endpoint(self, client):
+        import app as app_mod
+        r = client.get('/push/vapid-key')
+        assert r.status_code == 200
+        assert r.get_json()['key'] == app_mod.VAPID_PUBLIC_KEY
+
+    def test_subscribe_and_unsubscribe(self, client):
+        import app as app_mod
+        _register(client, 'alice')
+        sub = {'endpoint': 'https://push.example.test/x', 'keys': {'p256dh': 'A' * 43, 'auth': 'B' * 22}, 'expirationTime': None}
+        r = client.post('/push/subscribe', json={'subscription': sub})
+        assert r.status_code == 200
+        subs = app_mod.load_json(app_mod.PUSH_SUBSCRIPTIONS_FILE, {})
+        assert subs['alice'][0]['endpoint'] == sub['endpoint']
+        r = client.post('/push/unsubscribe', json={'endpoint': sub['endpoint']})
+        assert r.status_code == 200
+        subs = app_mod.load_json(app_mod.PUSH_SUBSCRIPTIONS_FILE, {})
+        assert subs['alice'] == []
+
+
+class TestWebPushSend:
+    def _stub_server(self, status_code):
+        import http.server
+        import threading
+        import base64
+
+        captured = {}
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                length = int(self.headers.get('Content-Length', 0))
+                captured['body'] = self.rfile.read(length)
+                captured['headers'] = dict(self.headers)
+                self.send_response(status_code)
+                self.end_headers()
+            def log_message(self, *args):
+                pass
+
+        server = http.server.HTTPServer(('127.0.0.1', 0), Handler)
+        t = threading.Thread(target=server.serve_forever, daemon=True)
+        t.start()
+        return server, captured
+
+    def _subscription(self, endpoint):
+        from cryptography.hazmat.primitives.asymmetric import ec
+        from cryptography.hazmat.primitives import serialization
+        import base64
+        kp = ec.generate_private_key(ec.SECP256R1())
+        p256dh = base64.urlsafe_b64encode(kp.public_key().public_bytes(serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint)).decode().rstrip('=')
+        auth = base64.urlsafe_b64encode(os.urandom(16)).decode().rstrip('=')
+        return {'endpoint': endpoint, 'keys': {'p256dh': p256dh, 'auth': auth}}
+
+    def test_send_delivers_encrypted_payload(self, client):
+        import app as app_mod
+        if not app_mod.VAPID_PUBLIC_KEY or not app_mod.VAPID_PRIVATE_KEY:
+            import pytest as _pt
+            _pt.skip('VAPID-nøkler mangler')
+        server, captured = self._stub_server(201)
+        endpoint = f'http://127.0.0.1:{server.server_address[1]}/push'
+        ok = app_mod._send_web_push(self._subscription(endpoint), 'Tittel', 'Melding', '/chat')
+        server.server_close()
+        assert ok is True
+        assert captured['body']
+        headers = {k.lower(): v for k, v in captured['headers'].items()}
+        assert headers.get('content-encoding') == 'aes128gcm'
+        assert headers.get('authorization', '').startswith('vapid')
+
+    def test_expired_subscription_removed(self, client):
+        import app as app_mod
+        server, captured = self._stub_server(410)
+        endpoint = f'http://127.0.0.1:{server.server_address[1]}/push'
+        sub = self._subscription(endpoint)
+        app_mod.load_json(app_mod.PUSH_SUBSCRIPTIONS_FILE, {})
+        subs = {'alice': [sub]}
+        app_mod.save_json(app_mod.PUSH_SUBSCRIPTIONS_FILE, subs)
+        app_mod._notify_push('alice', 'T', 'B', '/chat')
+        server.server_close()
+        subs = app_mod.load_json(app_mod.PUSH_SUBSCRIPTIONS_FILE, {})
+        assert subs.get('alice') == []

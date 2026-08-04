@@ -474,7 +474,7 @@
     }
     const key = await window.__CRYPTO__.getSharedKey(peerPublicKeyPem);
     const encrypted = await window.__CRYPTO__.encryptMessage(plaintext, key);
-    return encrypted.ciphertext;
+    return encrypted.iv + '.' + encrypted.ciphertext;
   }
 
   async function decryptFromPeer(ciphertext, peerPublicKeyPem) {

@@ -27,6 +27,38 @@ self.addEventListener('activate', (e) => {
   );
 });
 
+self.addEventListener('push', (e) => {
+  let data = { title: 'CryptoChat', body: '', url: '/' };
+  try {
+    const parsed = e.data ? e.data.json() : {};
+    data = Object.assign({ title: 'CryptoChat', body: '', url: '/' }, parsed);
+  } catch (err) {}
+  e.waitUntil(
+    self.registration.showNotification(data.title, {
+      body: data.body,
+      icon: '/static/img/icon-192.png',
+      badge: '/static/img/icon-192.png',
+      data: { url: data.url },
+    })
+  );
+});
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const url = (e.notification.data && e.notification.data.url) || '/chat';
+  e.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+      for (const client of windowClients) {
+        if ('focus' in client) {
+          client.navigate(url);
+          return client.focus();
+        }
+      }
+      return clients.openWindow(url);
+    })
+  );
+});
+
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
   const url = new URL(e.request.url);

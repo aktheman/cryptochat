@@ -20,7 +20,7 @@ import logging
 from db import load_json, save_json, init_db, migrate_json_files, invalidate_cache, _cache, _get_conn
 from config import *
 from flask_socketio import SocketIO
-from sockets import register_socket_handlers, notify_user
+from sockets import register_socket_handlers, notify_user, online_users
 
 logger = logging.getLogger('cryptochat')
 
@@ -1254,6 +1254,16 @@ def _llm_summary(digest):
     )
     return _llm_chat(prompt, system='Du er en kortfattet assistent som oppsummerer chatter.', max_tokens=250, temperature=0.4) or 'Ingen oppsummering.'
 
+_E2EE_CIPHERTEXT_RE = re.compile(r'^[A-Za-z0-9+/]{20,}={0,2}\.[A-Za-z0-9+/]{20,}={0,2}$')
+
+def _digest_text(m):
+    if m.get('type') in ('file', 'file_e2ee'):
+        return '📎 ' + (m.get('filename') or 'fil')
+    ct = m.get('ciphertext') or ''
+    if _E2EE_CIPHERTEXT_RE.match(ct):
+        return '[kryptert melding]'
+    return ct or '[melding]'
+
 def _collect_unread(me, since=None):
     messages = load_json(MESSAGES_FILE, [])
     groups = load_json(GROUPS_FILE, [])
@@ -1297,7 +1307,7 @@ def _collect_unread(me, since=None):
             'last': [
                 {
                     'sender': x.get('sender', ''),
-                    'text': x.get('ciphertext') or x.get('filename') or '[melding]',
+                    'text': _digest_text(x),
                     'timestamp': x.get('timestamp', ''),
                 }
                 for x in msgs[-3:]
@@ -1526,6 +1536,7 @@ def send_message():
         'sender': session['username'],
         'message': messages[-1],
     })
+    _notify_push(recipient, session['username'], _digest_text(messages[-1]), '/chat#' + session['username'])
     return jsonify({'success': True, 'message': 'Melding sendt.'})
 
 @app.route('/upload', methods=['POST'])
@@ -1554,18 +1565,14 @@ def upload_file():
     if not abs_target.startswith(abs_root + os.sep):
         return jsonify({'success': False, 'message': 'Ugyldig filsti.'}), 400
     file.save(target)
-    with open(target, 'rb') as fh:
-        file_bytes = fh.read()
-    file_b64 = base64.b64encode(file_bytes).decode()
-    shared_key = get_or_create_pair_key(session['username'], recipient)
     pk = pair_key(session['username'], recipient)
     messages = load_json(MESSAGES_FILE, [])
     messages.append({
-        'id': hashlib.sha256(f"{file_b64}{datetime.utcnow().isoformat()}{session['username']}{recipient}".encode()).hexdigest(),
+        'id': hashlib.sha256(f"{target}{datetime.utcnow().isoformat()}{session['username']}{recipient}".encode()).hexdigest(),
         'pair_key': pk,
         'sender': session['username'],
         'recipient': recipient,
-        'ciphertext': file_b64,
+        'ciphertext': '',
         'type': 'file',
         'timestamp': datetime.utcnow().isoformat(),
         'read': False,
@@ -2031,6 +2038,7 @@ def send_group_message(group_id):
                 'sender': session['username'],
                 'message': messages[-1],
             })
+            _notify_push(member, group.get('name') or 'Gruppe', session['username'] + ': ' + _digest_text(messages[-1]), '/chat#group/' + group_id)
     return jsonify({'success': True, 'message': 'Melding sendt.'})
 
 # ──────────────────────────────────────────────
@@ -4207,6 +4215,71 @@ def get_wallpaper(chat_type, chat_id):
 # ──────────────────────────────────────────────
 # PWA Push Notifications
 # ──────────────────────────────────────────────
+def _load_vapid_keys():
+    pub = os.environ.get('VAPID_PUBLIC_KEY', '')
+    priv = os.environ.get('VAPID_PRIVATE_KEY', '')
+    pub_file = Path('secrets/vapid_public.key')
+    priv_file = Path('secrets/vapid_private.key')
+    if pub_file.exists():
+        pub = pub_file.read_text(encoding='utf-8').strip() or pub
+    if priv_file.exists():
+        priv = priv_file.read_text(encoding='utf-8').strip() or priv
+    return pub, priv
+
+VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY = _load_vapid_keys()
+
+def _send_web_push(sub, title, body, url=''):
+    if not (VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY):
+        return False
+    try:
+        from pywebpush import webpush, WebPushException
+        keys = sub.get('keys') or {}
+        subscription_info = {
+            'endpoint': sub.get('endpoint'),
+            'keys': {
+                'p256dh': keys.get('p256dh', ''),
+                'auth': keys.get('auth', ''),
+            },
+        }
+        payload = json.dumps({'title': title, 'body': body, 'url': url})
+        response = webpush(
+            subscription_info=subscription_info,
+            data=payload,
+            vapid_private_key=VAPID_PRIVATE_KEY,
+            vapid_claims={'sub': 'mailto:cryptochat@example.com'},
+            content_encoding='aes128gcm',
+            ttl=120,
+            timeout=10,
+        )
+        return True
+    except WebPushException as e:
+        if e.response is not None and e.response.status_code in (404, 410):
+            return 'expired'
+        logger.warning('web push failed: %s', e)
+        return False
+    except Exception as e:
+        logger.warning('web push failed: %s', e)
+        return False
+
+def _notify_push(username, title, body, url=''):
+    if username in online_users:
+        return
+    try:
+        subs = load_json(PUSH_SUBSCRIPTIONS_FILE, {})
+        entries = subs.get(username) or []
+        if not entries:
+            return
+        changed = False
+        for sub in list(entries):
+            res = _send_web_push(sub, title, body, url)
+            if res == 'expired':
+                subs[username] = [s for s in subs[username] if s.get('endpoint') != sub.get('endpoint')]
+                changed = True
+        if changed:
+            save_json(PUSH_SUBSCRIPTIONS_FILE, subs)
+    except Exception as e:
+        logger.warning('push notify failed for %s: %s', username, e)
+
 @app.route('/push/subscribe', methods=['POST'])
 @rate_limit(max_requests=10, window_seconds=300)
 @require_login
@@ -4243,8 +4316,7 @@ def push_unsubscribe():
 
 @app.route('/push/vapid-key')
 def push_vapid_key():
-    vapid_key = os.environ.get('VAPID_PUBLIC_KEY', '')
-    return jsonify({'success': True, 'key': vapid_key})
+    return jsonify({'success': True, 'key': VAPID_PUBLIC_KEY})
 
 # ──────────────────────────────────────────────
 # Link Previews
