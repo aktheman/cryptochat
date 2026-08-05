@@ -1,0 +1,10 @@
+[Unit]
+Description=Kryptert sikkerhetskopi av CryptoChat (data + secrets)
+After=cryptochat.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/aktheman/cryptochat
+ExecStart=/home/aktheman/cryptochat/scripts/backup.sh
+Nice=19
+IOSchedulingClass=idle

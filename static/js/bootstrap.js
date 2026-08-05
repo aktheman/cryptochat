@@ -65,15 +65,21 @@
       if (!('PushManager' in window)) return;
       if (!window.__APP__.username) return;
       const reg = await navigator.serviceWorker.ready;
+      const res = await fetch('/push/vapid-key');
+      const data = await res.json();
+      if (!data.key) return;
       let sub = await reg.pushManager.getSubscription();
+      const knownKey = localStorage.getItem('vapidKey') || '';
+      if (sub && knownKey && knownKey !== data.key) {
+        await sub.unsubscribe();
+        sub = null;
+      }
       if (!sub) {
-        const res = await fetch('/push/vapid-key');
-        const data = await res.json();
-        if (!data.key) return;
         sub = await reg.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: urlBase64ToUint8Array(data.key),
         });
+        localStorage.setItem('vapidKey', data.key);
       }
       await fetch('/push/subscribe', {
         method: 'POST',
