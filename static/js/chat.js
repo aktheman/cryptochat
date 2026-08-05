@@ -4168,11 +4168,21 @@
              + '<button id="generateThemeBtn" class="btn btn-small btn-primary" style="margin-top:8px;">Generer tema</button>'
              + '<div id="themeStatus" style="font-size:.8rem;color:#6d8094;margin-top:4px;"></div>'
              + '</div>'
-             + '<div class="setting-section" style="border-top:1px solid var(--c-border);padding-top:10px;margin-top:6px;">'
-             + '<h3>Sikkerhetskopi</h3>'
-             + '<p style="font-size:.85rem;color:#6d8094;">Last ned alle samtalene dine som JSON. E2EE-meldinger merkes som krypterte.</p>'
-             + '<a href="/backup" class="btn btn-small btn-ghost" style="margin-top:8px;display:inline-block;">⬇️ Last ned backup</a>'
-             + '</div>'
+              + '<div class="setting-section" style="border-top:1px solid var(--c-border);padding-top:10px;margin-top:6px;">'
+              + '<h3>Sikkerhetskopi</h3>'
+              + '<p style="font-size:.85rem;color:#6d8094;">Last ned alle samtalene dine som JSON. E2EE-meldinger merkes som krypterte.</p>'
+              + '<a href="/backup" class="btn btn-small btn-ghost" style="margin-top:8px;display:inline-block;">⬇️ Last ned backup</a>'
+              + '</div>'
+              + '<div class="setting-section" style="border-top:1px solid var(--c-border);padding-top:10px;margin-top:6px;">'
+              + '<h3>🔑 E2EE-nøkkelbackup</h3>'
+              + '<p style="font-size:.85rem;color:#6d8094;">Krypter E2EE-nøklene dine med en gjenopprettingsfrase og last opp til serveren. Bruk frasen til å gjenopprette nøklene på en ny enhet.</p>'
+              + '<div style="display:flex;gap:8px;margin-top:8px;">'
+              + '<button id="backupKeysBtn" class="btn btn-small btn-primary">Eksporter nøkler</button>'
+              + '<button id="restoreKeysBtn" class="btn btn-small btn-ghost">Gjenopprett nøkler</button>'
+              + '<input id="restoreKeysFile" type="file" accept=".json" style="display:none" />'
+              + '</div>'
+              + '<div id="keyBackupStatus" style="font-size:.8rem;color:#6d8094;margin-top:6px;"></div>'
+              + '</div>'
              + '<div class="modal-actions">'
            + '<button id="profileCancelBtn" class="btn btn-ghost">Avbryt</button>'
            + '<button id="profileSaveBtn" class="btn btn-primary">Lagre</button>'
@@ -4257,6 +4267,53 @@
             toast(d.message || 'Selvødeleggelse oppdatert', 'success');
             document.getElementById('destructStatus').textContent = delay > 0 ? 'Konto slettes om ' + delay + ' dager' : '';
           } catch(e) { toast('Kunne ikke oppdatere'); }
+        });
+
+        const backupKeysBtn = overlay.querySelector('#backupKeysBtn');
+        const restoreKeysBtn = overlay.querySelector('#restoreKeysBtn');
+        const restoreKeysFile = overlay.querySelector('#restoreKeysFile');
+        const keyBackupStatus = overlay.querySelector('#keyBackupStatus');
+        const setKeyBackupStatus = (msg) => { if (keyBackupStatus) keyBackupStatus.textContent = msg; };
+        if (backupKeysBtn) backupKeysBtn.addEventListener('click', async () => {
+          if (!window.__CRYPTO__ || !window.__CRYPTO__.exportBackup) return setKeyBackupStatus('Kryptering ikke tilgjengelig');
+          const phrase = prompt('Lag en gjenopprettingsfrase (minst 10 tegn). Denne krypterer nøklene dine og kan aldri hentes igjen.');
+          if (!phrase) return;
+          if (phrase.length < 10) return setKeyBackupStatus('Frasen må være minst 10 tegn');
+          const confirmPhrase = prompt('Gjenta frasen for bekreftelse:');
+          if (confirmPhrase !== phrase) return setKeyBackupStatus('Frasene matchet ikke');
+          try {
+            setKeyBackupStatus('Krypterer nøkler...');
+            const blob = JSON.stringify(await window.__CRYPTO__.exportBackup(phrase));
+            const res = await fetch('/account/backup', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ blob })
+            });
+            const data = await res.json();
+            if (!data.success) return setKeyBackupStatus(data.message || 'Kunne ikke lagre backup');
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(new Blob([blob], { type: 'application/json' }));
+            a.download = 'cryptochat-e2ee-backup-' + (window.__APP__.username || 'user') + '.json';
+            a.click();
+            setKeyBackupStatus('Eksportert og lastet opp til server. Oppbevar frasen trygt!');
+            toast('E2EE-nøkler sikkerhetskopiert', 'success');
+          } catch (e) { setKeyBackupStatus('Eksport feilet: ' + e.message); }
+        });
+        if (restoreKeysBtn) restoreKeysBtn.addEventListener('click', () => restoreKeysFile && restoreKeysFile.click());
+        if (restoreKeysFile) restoreKeysFile.addEventListener('change', async () => {
+          const file = restoreKeysFile.files[0];
+          if (!file) return;
+          if (!window.__CRYPTO__ || !window.__CRYPTO__.importBackup) return setKeyBackupStatus('Dekryptering ikke tilgjengelig');
+          try {
+            const parsed = JSON.parse(await file.text());
+            const phrase = prompt('Skriv inn gjenopprettingsfrasen din:');
+            if (!phrase) return;
+            setKeyBackupStatus('Dekrypterer nøkler...');
+            await window.__CRYPTO__.importBackup(parsed, phrase);
+            setKeyBackupStatus('Nøkler gjenopprettet. Siden lastes på nytt.');
+            toast('E2EE-nøkler gjenopprettet', 'success');
+            setTimeout(() => location.reload(), 1500);
+          } catch (e) { setKeyBackupStatus('Gjenoppretting feilet: ' + ((e && e.message) || 'Feil frase eller fil')); }
         });
 
         overlay.querySelector('#sendOnEnterToggle')?.addEventListener('change', function() {

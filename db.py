@@ -97,7 +97,11 @@ def load_json(path, default=None, ttl=None):
 
     if data is None and p.exists():
         try:
-            data = json.loads(p.read_text(encoding='utf-8') or '{}')
+            raw = p.read_text(encoding='utf-8') or ''
+            if p.suffix == '.jsonl':
+                data = [json.loads(line) for line in raw.splitlines() if line.strip()]
+            else:
+                data = json.loads(raw)
             _write_to_sqlite(key, data)
         except Exception as e:
             logger.warning('json load failed %s: %s', key, e)
@@ -145,7 +149,11 @@ def migrate_json_files():
             if existing is not None:
                 continue
             try:
-                data = json.loads(f.read_text(encoding='utf-8') or '{}')
+                raw = f.read_text(encoding='utf-8') or ''
+                if f.suffix == '.jsonl':
+                    data = [json.loads(line) for line in raw.splitlines() if line.strip()]
+                else:
+                    data = json.loads(raw)
                 _write_to_sqlite(key, data)
             except Exception as e:
                 logger.warning('migrate skipped %s: %s', key, e)

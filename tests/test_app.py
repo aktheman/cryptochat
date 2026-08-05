@@ -47,7 +47,7 @@ def clean_data():
         'muted_chats.json', 'contacts.json', 'stories.json', 'blocked_users.json',
         'deleted_for_me.json', 'live_locations.json', 'wallpapers.json',
         'slowmode.json', 'drafts.json', 'polls.json', 'folders.json',
-        'archive.json', 'quiet_hours.json', 'digest.json',
+        'archive.json', 'quiet_hours.json', 'digest.json', 'key_backups.json',
     }
     for path in [
         app.users_file, app.messages_file, app.keys_file, app.groups_file,
@@ -60,7 +60,7 @@ def clean_data():
         app.blocked_file, app.deleted_for_me_file, app.live_location_file,
         app.wallpapers_file, app.slowmode_file, app.polls_file,
         app.archive_file, app.reminders_file, app.quiet_hours_file,
-        app.digest_file,
+        app.digest_file, app.key_backup_file,
     ]:
         path.write_text('{}' if path.name in dict_files else '[]', encoding='utf-8')
     yield
@@ -1215,6 +1215,55 @@ class TestInviteLinks:
         r = client.get('/invite/invalidtoken123')
         assert r.status_code == 404
 
+    def test_expired_invite_rejected(self, client):
+        import app as app_mod
+        _register(client, 'alice')
+        r = client.post('/groups', json={'name': 'g', 'members': []})
+        gid = r.get_json()['group']['id']
+        r = client.get(f'/groups/{gid}/invite-link')
+        token = r.get_json()['link']
+        links = app_mod.load_json(app_mod.INVITE_LINKS_FILE, {})
+        links[gid]['expires_at'] = '2000-01-01T00:00:00Z'
+        app_mod.save_json(app_mod.INVITE_LINKS_FILE, links)
+        r = client.get(f'/invite/{token}')
+        assert r.status_code == 410
+
+    def test_used_up_invite_rejected(self, client):
+        import app as app_mod
+        _register(client, 'alice')
+        r = client.post('/groups', json={'name': 'g', 'members': []})
+        gid = r.get_json()['group']['id']
+        r = client.get(f'/groups/{gid}/invite-link')
+        token = r.get_json()['link']
+        links = app_mod.load_json(app_mod.INVITE_LINKS_FILE, {})
+        links[gid]['max_uses'] = 1
+        links[gid]['uses'] = 1
+        app_mod.save_json(app_mod.INVITE_LINKS_FILE, links)
+        r = client.get(f'/invite/{token}')
+        assert r.status_code == 410
+
+    def test_join_increments_use(self, client):
+        import app as app_mod
+        _register(client, 'alice')
+        r = client.post('/groups', json={'name': 'g', 'members': []})
+        gid = r.get_json()['group']['id']
+        r = client.get(f'/groups/{gid}/invite-link')
+        token = r.get_json()['link']
+        client2 = _new_client()
+        _register(client2, 'bob')
+        r = client2.post(f'/invite/{token}/join')
+        assert r.status_code == 200
+        links = app_mod.load_json(app_mod.INVITE_LINKS_FILE, {})
+        assert links[gid]['uses'] == 1
+
+    def test_security_headers(self, client):
+        _register(client, 'alice')
+        r = client.get('/health')
+        assert r.headers.get('Strict-Transport-Security', '').startswith('max-age=31536000')
+        assert r.headers.get('Cross-Origin-Opener-Policy') == 'same-origin'
+        assert 'sandbox' in r.headers.get('Content-Security-Policy', '') or 'default-src' in r.headers.get('Content-Security-Policy', '')
+        assert r.headers.get('X-Frame-Options') == 'DENY'
+
 
 class TestMessageReporting:
     def test_report_message(self, client):
@@ -1898,3 +1947,95 @@ class TestWebPushSend:
         server.server_close()
         subs = app_mod.load_json(app_mod.PUSH_SUBSCRIPTIONS_FILE, {})
         assert subs.get('alice') == []
+
+
+class TestJsonlMigration:
+    def test_migrate_parses_json_lines(self):
+        from db import DATA_DIR, migrate_json_files, _read_from_sqlite, _write_to_sqlite
+        path = DATA_DIR / 'audit_test.jsonl'
+        path.write_text('{"event": "a", "actor": "x"}\n{"event": "b", "actor": "y"}\n', encoding='utf-8')
+        _write_to_sqlite(str(path), None)
+        migrate_json_files()
+        data = _read_from_sqlite(str(path))
+        assert data == [{'event': 'a', 'actor': 'x'}, {'event': 'b', 'actor': 'y'}]
+        path.unlink(missing_ok=True)
+
+
+class TestForwardSecrecy:
+    def _create_group(self, client, name='g', members=None):
+        r = client.post('/groups', json={'name': name, 'members': members or []})
+        return r.get_json()['group']['id']
+
+    def _upload_group_keys(self, client, gid):
+        r = client.post(f'/groups/{gid}/keys', json={'keys': {'alice': 'wrapped-key-a', 'bob': 'wrapped-key-b'}})
+        assert r.status_code == 200
+        import app as app_mod
+        keys_data = app_mod.load_json(app_mod.KEYS_FILE, {})
+        assert keys_data.get(f'e2ee::{gid}', {}).get('encrypted_keys')
+
+    def test_remove_member_rekeys_group(self, client):
+        import app as app_mod
+        _register(client, 'alice')
+        client2 = _new_client()
+        _register(client2, 'bob')
+        gid = self._create_group(client, 'g', ['alice', 'bob'])
+        client.post(f'/groups/{gid}/members', json={'username': 'bob'})
+        self._upload_group_keys(client, gid)
+        r = client.delete(f'/groups/{gid}/members/bob')
+        assert r.status_code == 200
+        assert r.get_json()['rekey'] is True
+        keys_data = app_mod.load_json(app_mod.KEYS_FILE, {})
+        assert keys_data.get(f'e2ee::{gid}', {}).get('encrypted_keys') == {}
+        assert keys_data.get(f'e2ee::{gid}', {}).get('rotation_id')
+
+    def test_leave_group_rekeys_group(self, client):
+        import app as app_mod
+        _register(client, 'alice')
+        client2 = _new_client()
+        _register(client2, 'bob')
+        gid = self._create_group(client, 'g', ['alice', 'bob'])
+        self._upload_group_keys(client, gid)
+        r = client2.post(f'/groups/{gid}/leave')
+        assert r.status_code == 200
+        assert r.get_json()['rekey'] is True
+        keys_data = app_mod.load_json(app_mod.KEYS_FILE, {})
+        assert keys_data.get(f'e2ee::{gid}', {}).get('encrypted_keys') == {}
+
+    def test_rotate_pair_key_removes_server_key(self, client):
+        import app as app_mod
+        _setup_pair(client)
+        key_before = app_mod.get_or_create_pair_key('alice', 'bob')
+        assert key_before
+        r = client.post('/key/rotate-pair', json={'partner': 'bob'})
+        assert r.status_code == 200
+        assert r.get_json()['success'] is True
+        keys_data = app_mod.load_json(app_mod.KEYS_FILE, {})
+        pk = app_mod.pair_key('alice', 'bob')
+        assert pk not in keys_data
+        key_after = app_mod.get_or_create_pair_key('alice', 'bob')
+        assert key_after != key_before
+
+
+class TestKeyBackup:
+    def test_save_get_delete_backup(self, client):
+        import app as app_mod
+        _register(client, 'alice')
+        r = client.post('/account/backup', json={'blob': '{"version":1,"kdf":"PBKDF2"}'})
+        assert r.status_code == 200
+        assert r.get_json()['success'] is True
+        r = client.get('/account/backup')
+        assert r.status_code == 200
+        assert r.get_json()['blob'] == '{"version":1,"kdf":"PBKDF2"}'
+        r = client.delete('/account/backup')
+        assert r.status_code == 200
+        r = client.get('/account/backup')
+        assert r.status_code == 404
+
+    def test_backup_requires_login(self, client):
+        r = client.get('/account/backup')
+        assert r.status_code == 401
+
+    def test_oversized_blob_rejected(self, client):
+        _register(client, 'alice')
+        r = client.post('/account/backup', json={'blob': 'x' * 200001})
+        assert r.status_code == 400

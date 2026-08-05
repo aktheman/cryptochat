@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 
 from flask import (
     Flask, render_template, request, jsonify, session,
-    redirect, url_for, send_from_directory, Response, make_response
+    redirect, url_for, send_file, send_from_directory, Response, make_response
 )
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
@@ -58,6 +58,8 @@ app.config.update(
     UPLOAD_FOLDER=os.path.join(str(DATA_DIR), 'uploads'),
     ALLOWED_EXTENSIONS={'png', 'jpg', 'jpeg', 'gif', 'webp', 'pdf', 'txt', 'zip', 'mp3', 'wav', 'ogg', 'webm', 'opus', 'm4a'}
 )
+INVITE_TTL_DAYS = int(os.environ.get('INVITE_TTL_DAYS', '7'))
+INVITE_MAX_USES = int(os.environ.get('INVITE_MAX_USES', '50'))
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 def _strip_server_private_keys():
@@ -79,7 +81,7 @@ migrate_json_files()
 _strip_server_private_keys()
 app._start_time = time.time()
 
-socketio = SocketIO(app, cors_allowed_origins=app.config.get('CSRF_TRUSTED_ORIGINS', []), async_mode='eventlet')
+socketio = SocketIO(app, cors_allowed_origins=app.config.get('CSRF_TRUSTED_ORIGINS', []), async_mode=os.environ.get('SOCKETIO_ASYNC_MODE', 'gevent'))
 register_socket_handlers(socketio)
 
 @app.after_request
@@ -89,6 +91,9 @@ def set_security_headers(response):
     response.headers['X-XSS-Protection'] = '1; mode=block'
     response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
     response.headers['Permissions-Policy'] = 'camera=(self), microphone=(self), geolocation=()'
+    response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    response.headers['Cross-Origin-Opener-Policy'] = 'same-origin'
+    response.headers['Cross-Origin-Resource-Policy'] = 'same-origin'
     response.headers['Content-Security-Policy'] = (
         "default-src 'self'; "
         "script-src 'self' https://cdn.socket.io; "
@@ -2346,6 +2351,7 @@ def init_call():
         'caller': username,
         'type': call_type,
     })
+    _notify_push(target, username, '📞 Innkommende ' + ('video' if call_type == 'video' else 'lyd') + 'samtale', '/chat#' + username)
     return jsonify({'success': True, 'call_id': call_id})
 
 @app.route('/calls/incoming', methods=['GET'])
@@ -3498,6 +3504,45 @@ def backup_all():
     return Response(json.dumps(data, ensure_ascii=False, indent=2), mimetype='application/json',
                     headers={'Content-Disposition': 'attachment; filename=backup_%s.json' % me})
 
+@app.route('/account/backup', methods=['GET'])
+@require_login
+def get_key_backup():
+    me = session['username']
+    backups = load_json(KEY_BACKUP_FILE, {})
+    entry = backups.get(me)
+    if not entry:
+        return jsonify({'success': False, 'message': 'Ingen backup funnet.'}), 404
+    return jsonify({'success': True, 'blob': entry.get('blob', ''), 'updated_at': entry.get('updated_at')})
+
+@app.route('/account/backup', methods=['POST'])
+@rate_limit(max_requests=5, window_seconds=600)
+@require_login
+@require_csrf
+def save_key_backup():
+    me = session['username']
+    data = request.get_json(force=True, silent=True) or {}
+    blob = data.get('blob', '')
+    if not blob or len(blob) > 200000:
+        return jsonify({'success': False, 'message': 'Ugyldig backup.'}), 400
+    backups = load_json(KEY_BACKUP_FILE, {})
+    backups[me] = {'blob': blob, 'updated_at': now_iso()}
+    save_json(KEY_BACKUP_FILE, backups)
+    audit('key_backup_saved', actor=me, target=me)
+    return jsonify({'success': True})
+
+@app.route('/account/backup', methods=['DELETE'])
+@rate_limit(max_requests=5, window_seconds=600)
+@require_login
+@require_csrf
+def delete_key_backup():
+    me = session['username']
+    backups = load_json(KEY_BACKUP_FILE, {})
+    if me in backups:
+        del backups[me]
+        save_json(KEY_BACKUP_FILE, backups)
+    audit('key_backup_deleted', actor=me, target=me)
+    return jsonify({'success': True})
+
 @app.route('/export/<chat_type>/<chat_id>/pdf')
 @require_login
 def export_chat_pdf(chat_type, chat_id):
@@ -3987,7 +4032,9 @@ def remove_group_member(group_id, username):
         keys_data[e2ee_key]['encrypted_keys'].pop(username, None)
         keys_data[e2ee_key]['rekeyed'] = now_iso()
         save_json(KEYS_FILE, keys_data)
-    return jsonify({'success': True, 'message': f'{username} fjernet.'})
+    _force_group_rekey(group_id)
+    audit('group_member_removed', actor=me, target=group_id, meta=username)
+    return jsonify({'success': True, 'message': f'{username} fjernet.', 'rekey': True})
 
 @app.route('/groups/<group_id>/leave', methods=['POST'])
 @rate_limit(max_requests=20, window_seconds=120)
@@ -4012,11 +4059,28 @@ def leave_group(group_id):
     if e2ee_key in keys_data and 'encrypted_keys' in keys_data[e2ee_key]:
         keys_data[e2ee_key]['encrypted_keys'].pop(me, None)
         save_json(KEYS_FILE, keys_data)
-    return jsonify({'success': True, 'message': 'Forlatt gruppe.'})
+    _force_group_rekey(group_id)
+    audit('group_left', actor=me, target=group_id)
+    return jsonify({'success': True, 'message': 'Forlatt gruppe.', 'rekey': True})
 
 # ──────────────────────────────────────────────
 # Group E2EE Key Rotation
 # ──────────────────────────────────────────────
+def _force_group_rekey(group_id):
+    """Nullstiller gruppens E2EE-nøkkel slik at medlemmene må laste opp en ny
+    innpakket nøkkel. Gir forward secrecy ved medlemsforandring."""
+    keys_data = load_json(KEYS_FILE, {})
+    e2ee_key = f"e2ee::{group_id}"
+    entry = keys_data.get(e2ee_key, {})
+    keys_data[e2ee_key] = {
+        'encrypted_keys': {},
+        'uploaded_by': entry.get('uploaded_by'),
+        'updated': now_iso(),
+        'rotation_id': secrets.token_hex(8),
+    }
+    save_json(KEYS_FILE, keys_data)
+
+
 @app.route('/groups/<group_id>/keys/rotate', methods=['POST'])
 @rate_limit(max_requests=10, window_seconds=300)
 @require_login
@@ -4029,15 +4093,8 @@ def rotate_group_key(group_id):
         return jsonify({'success': False, 'message': 'Gruppe ikke funnet.'}), 404
     if me != group.get('created_by') and me not in group.get('admins', []):
         return jsonify({'success': False, 'message': 'Mangler tillatelse.'}), 403
-    keys_data = load_json(KEYS_FILE, {})
-    e2ee_key = f"e2ee::{group_id}"
-    keys_data[e2ee_key] = {
-        'encrypted_keys': {},
-        'uploaded_by': me,
-        'updated': now_iso(),
-        'rotation_id': secrets.token_hex(8),
-    }
-    save_json(KEYS_FILE, keys_data)
+    _force_group_rekey(group_id)
+    audit('group_key_rotated', actor=me, target=group_id)
     return jsonify({'success': True, 'message': 'Nøkkel rotert. Last inn nøkler på nytt.'})
 
 # ──────────────────────────────────────────────
@@ -4406,6 +4463,29 @@ def key_rotation_status():
         'created_at': user.get('created_at'),
     })
 
+
+@app.route('/key/rotate-pair', methods=['POST'])
+@rate_limit(max_requests=5, window_seconds=600)
+@require_login
+@require_csrf
+def rotate_pair_key():
+    me = session['username']
+    data = request.get_json(force=True, silent=True) or {}
+    partner = (data.get('partner') or '').strip().lower()
+    if not partner or partner == me:
+        return jsonify({'success': False, 'message': 'Ugyldig mottaker.'}), 400
+    users = load_json(USERS_FILE, {})
+    if partner not in users:
+        return jsonify({'success': False, 'message': 'Bruker ikke funnet.'}), 404
+    keys_data = load_json(KEYS_FILE, {})
+    pk = pair_key(me, partner)
+    if pk in keys_data:
+        del keys_data[pk]
+        save_json(KEYS_FILE, keys_data)
+    audit('pair_key_rotated', actor=me, target=partner)
+    notify_user(socketio, partner, 'pair_key_rotated', {'sender': me})
+    return jsonify({'success': True, 'message': 'Felles nøkkel rotert. Eldre meldinger er ikke lenger server-dekrypterbare.'})
+
 # ──────────────────────────────────────────────
 # Offline / SW / PWA
 # ──────────────────────────────────────────────
@@ -4415,9 +4495,11 @@ def manifest_json():
         'name': 'CryptoChat',
         'short_name': 'Chat',
         'description': 'Ende-til-ende-kryptert chat',
+        'id': '/chat',
         'start_url': '/chat',
         'scope': '/',
         'display': 'standalone',
+        'display_override': ['standalone', 'minimal-ui'],
         'background_color': '#0b0c12',
         'theme_color': '#cf6fef',
         'orientation': 'portrait-primary',
@@ -4437,22 +4519,11 @@ def manifest_json():
 
 @app.route('/sw.js')
 def service_worker():
-    sw = """
-self.addEventListener('install', () => self.skipWaiting());
-self.addEventListener('activate', (e) => {
-  e.waitUntil(
-    caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k))))
-      .then(() => self.registration.unregister())
-      .then(() => self.clients.matchAll(clients => {
-        for (const c of clients) { if (c.url.includes('/chat')) c.navigate('/chat'); }
-      }))
-  );
-});
-self.addEventListener('fetch', (e) => {
-  e.respondWith(fetch(e.request).catch(() => caches.match(e.request)));
-});
-"""
-    return Response(sw, mimetype='application/javascript')
+    sw_path = Path(__file__).resolve().parent / 'static' / 'sw.js'
+    resp = send_file(sw_path, mimetype='application/javascript', max_age=0)
+    resp.headers['Service-Worker-Allowed'] = '/'
+    resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    return resp
 
 @app.route('/offline.html')
 def offline_page():
@@ -4736,9 +4807,16 @@ def get_invite_link(group_id):
         return jsonify({'success': False, 'message': 'Ikke medlem.'}), 403
     links = load_json(INVITE_LINKS_FILE, {})
     link_data = links.get(group_id)
+    if link_data:
+        expires_at = link_data.get('expires_at')
+        if expires_at and expires_at <= now_iso():
+            del links[group_id]
+            link_data = None
     if not link_data:
         token = secrets.token_urlsafe(16)
-        link_data = {'token': token, 'group_id': group_id, 'created': now_iso(), 'created_by': me}
+        link_data = {'token': token, 'group_id': group_id, 'created': now_iso(), 'created_by': me,
+                     'expires_at': (datetime.utcnow() + timedelta(days=INVITE_TTL_DAYS)).isoformat() + 'Z',
+                     'uses': 0, 'max_uses': INVITE_MAX_USES}
         links[group_id] = link_data
         save_json(INVITE_LINKS_FILE, links)
     return jsonify({'success': True, 'link': link_data['token'], 'groupId': group_id, 'groupName': group['name']})
@@ -4750,6 +4828,11 @@ def resolve_invite(token):
     link_data = next((v for v in links.values() if v.get('token') == token), None)
     if not link_data:
         return jsonify({'success': False, 'message': 'Ugyldig lenke.'}), 404
+    expires_at = link_data.get('expires_at')
+    if expires_at and expires_at <= now_iso():
+        return jsonify({'success': False, 'message': 'Lenken er utløpt.'}), 410
+    if link_data.get('uses', 0) >= link_data.get('max_uses', INVITE_MAX_USES):
+        return jsonify({'success': False, 'message': 'Lenken er brukt opp.'}), 410
     groups = load_json(GROUPS_FILE, [])
     group = next((g for g in groups if g['id'] == link_data['group_id']), None)
     if not group:
@@ -4766,12 +4849,19 @@ def join_via_invite(token):
     link_data = next((v for v in links.values() if v.get('token') == token), None)
     if not link_data:
         return jsonify({'success': False, 'message': 'Ugyldig lenke.'}), 404
+    expires_at = link_data.get('expires_at')
+    if expires_at and expires_at <= now_iso():
+        return jsonify({'success': False, 'message': 'Lenken er utløpt.'}), 410
+    if link_data.get('uses', 0) >= link_data.get('max_uses', INVITE_MAX_USES):
+        return jsonify({'success': False, 'message': 'Lenken er brukt opp.'}), 410
     groups = load_json(GROUPS_FILE, [])
     group = next((g for g in groups if g['id'] == link_data['group_id']), None)
     if not group:
         return jsonify({'success': False, 'message': 'Gruppe slettet.'}), 404
     if me in group.get('members', []):
         return jsonify({'success': True, 'message': 'Allerede medlem.', 'groupId': group['id']})
+    link_data['uses'] = link_data.get('uses', 0) + 1
+    save_json(INVITE_LINKS_FILE, links)
     group.setdefault('members', []).append(me)
     save_json(GROUPS_FILE, groups)
     return jsonify({'success': True, 'message': 'Bli med!', 'groupId': group['id']})
@@ -5524,7 +5614,10 @@ def uploaded_file(filename):
     abs_target = os.path.abspath(os.path.join(abs_root, safe_name))
     if not abs_target.startswith(abs_root + os.sep):
         return jsonify({'success': False, 'message': 'Ugyldig filsti.'}), 400
-    return send_from_directory(abs_root, safe_name, as_attachment=False)
+    resp = send_from_directory(abs_root, safe_name, as_attachment=False)
+    resp.headers['Content-Security-Policy'] = 'sandbox; default-src none; base-uri none; frame-ancestors none'
+    resp.headers['X-Download-Options'] = 'noopen'
+    return resp
 
 @app.route('/thread/<msg_id>', methods=['GET'])
 def get_thread(msg_id):
@@ -5623,3 +5716,4 @@ app.labels_file = LABELS_FILE
 app.reminders_file = REMINDERS_FILE
 app.quiet_hours_file = QUIET_HOURS_FILE
 app.digest_file = DIGEST_FILE
+app.key_backup_file = KEY_BACKUP_FILE

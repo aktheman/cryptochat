@@ -2,13 +2,12 @@ const CACHE_NAME = 'cryptochat-v3';
 const SHELL_CACHE = CACHE_NAME + '-shell';
 
 const SHELL = [
-  '/',
+  '/offline.html',
   '/static/js/chat.js',
   '/static/js/bootstrap.js',
   '/static/css/style.css',
-  '/static/js/emoji-picker.js',
-  '/static/js/emojis.json',
-  '/manifest.json'
+  '/manifest.json',
+  '/sw.js'
 ];
 
 self.addEventListener('install', (e) => {
@@ -68,7 +67,7 @@ self.addEventListener('fetch', (e) => {
     url.pathname.startsWith('/static/') ||
     url.pathname === '/' ||
     url.pathname === '/manifest.json' ||
-    url.pathname === '/offline'
+    url.pathname === '/offline.html'
   );
 
   if (isStatic) {

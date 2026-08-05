@@ -22,10 +22,21 @@
   document.addEventListener('DOMContentLoaded', () => {
     const acceptBtn = document.getElementById('installAcceptBtn');
     const dismissBtn = document.getElementById('installDismissBtn');
+    const labelEl = document.getElementById('installBannerLabel');
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    const isStandalone = window.navigator.standalone === true || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+    if (isIOS && !isStandalone && !localStorage.getItem('installDismissed') && labelEl) {
+      labelEl.textContent = 'Legg til på startsiden';
+      acceptBtn.textContent = 'Hvordan?';
+    }
     if (acceptBtn) acceptBtn.addEventListener('click', () => {
       if (deferredPrompt) { deferredPrompt.prompt(); deferredPrompt.userChoice.then(() => { deferredPrompt = null; }).catch(() => {}); }
       const banner = document.getElementById('installBanner');
       if (banner) banner.classList.remove('install-banner-visible');
+      if (isIOS && !isStandalone && !localStorage.getItem('installDismissed')) {
+        const msg = document.getElementById('installBannerLabel');
+        if (msg) msg.textContent = 'Trykk Del-ikonet (⤴) nederst i Safari → "Legg til på startsiden"';
+      }
     });
     if (dismissBtn) dismissBtn.addEventListener('click', () => {
       localStorage.setItem('installDismissed', '1');
@@ -35,7 +46,7 @@
   });
 
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/static/sw.js', { scope: '/' }).then(() => {
+    navigator.serviceWorker.register('/sw.js', { scope: '/' }).then(() => {
       setupPushSubscription();
     }).catch(() => {});
   }

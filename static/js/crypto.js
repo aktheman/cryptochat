@@ -123,6 +123,69 @@ window.__CRYPTO__ = (() => {
     return sharedKey;
   }
 
+  async function pbkdf2Key(passphrase, salt, iterations) {
+    const keyMaterial = await window.crypto.subtle.importKey(
+      'raw',
+      new TextEncoder().encode(passphrase),
+      'PBKDF2',
+      false,
+      ['deriveKey']
+    );
+    return window.crypto.subtle.deriveKey(
+      { name: 'PBKDF2', salt, iterations, hash: 'SHA-256' },
+      keyMaterial,
+      { name: 'AES-GCM', length: 256 },
+      false,
+      ['encrypt', 'decrypt']
+    );
+  }
+
+  async function exportBackup(passphrase) {
+    const payload = {
+      app: 'cryptochat',
+      version: 1,
+      created_at: new Date().toISOString(),
+      identityKeyPair: getMyKeyPair(),
+      partnerKeys: (() => { try { return JSON.parse(localStorage.getItem('partnerKeys') || '{}'); } catch (e) { return {}; } })(),
+    };
+    const salt = window.crypto.getRandomValues(new Uint8Array(16));
+    const iv = window.crypto.getRandomValues(new Uint8Array(12));
+    const iterations = 310000;
+    const key = await pbkdf2Key(passphrase, salt, iterations);
+    const ciphertext = await window.crypto.subtle.encrypt(
+      { name: 'AES-GCM', iv },
+      key,
+      new TextEncoder().encode(JSON.stringify(payload))
+    );
+    return {
+      version: 1,
+      kdf: 'PBKDF2-SHA256',
+      iterations,
+      salt: arrayBufferToBase64(salt),
+      iv: arrayBufferToBase64(iv),
+      ciphertext: arrayBufferToBase64(ciphertext),
+    };
+  }
+
+  async function importBackup(backupJson, passphrase) {
+    const salt = base64ToArrayBuffer(backupJson.salt);
+    const iv = base64ToArrayBuffer(backupJson.iv);
+    const ciphertext = base64ToArrayBuffer(backupJson.ciphertext);
+    const key = await pbkdf2Key(passphrase, salt, backupJson.iterations || 310000);
+    const plaintext = await window.crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv },
+      key,
+      ciphertext
+    );
+    const payload = JSON.parse(new TextDecoder().decode(plaintext));
+    if (payload.app !== 'cryptochat' || !payload.identityKeyPair) {
+      throw new Error('Ugyldig backup');
+    }
+    saveMyKeyPair(payload.identityKeyPair);
+    localStorage.setItem('partnerKeys', JSON.stringify(payload.partnerKeys || {}));
+    return payload;
+  }
+
   const crypto = {
     PEM_HEADER,
     PEM_FOOTER,
@@ -138,6 +201,8 @@ window.__CRYPTO__ = (() => {
     saveMyKeyPair,
     getOrCreateIdentity,
     getSharedKey,
+    exportBackup,
+    importBackup,
     arrayBufferToBase64,
     base64ToArrayBuffer
   };
