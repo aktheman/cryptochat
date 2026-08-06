@@ -4,12 +4,14 @@
 - App: `cryptochat.service` -> binds `127.0.0.1:5000`
 - Caddy: `caddy.service` -> serves HTTP on `*:80`
 
-**Note:** WebSocket support requires eventlet workers. Update the systemd service:
+**Note:** WebSocket support requires gevent-websocket workers. Update the systemd service:
 ```
 ExecStart=/home/aktheman/cryptochat/.venv/bin/gunicorn \
-  --worker-class eventlet \
+  --worker-class geventwebsocket.gunicorn.workers.GeventWebSocketWorker \
   --bind 127.0.0.1:5000 \
-  --workers 2 \
+  --workers 1 \
+  --worker-connections 1000 \
+  --timeout 120 \
   --log-file /var/log/cryptochat/gunicorn.log \
   --error-logfile /var/log/cryptochat/gunicorn-error.log \
   app:app

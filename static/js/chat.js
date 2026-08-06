@@ -2001,9 +2001,9 @@
         try {
           const keyData = await loadJSON('/groups/' + encodeURIComponent(groupId) + '/keys');
           if (keyData.encryptedKey) {
-            const ownPub = await getPeerPublicKeyPem(window.__APP__?.username || '');
-            if (ownPub) {
-              const sharedKey = await window.__CRYPTO__.getSharedKey(ownPub);
+            const creatorPub = await getPeerPublicKeyPem(group?.created_by || '');
+            if (creatorPub) {
+              const sharedKey = await window.__CRYPTO__.getSharedKey(creatorPub);
               const parts = keyData.encryptedKey.split('.');
               if (parts.length === 2) {
                 const iv = base64ToArrayBuffer(parts[0]);
@@ -3151,17 +3151,11 @@
         form.append('file', blob, filename);
         if (activeChat.type === 'user') form.append('recipient', activeChat.target); else form.append('groupId', activeChat.target);
         try {
-          if (activeChat.type === 'group') {
-            const uploadForm = new FormData();
-            uploadForm.append('file', blob, filename);
-            uploadForm.append('groupId', activeChat.target);
-            const uploadRes = await fetch('/upload', { method: 'POST', body: uploadForm });
-            const uploadData = await uploadRes.json();
-            const uploadedFilename = uploadData.filename || filename;
-            await fetch('/groups/' + encodeURIComponent(activeChat.target) + '/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ciphertext: uploadedFilename, type: 'voice', filename: uploadedFilename }) });
-          } else {
-            await fetch('/upload', { method: 'POST', body: form });
-          }
+          const uploadForm = new FormData();
+          uploadForm.append('file', blob, filename);
+          if (activeChat.type === 'user') uploadForm.append('recipient', activeChat.target);
+          else uploadForm.append('groupId', activeChat.target);
+          await fetch('/upload', { method: 'POST', body: uploadForm });
           toast('Talebeskjed sendt', 'success');
           if (activeChat.type === 'user') await loadChat(activeChat.target); else await loadGroup(activeChat.target);
         } catch (e) {
@@ -4356,7 +4350,7 @@
             saveQuietBtn.addEventListener('click', async () => {
               const enabled = quietEnabled.checked;
               try {
-                await loadJSON('/settings/quiet', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled, start: quietStart.value, end: quietEnd.value }) });
+                await loadJSON('/settings/quiet', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled, start: quietStart.value, end: quietEnd.value, offset: -new Date().getTimezoneOffset() }) });
                 localStorage.setItem('quietHours', JSON.stringify(enabled ? { start: quietStart.value, end: quietEnd.value } : null));
                 quietStatus.textContent = enabled ? 'Stille-timer aktiv: ' + quietStart.value + '–' + quietEnd.value : 'Stille-timer av';
                 toast('Stille-timer lagret', 'success');

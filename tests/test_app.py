@@ -1860,7 +1860,7 @@ class TestDigestE2eePlaceholder:
 
     def test_e2ee_ciphertext_masked(self):
         import app as app_mod
-        fake_ct = 'MDEyMzQ1Njc4OWFiY2RlZg==.cT8pR3dsNkZ0anNsbWRvcXRoZm50d2N6bVFLTHk3MmV4eA=='
+        fake_ct = 'V1Fy7kHAwAG/0RLQ.8biTeS7pqKuixbMoMCGywomwVixgtWU7byep2ok2UA=='
         assert app_mod._digest_text({'type': 'text', 'ciphertext': fake_ct}) == '[kryptert melding]'
 
     def test_file_uses_filename(self):
@@ -1878,7 +1878,7 @@ class TestPushSubscribe:
     def test_subscribe_and_unsubscribe(self, client):
         import app as app_mod
         _register(client, 'alice')
-        sub = {'endpoint': 'https://push.example.test/x', 'keys': {'p256dh': 'A' * 43, 'auth': 'B' * 22}, 'expirationTime': None}
+        sub = {'endpoint': 'https://fcm.googleapis.com/fcm/send/abc123', 'keys': {'p256dh': 'A' * 43, 'auth': 'B' * 22}, 'expirationTime': None}
         r = client.post('/push/subscribe', json={'subscription': sub})
         assert r.status_code == 200
         subs = app_mod.load_json(app_mod.PUSH_SUBSCRIPTIONS_FILE, {})
@@ -1887,6 +1887,16 @@ class TestPushSubscribe:
         assert r.status_code == 200
         subs = app_mod.load_json(app_mod.PUSH_SUBSCRIPTIONS_FILE, {})
         assert subs['alice'] == []
+
+    def test_subscribe_rejects_invalid_endpoint(self, client):
+        import app as app_mod
+        _register(client, 'alice')
+        for endpoint in ('http://127.0.0.1:5000/admin', 'https://169.254.169.254/latest/meta-data/', 'https://localhost/admin', 'http://push.example.test/x'):
+            sub = {'endpoint': endpoint, 'keys': {'p256dh': 'A' * 43, 'auth': 'B' * 22}}
+            r = client.post('/push/subscribe', json={'subscription': sub})
+            assert r.status_code == 400, endpoint
+        subs = app_mod.load_json(app_mod.PUSH_SUBSCRIPTIONS_FILE, {})
+        assert subs.get('alice') in (None, [])
 
 
 class TestWebPushSend:

@@ -1259,7 +1259,7 @@ def _llm_summary(digest):
     )
     return _llm_chat(prompt, system='Du er en kortfattet assistent som oppsummerer chatter.', max_tokens=250, temperature=0.4) or 'Ingen oppsummering.'
 
-_E2EE_CIPHERTEXT_RE = re.compile(r'^[A-Za-z0-9+/]{20,}={0,2}\.[A-Za-z0-9+/]{20,}={0,2}$')
+_E2EE_CIPHERTEXT_RE = re.compile(r'^[A-Za-z0-9+/]{16}\.[A-Za-z0-9+/]{22,}={0,2}$')
 
 def _digest_text(m):
     if m.get('type') in ('file', 'file_e2ee'):
@@ -1552,40 +1552,75 @@ def upload_file():
         return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
     file = request.files.get('file')
     recipient = (request.form.get('recipient') or '').strip()
-    if not file or not recipient:
-        return jsonify({'success': False, 'message': 'Manglende fil eller mottaker.'}), 400
+    group_id = (request.form.get('groupId') or '').strip()
+    if not file:
+        return jsonify({'success': False, 'message': 'Manglende fil.'}), 400
+    if not recipient and not group_id:
+        return jsonify({'success': False, 'message': 'Manglende mottaker eller gruppe.'}), 400
     blocked = load_json(BLOCKED_FILE, {})
-    if recipient in blocked.get(session['username'], []):
+    if recipient and recipient in blocked.get(session['username'], []):
         return jsonify({'success': False, 'message': 'Du har blokkert denne brukeren.'}), 403
-    if session['username'] in blocked.get(recipient, []):
+    if recipient and session['username'] in blocked.get(recipient, []):
         return jsonify({'success': False, 'message': 'Denne brukeren har blokkert deg.'}), 403
     if not allowed_file(file.filename):
         return jsonify({'success': False, 'message': 'Ugyldig filtype.'}), 400
     filename = secure_filename(file.filename)
     if not filename:
         return jsonify({'success': False, 'message': 'Ugyldig filnavn.'}), 400
-    target = os.path.join(app.config['UPLOAD_FOLDER'], f"{time.time()}_{filename}")
+    stored_name = f"{time.time()}_{filename}"
+    target = os.path.join(app.config['UPLOAD_FOLDER'], stored_name)
     abs_target = os.path.abspath(target)
     abs_root = os.path.abspath(app.config['UPLOAD_FOLDER'])
     if not abs_target.startswith(abs_root + os.sep):
         return jsonify({'success': False, 'message': 'Ugyldig filsti.'}), 400
     file.save(target)
-    pk = pair_key(session['username'], recipient)
+    me = session['username']
     messages = load_json(MESSAGES_FILE, [])
+    if group_id:
+        groups = load_json(GROUPS_FILE, [])
+        group = next((g for g in groups if g['id'] == group_id), None)
+        if not group or me not in group.get('members', []):
+            return jsonify({'success': False, 'message': 'Ingen tilgang til gruppen.'}), 403
+        messages.append({
+            'id': hashlib.sha256(f"{target}{datetime.utcnow().isoformat()}{me}{group_id}".encode()).hexdigest(),
+            'group_id': group_id,
+            'sender': me,
+            'ciphertext': '',
+            'type': 'file',
+            'timestamp': datetime.utcnow().isoformat(),
+            'filename': stored_name,
+        })
+        save_json(MESSAGES_FILE, messages)
+        for member in group.get('members', []):
+            if member != me:
+                notify_user(socketio, member, 'new_message', {
+                    'chatType': 'group',
+                    'groupId': group_id,
+                    'sender': me,
+                    'message': messages[-1],
+                })
+                _notify_push(member, group.get('name') or 'Gruppe', me + ': sendte en fil', '/chat#group/' + group_id)
+        return jsonify({'success': True, 'filename': stored_name})
+    pk = pair_key(me, recipient)
     messages.append({
-        'id': hashlib.sha256(f"{target}{datetime.utcnow().isoformat()}{session['username']}{recipient}".encode()).hexdigest(),
+        'id': hashlib.sha256(f"{target}{datetime.utcnow().isoformat()}{me}{recipient}".encode()).hexdigest(),
         'pair_key': pk,
-        'sender': session['username'],
+        'sender': me,
         'recipient': recipient,
         'ciphertext': '',
         'type': 'file',
         'timestamp': datetime.utcnow().isoformat(),
         'read': False,
         'self_destruct_at': None,
-        'filename': filename,
+        'filename': stored_name,
     })
     save_json(MESSAGES_FILE, messages)
-    return jsonify({'success': True, 'filename': filename})
+    notify_user(socketio, recipient, 'new_message', {
+        'chatType': 'user',
+        'sender': me,
+        'message': messages[-1],
+    })
+    return jsonify({'success': True, 'filename': stored_name})
 
 @app.route('/search', methods=['GET'])
 def search_messages():
@@ -3081,16 +3116,22 @@ def deliver_reminders():
             remaining.append(r)
     if not due:
         return
-    save_json(REMINDERS_FILE, remaining)
+    # Lever FØR sletting — krasj kan gi duplikater, men aldri tapte påminnelser.
+    notify = load_json(NOTIFICATIONS_FILE, {})
     for r in due:
         username = r.get('username', '')
         text = r.get('text', '')
-        create_notification(username, 'reminder', text, {'reminder_id': r.get('id'), 'text': text})
+        rid = r.get('id')
+        existing = [n for n in notify.get(username, []) if n.get('data', {}).get('reminder_id') == rid]
+        if existing:
+            continue
+        create_notification(username, 'reminder', text, {'reminder_id': rid, 'text': text})
         audit('reminder_delivered', actor=username)
         try:
-            notify_user(socketio, username, 'reminder', {'text': text, 'reminder_id': r.get('id')})
+            notify_user(socketio, username, 'reminder', {'text': text, 'reminder_id': rid})
         except Exception:
             pass
+    save_json(REMINDERS_FILE, remaining)
 
 @app.route('/settings/digest', methods=['GET'])
 @require_login
@@ -4285,6 +4326,28 @@ def _load_vapid_keys():
 
 VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY = _load_vapid_keys()
 
+# Velkjente Web Push-tjenester (FCM, Mozilla, Apple). Endepunkter utenfor
+# denne lista avvises for å hindre SSRF mot interne tjenester.
+_KNOWN_PUSH_HOSTS = (
+    'fcm.googleapis.com',
+    'android.googleapis.com',
+    'push.services.mozilla.com',
+    'updates.push.services.mozilla.com',
+    'web.push.apple.com',
+)
+
+def _valid_push_endpoint(endpoint):
+    if not endpoint or not isinstance(endpoint, str):
+        return False
+    try:
+        parsed = urlparse(endpoint)
+        host = (parsed.hostname or '').lower()
+        if parsed.scheme != 'https':
+            return False
+        return any(host == h or host.endswith('.' + h) for h in _KNOWN_PUSH_HOSTS)
+    except Exception:
+        return False
+
 def _send_web_push(sub, title, body, url=''):
     if not (VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY):
         return False
@@ -4321,6 +4384,8 @@ def _send_web_push(sub, title, body, url=''):
 def _notify_push(username, title, body, url=''):
     if username in online_users:
         return
+    if is_quiet_hours(username):
+        return
     try:
         subs = load_json(PUSH_SUBSCRIPTIONS_FILE, {})
         entries = subs.get(username) or []
@@ -4350,6 +4415,8 @@ def push_subscribe():
     subs = load_json(PUSH_SUBSCRIPTIONS_FILE, {})
     subs.setdefault(me, [])
     endpoint = subscription.get('endpoint', '')
+    if not _valid_push_endpoint(endpoint):
+        return jsonify({'success': False, 'message': 'Ugyldig push-endepunkt.'}), 400
     subs[me] = [s for s in subs[me] if s.get('endpoint') != endpoint]
     item = dict(subscription)
     item['_payload'] = _encrypt_payload(json.dumps(item, ensure_ascii=False))
@@ -4910,6 +4977,11 @@ def set_quiet_hours():
     enabled = convert_to_bool(data.get('enabled', False), False)
     start = (data.get('start') or '').strip()
     end = (data.get('end') or '').strip()
+    try:
+        offset = int(data.get('offset', 0)) or 0
+    except Exception:
+        offset = 0
+    offset = max(-840, min(840, offset))
     if enabled:
         time_pattern = re.compile(r'^\d{2}:\d{2}$')
         if not time_pattern.match(start) or not time_pattern.match(end):
@@ -4918,7 +4990,7 @@ def set_quiet_hours():
             return jsonify({'success': False, 'message': 'Start og slutt kan ikke være like.'}), 400
     quiet = load_json(QUIET_HOURS_FILE, {})
     if enabled:
-        quiet[me] = {'enabled': True, 'start': start, 'end': end}
+        quiet[me] = {'enabled': True, 'start': start, 'end': end, 'offset': offset}
     else:
         quiet.pop(me, None)
     save_json(QUIET_HOURS_FILE, quiet)
@@ -4937,7 +5009,9 @@ def is_quiet_hours(username):
     if not q or not q.get('enabled'):
         return False
     try:
-        now = datetime.utcnow()
+        offset = int(q.get('offset') or 0)
+        offset = max(-840, min(840, offset))
+        now = datetime.utcnow() + timedelta(minutes=offset)
         current = now.strftime('%H:%M')
         start = q['start']
         end = q['end']
