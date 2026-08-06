@@ -104,6 +104,12 @@ cryptochat/
 ├── sockets.py          # Socket.IO-hendelser (sanntid)
 ├── config.py           # Konfigurasjon + fillagring
 ├── requirements.txt    # Python-avhengigheter
+├── scripts/
+│   ├── backup.sh       # Kryptert, konsistent backup (data + secrets)
+│   ├── restore.sh      # Restore fra kryptert backup
+│   ├── check.sh        # Lokal verifikasjon (syntaks + tester + pip-audit)
+│   ├── rotate_vapid.py # Rotér VAPID-nøkler for push
+│   └── cryptochat-backup.{service,timer}  # Daglig backup via systemd
 ├── data/               # JSON-lagring (opprettes automatisk)
 ├── static/
 │   ├── css/

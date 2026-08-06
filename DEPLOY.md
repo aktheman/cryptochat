@@ -61,3 +61,42 @@ chat.din-domene.no {
 ## Reports
 - Health: `GET /health`
 - Login page: `GET /login`
+
+## Backup og restore
+
+### Automatisk backup
+Daglig kryptert backup kl 03:17 (systemd-timer). Se status:
+```bash
+systemctl list-timers cryptochat-backup.timer
+sudo journalctl -u cryptochat-backup.service --since today
+```
+Backups lagres i `/var/backups/cryptochat/` (AES-256-GCM).
+
+Manuell backup:
+```bash
+sudo scripts/backup.sh          # beholder de 7 nyeste
+sudo scripts/backup.sh 30       # beholder de 30 nyeste
+```
+
+**Viktig om `backup_key`:** `secrets/backup_key` lagres ALDRI i backupen.
+Oppbevar den sikkert utenfor maskinen — uten den kan backups ikke dekrypteres.
+Sjekk at den finnes: `ls -l secrets/backup_key`.
+
+### Restore
+```bash
+sudo systemctl stop cryptochat
+sudo scripts/restore.sh /var/backups/cryptochat/cryptochat-backup-<stamp>.enc
+sudo systemctl start cryptochat
+```
+Scriptet krever at `secrets/backup_key` finnes, verifiserer SQLite-integritet,
+og sikkerhetskopierer nåværende `data/` til `/var/backups/cryptochat/pre-restore-*.tar.gz`
+før det overskriver. Legg til `--secrets` for også å gjenopprette `secrets/`
+(ved migrering til ny maskin).
+
+### VAPID-nøkkelrotasjon (push)
+```bash
+sudo scripts/rotate_vapid.py
+sudo systemctl restart cryptochat
+```
+Gamle nøkler lagres i `secrets/*.old`. Klienter re-subscriber automatisk
+ved neste besøk (bootstrap.js).

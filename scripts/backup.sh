@@ -13,12 +13,24 @@ trap 'rm -rf "$WORK"' EXIT
 cd "$BASE_DIR"
 mkdir -p "$BACKUP_DIR"
 
-# Konsistent SQLite-snapshot (WAL flushet inn)
-"$BASE_DIR/.venv/bin/python" - "$BASE_DIR" "$WORK" << 'PYEOF'
+# Kopier data/ og secrets/ (uten backup_key) inn i arbeidskopi.
+# backup_key lagres ALDRI i backupen — oppbevar den sikkert utenfor maskinen.
+mkdir -p "$WORK/data"
+cp -a "$BASE_DIR/data/." "$WORK/data/"
+rm -f "$WORK/data/cryptochat.sqlite3" "$WORK/data/cryptochat.sqlite3-wal" "$WORK/data/cryptochat.sqlite3-shm"
+mkdir -p "$WORK/secrets"
+for f in "$BASE_DIR"/secrets/*; do
+  [ -e "$f" ] || continue
+  case "$(basename "$f")" in
+    backup_key) continue ;;
+    *) cp -a "$f" "$WORK/secrets/" ;;
+  esac
+done
+
+# Konsistent SQLite-snapshot (WAL flushet inn) -> data/cryptochat.sqlite3 i arkivet
+"$BASE_DIR/.venv/bin/python" - "$BASE_DIR/data/cryptochat.sqlite3" "$WORK/data/cryptochat.sqlite3" << 'PYEOF'
 import sqlite3, sys
-base, work = sys.argv[1], sys.argv[2]
-src = base + '/data/cryptochat.sqlite3'
-dst = work + '/cryptochat.sqlite3'
+src, dst = sys.argv[1], sys.argv[2]
 con = sqlite3.connect(src)
 out = sqlite3.connect(dst)
 con.backup(out)
@@ -26,11 +38,7 @@ out.close(); con.close()
 print('sqlite snapshot OK')
 PYEOF
 
-# Pakk data/ (unntatt live sqlite; snapshot erstatter den) + secrets/
-(cd "$WORK" && tar czf cryptochat-backup.tar.gz \
-  --exclude='data/cryptochat.sqlite3*' \
-  -C "$BASE_DIR" data secrets \
-  -C "$WORK" cryptochat.sqlite3)
+(cd "$WORK" && tar czf cryptochat-backup.tar.gz data secrets)
 
 # Krypter med backup_key
 "$BASE_DIR/.venv/bin/python" "$BASE_DIR/backup_crypto.py" enc \
