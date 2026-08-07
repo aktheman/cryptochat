@@ -1,6 +1,7 @@
 (() => {
   const body = document.body;
   const ds = body.dataset;
+  if (ds.username) sessionStorage.removeItem('auth-redirecting');
   window.__APP__ = {
     username: ds.username || '',
     partnerKeys: (() => { try { return localStorage.getItem('partnerKeys') ? JSON.parse(localStorage.getItem('partnerKeys')) : {}; } catch(e) { return {}; } })(),

@@ -6677,6 +6677,15 @@
         try { playNotificationSound(); } catch (e) {}
       };
 
+      window.__onPairKeyRotated = (data) => {
+        const sender = (data && data.sender) || '';
+        const who = sender ? escapeHtml(sender) : 'En kontakt';
+        toast('🔑 ' + who + ' roterte den felles nøkkelen', 'info');
+        try {
+          if (Notification.permission === 'granted') new Notification('🔑 Nøkkel rotert', { body: (sender || 'En kontakt') + ' roterte den felles nøkkelen. Du bør dele nøkkel på nytt.', icon: '/static/favicon.ico' });
+        } catch (e) {}
+      };
+
       async function openRemindersPanel() {
         let panel = document.querySelector('.reminders-panel');
         if (panel) { panel.style.display = panel.style.display === 'none' ? 'block' : 'none'; return; }

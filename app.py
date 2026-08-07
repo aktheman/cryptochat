@@ -113,10 +113,6 @@ def set_security_headers(response):
         response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
     return response
 
-@app.route('/health')
-def health():
-    return jsonify({'success': True, 'status': 'ok', 'version': os.environ.get('APP_VERSION', '3.6.0')})
-
 def _rl_get(store, key):
     item = store.setdefault(key, {'ts': [], 'n': 0})
     return item
@@ -277,55 +273,59 @@ def is_user_session_active(username):
     return False
 
 _SESSION_TOUCH_SECONDS = 300
+_session_lock = threading.Lock()
 
 def touch_session_active(username):
-    sessions = load_json(SESSIONS_FILE, {})
-    user_sessions = sessions.get(username, {})
-    if isinstance(user_sessions, dict) and 'token' in user_sessions:
-        if user_sessions.get('token') != session.get('session_token'):
-            return
-        last = parse_iso(user_sessions.get('last_active'))
-        if last and (datetime.utcnow() - last.replace(tzinfo=None) if last.tzinfo else datetime.utcnow() - last).total_seconds() < _SESSION_TOUCH_SECONDS:
-            return
-        user_sessions['last_active'] = now_iso()
-        save_json(SESSIONS_FILE, sessions)
-        return
-    if isinstance(user_sessions, dict):
-        sid = session.get('session_token')
-        sdata = user_sessions.get(sid) if sid else None
-        if not isinstance(sdata, dict):
-            return
-        last = parse_iso(sdata.get('last_active'))
-        if last:
-            if last.tzinfo:
-                last = last.replace(tzinfo=None)
-            if (datetime.utcnow() - last).total_seconds() < _SESSION_TOUCH_SECONDS:
+    with _session_lock:
+        sessions = load_json(SESSIONS_FILE, {})
+        user_sessions = sessions.get(username, {})
+        if isinstance(user_sessions, dict) and 'token' in user_sessions:
+            if user_sessions.get('token') != session.get('session_token'):
                 return
-        sdata['last_active'] = now_iso()
-        save_json(SESSIONS_FILE, sessions)
+            last = parse_iso(user_sessions.get('last_active'))
+            if last and (datetime.utcnow() - last.replace(tzinfo=None) if last.tzinfo else datetime.utcnow() - last).total_seconds() < _SESSION_TOUCH_SECONDS:
+                return
+            user_sessions['last_active'] = now_iso()
+            save_json(SESSIONS_FILE, sessions)
+            return
+        if isinstance(user_sessions, dict):
+            sid = session.get('session_token')
+            sdata = user_sessions.get(sid) if sid else None
+            if not isinstance(sdata, dict):
+                return
+            last = parse_iso(sdata.get('last_active'))
+            if last:
+                if last.tzinfo:
+                    last = last.replace(tzinfo=None)
+                if (datetime.utcnow() - last).total_seconds() < _SESSION_TOUCH_SECONDS:
+                    return
+            sdata['last_active'] = now_iso()
+            save_json(SESSIONS_FILE, sessions)
 
 def invalidate_all_sessions(username):
-    sessions = load_json(SESSIONS_FILE, {})
-    if username in sessions:
-        user_sessions = sessions[username]
-        if isinstance(user_sessions, dict) and 'token' in user_sessions:
-            sessions[username] = {}
-            save_json(SESSIONS_FILE, sessions)
-        elif isinstance(user_sessions, dict):
-            for sid in user_sessions:
-                if isinstance(user_sessions[sid], dict):
-                    user_sessions[sid]['active'] = False
-                    user_sessions[sid]['revoked'] = True
-            save_json(SESSIONS_FILE, sessions)
+    with _session_lock:
+        sessions = load_json(SESSIONS_FILE, {})
+        if username in sessions:
+            user_sessions = sessions[username]
+            if isinstance(user_sessions, dict) and 'token' in user_sessions:
+                sessions[username] = {}
+                save_json(SESSIONS_FILE, sessions)
+            elif isinstance(user_sessions, dict):
+                for sid in user_sessions:
+                    if isinstance(user_sessions[sid], dict):
+                        user_sessions[sid]['active'] = False
+                        user_sessions[sid]['revoked'] = True
+                save_json(SESSIONS_FILE, sessions)
         invalidate_cache()
 
 def invalidate_session(username, session_id):
-    sessions = load_json(SESSIONS_FILE, {})
-    user_sessions = sessions.get(username, {})
-    if session_id in user_sessions and isinstance(user_sessions[session_id], dict):
-        user_sessions[session_id]['active'] = False
-        user_sessions[session_id]['revoked'] = True
-        save_json(SESSIONS_FILE, sessions)
+    with _session_lock:
+        sessions = load_json(SESSIONS_FILE, {})
+        user_sessions = sessions.get(username, {})
+        if session_id in user_sessions and isinstance(user_sessions[session_id], dict):
+            user_sessions[session_id]['active'] = False
+            user_sessions[session_id]['revoked'] = True
+            save_json(SESSIONS_FILE, sessions)
 
 def get_user_sessions(username):
     sessions = load_json(SESSIONS_FILE, {})
@@ -2594,7 +2594,14 @@ def admin_stats():
     for name, count in top_senders.items():
         per_user.append({'username': name, 'count': count})
     per_user.sort(key=lambda x: x['count'], reverse=True)
-    messages_last_24h = sum(v for k, v in per_day.items() if k >= (datetime.utcnow() - timedelta(days=1)).isoformat()[:10])
+    cutoff = datetime.utcnow() - timedelta(days=1)
+    def _within_24h(ts):
+        try:
+            dt = datetime.fromisoformat((ts or '').replace('Z', '+00:00')).replace(tzinfo=None)
+            return dt >= cutoff
+        except Exception:
+            return False
+    messages_last_24h = sum(1 for m in messages if _within_24h(m.get('timestamp')))
     return jsonify({
         'success': True,
         'stats': {
@@ -2887,6 +2894,8 @@ def verify_batch():
 @app.route('/pins/<chat_type>/<chat_id>', methods=['GET'])
 @require_login
 def get_pins(chat_type, chat_id):
+    if not _can_pin_chat(chat_id):
+        return jsonify({'success': False, 'message': 'Ingen tilgang.'}), 403
     pins = load_json(PINS_FILE, {})
     key = f"{chat_type}::{chat_id}"
     pinned_ids = pins.get(key, [])
@@ -2955,23 +2964,57 @@ def unpin_message(chat_type, chat_id, message_id):
     save_json(PINS_FILE, pins)
     return jsonify({'success': True})
 
+def _can_pin_chat(chat_target):
+    if not chat_target or not isinstance(chat_target, str):
+        return False
+    me = session.get('username')
+    if not me:
+        return False
+    if chat_target == me:
+        return True
+    groups = load_json(GROUPS_FILE, [])
+    for g in groups:
+        if g.get('id') == chat_target:
+            return me in g.get('members', [])
+    return chat_target in load_json(USERS_FILE, {})
+
 @app.route('/pins/<chat_target>', methods=['GET'])
-@require_csrf
+@require_login
+@rate_limit(max_requests=60, window_seconds=60)
 def get_pins_simple(chat_target):
+    if not _can_pin_chat(chat_target):
+        return jsonify({'success': False, 'message': 'Ingen tilgang.'}), 403
     pins = load_json(PINS_FILE, {})
-    return jsonify(pins.get(chat_target, []))
+    pinned_ids = pins.get(chat_target, [])
+    messages = load_json(MESSAGES_FILE, [])
+    pinned = [m for m in messages if m.get('id') in pinned_ids]
+    pinned.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+    result = []
+    for m in pinned[:10]:
+        entry = {'id': m.get('id'), 'sender': m.get('sender'), 'timestamp': m.get('timestamp'), 'type': m.get('type')}
+        if m.get('type') == 'file':
+            entry['text'] = m.get('filename', '[fil]')
+        elif m.get('type') == 'text':
+            entry['text'] = (m.get('ciphertext') or '')[:120]
+        else:
+            entry['text'] = ''
+        result.append(entry)
+    return jsonify({'success': True, 'pins': result})
 
 @app.route('/pins', methods=['POST'])
+@rate_limit(max_requests=30, window_seconds=60)
+@require_login
 @require_csrf
 def toggle_pin():
-    if 'username' not in session:
-        return jsonify({'success': False}), 401
+    me = session['username']
     data = request.get_json(force=True, silent=True) or {}
     chat_target = data.get('chat_target')
     msg_id = data.get('msg_id')
     pin = data.get('pin', True)
     if not chat_target or not msg_id:
         return jsonify({'success': False, 'message': 'Mangler data'}), 400
+    if not _can_pin_chat(chat_target):
+        return jsonify({'success': False, 'message': 'Ingen tilgang.'}), 403
     pins = load_json(PINS_FILE, {})
     if chat_target not in pins:
         pins[chat_target] = []
@@ -5671,7 +5714,7 @@ def health_check():
         'success': True,
         'status': 'healthy' if db_ok else 'degraded',
         'db': 'ok' if db_ok else 'error',
-        'version': '3.6.0',
+        'version': os.environ.get('APP_VERSION', '3.6.0'),
     })
 
 @app.route('/sw-test')

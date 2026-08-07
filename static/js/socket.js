@@ -57,6 +57,10 @@ function initSocketIO() {
     if (window.__onBroadcast) window.__onBroadcast(data);
   });
 
+  socket.on('pair_key_rotated', (data) => {
+    if (window.__onPairKeyRotated) window.__onPairKeyRotated(data);
+  });
+
   window.__SOCKET = socket;
 }
 
