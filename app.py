@@ -2978,14 +2978,28 @@ def _can_pin_chat(chat_target):
             return me in g.get('members', [])
     return chat_target in load_json(USERS_FILE, {})
 
+def _pin_key(chat_target):
+    groups = load_json(GROUPS_FILE, [])
+    for g in groups:
+        if g.get('id') == chat_target:
+            return 'group::' + chat_target
+    return 'user::' + chat_target
+
+def _pins_for(key, chat_target):
+    pins = load_json(PINS_FILE, {})
+    ids = pins.get(key, [])
+    if not ids:
+        ids = pins.get(chat_target, [])
+    return ids
+
 @app.route('/pins/<chat_target>', methods=['GET'])
 @require_login
 @rate_limit(max_requests=60, window_seconds=60)
 def get_pins_simple(chat_target):
     if not _can_pin_chat(chat_target):
         return jsonify({'success': False, 'message': 'Ingen tilgang.'}), 403
-    pins = load_json(PINS_FILE, {})
-    pinned_ids = pins.get(chat_target, [])
+    key = _pin_key(chat_target)
+    pinned_ids = _pins_for(key, chat_target)
     messages = load_json(MESSAGES_FILE, [])
     pinned = [m for m in messages if m.get('id') in pinned_ids]
     pinned.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
@@ -3015,16 +3029,17 @@ def toggle_pin():
         return jsonify({'success': False, 'message': 'Mangler data'}), 400
     if not _can_pin_chat(chat_target):
         return jsonify({'success': False, 'message': 'Ingen tilgang.'}), 403
+    key = _pin_key(chat_target)
     pins = load_json(PINS_FILE, {})
-    if chat_target not in pins:
-        pins[chat_target] = []
+    if key not in pins:
+        pins[key] = list(pins.get(chat_target, []))
     if pin:
-        if msg_id not in pins[chat_target]:
-            pins[chat_target].append(msg_id)
+        if msg_id not in pins[key]:
+            pins[key].append(msg_id)
     else:
-        pins[chat_target] = [p for p in pins[chat_target] if p != msg_id]
+        pins[key] = [p for p in pins[key] if p != msg_id]
     save_json(PINS_FILE, pins)
-    return jsonify({'success': True, 'pins': pins[chat_target]})
+    return jsonify({'success': True, 'pins': pins[key]})
 
 # ──────────────────────────────────────────────
 # Scheduled Messages

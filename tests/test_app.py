@@ -103,6 +103,14 @@ class TestHealth:
         assert r.status_code == 200
         assert r.get_json()['success'] is True
 
+    def test_health_includes_db_status(self, client):
+        r = client.get('/health')
+        assert r.status_code == 200
+        j = r.get_json()
+        assert j['status'] == 'healthy'
+        assert j['db'] == 'ok'
+        assert j['version']
+
 
 class TestAuth:
     def test_register_success(self, client):
@@ -820,6 +828,46 @@ class TestPinAuthorization:
         msg_id = msgs[0]['id']
         r = client.post(f'/pins/group/{group_id}/{msg_id}')
         assert r.status_code == 200
+
+    def test_pins_simple_requires_auth(self, client):
+        client2 = _new_client()
+        r = client2.get('/pins/alice')
+        assert r.status_code == 401
+
+    def test_pins_simple_denies_non_member(self, client):
+        _register(client, 'alice')
+        group_id = self._create_group(client, 'g', ['alice'])
+        client.post(f'/groups/{group_id}/send', json={'ciphertext': 'hi', 'type': 'text'})
+        msgs = client.get(f'/groups/{group_id}/messages').get_json()['messages']
+        msg_id = msgs[0]['id']
+        client.post(f'/pins/group/{group_id}/{msg_id}')
+        client2 = _new_client()
+        _register(client2, 'eve')
+        r = client2.get(f'/pins/{group_id}')
+        assert r.status_code == 403
+
+    def test_pins_simple_returns_expected_format(self, client):
+        _register(client, 'alice')
+        group_id = self._create_group(client, 'g', ['alice'])
+        client.post(f'/groups/{group_id}/send', json={'ciphertext': 'hi', 'type': 'text'})
+        msgs = client.get(f'/groups/{group_id}/messages').get_json()['messages']
+        msg_id = msgs[0]['id']
+        client.post(f'/pins/group/{group_id}/{msg_id}')
+        r = client.get(f'/pins/{group_id}')
+        assert r.status_code == 200
+        j = r.get_json()
+        assert j['success'] is True
+        assert len(j['pins']) == 1
+        entry = j['pins'][0]
+        assert entry['id'] == msg_id
+        assert entry['sender'] == 'alice'
+        assert entry['type'] == 'text'
+        assert 'text' in entry
+
+    def test_pins_simple_denies_nonexistent_user(self, client):
+        _register(client, 'alice')
+        r = client.get('/pins/ghost')
+        assert r.status_code == 403
 
 
 class TestAvatarAuth:
