@@ -602,6 +602,7 @@ class TestE2ee:
         if AUDIT_LOG_FILE.exists():
             AUDIT_LOG_FILE.unlink()
         _register(client, 'alice')
+        _register(client, 'bob')
         r = client.post('/auth/login', json={'username': 'alice', 'password': 'Passw0rd!23'})
         assert r.status_code == 200
         r = client.post('/auth/logout')
@@ -947,6 +948,7 @@ class TestCsrfProtection:
         app.config['CSRF_TRUSTED_ORIGINS'] = ['http://localhost:5000']
         try:
             _register(client, 'alice')
+            _register(client, 'bob')
             _login(client, 'alice')
             r = client.post('/send', json={'recipient': 'bob', 'ciphertext': 'hi', 'type': 'text'}, headers={'Origin': 'http://localhost:5000'})
             assert r.status_code == 200
@@ -959,6 +961,7 @@ class TestCsrfProtection:
         app.config['CSRF_TRUSTED_ORIGINS'] = ['http://localhost:5000']
         try:
             _register(client, 'alice')
+            _register(client, 'bob')
             _login(client, 'alice')
             r = client.post('/send', json={'recipient': 'bob', 'ciphertext': 'hi', 'type': 'text'})
             assert r.status_code == 200
@@ -1021,6 +1024,7 @@ class TestScheduledMessages:
 
     def test_schedule_past_time(self, client):
         _register(client, 'alice')
+        _register(client, 'bob')
         r = client.post('/schedule', json={
             'recipient': 'bob',
             'ciphertext': 'too late',
@@ -1030,6 +1034,7 @@ class TestScheduledMessages:
 
     def test_schedule_list(self, client):
         _register(client, 'alice')
+        _register(client, 'bob')
         client.post('/schedule', json={
             'recipient': 'bob', 'ciphertext': 'hi',
             'send_at': '2099-01-01T12:00:00Z',
@@ -1040,6 +1045,7 @@ class TestScheduledMessages:
 
     def test_cancel_scheduled(self, client):
         _register(client, 'alice')
+        _register(client, 'bob')
         r = client.post('/schedule', json={
             'recipient': 'bob', 'ciphertext': 'hi',
             'send_at': '2099-01-01T12:00:00Z',
@@ -2141,3 +2147,128 @@ class TestKeyBackup:
         _register(client, 'alice')
         r = client.post('/account/backup', json={'blob': 'x' * 200001})
         assert r.status_code == 400
+
+
+class TestAccessControlFixes:
+    def test_search_v2_denies_non_member(self, client):
+        _register(client, 'alice')
+        r = client.post('/groups', json={'name': 'g', 'members': ['alice']})
+        gid = r.get_json()['group']['id']
+        client.post(f'/groups/{gid}/send', json={'ciphertext': 'hemmelig', 'type': 'text'})
+        client2 = _new_client()
+        _register(client2, 'eve')
+        r = client2.get(f'/search/v2?group={gid}&q=')
+        assert r.status_code == 200
+        assert r.get_json()['results'] == []
+
+    def test_search_v2_member_can_search(self, client):
+        import app as app_mod
+        _register(client, 'alice')
+        r = client.post('/groups', json={'name': 'g', 'members': ['alice']})
+        gid = r.get_json()['group']['id']
+        group_key = app_mod.get_or_create_group_key(gid)
+        ciphertext = app_mod.encrypt_symmetric('hemmelig', group_key)
+        client.post(f'/groups/{gid}/send', json={'ciphertext': ciphertext, 'type': 'text'})
+        r = client.get(f'/search/v2?group={gid}&q=hemmelig')
+        assert r.status_code == 200
+        assert len(r.get_json()['results']) == 1
+
+    def test_thread_denies_non_participant(self, client):
+        _setup_pair(client)
+        client.post('/send', json={'recipient': 'bob', 'ciphertext': 'hei', 'type': 'text'})
+        msgs = client.get('/messages/bob').get_json()['messages']
+        mid = msgs[0]['id']
+        client2 = _new_client()
+        _register(client2, 'eve')
+        r = client2.get(f'/thread/{mid}')
+        assert r.status_code == 403
+
+    def test_thread_allows_participant(self, client):
+        _setup_pair(client)
+        client.post('/send', json={'recipient': 'bob', 'ciphertext': 'hei', 'type': 'text'})
+        msgs = client.get('/messages/bob').get_json()['messages']
+        mid = msgs[0]['id']
+        r = client.get(f'/thread/{mid}')
+        assert r.status_code == 200
+        assert r.get_json()['parent']['id'] == mid
+
+    def test_upload_denies_non_participant(self, client):
+        import io
+        _setup_pair(client)
+        r = client.post('/upload', data={'recipient': 'bob', 'file': (io.BytesIO(b'secret'), 'a.jpg')}, content_type='multipart/form-data')
+        stored = r.get_json()['filename']
+        client2 = _new_client()
+        _register(client2, 'eve')
+        r = client2.get('/uploads/' + stored)
+        assert r.status_code == 403
+
+    def test_upload_allows_participant(self, client):
+        import io
+        _setup_pair(client)
+        r = client.post('/upload', data={'recipient': 'bob', 'file': (io.BytesIO(b'secret'), 'a.jpg')}, content_type='multipart/form-data')
+        stored = r.get_json()['filename']
+        client2 = _new_client()
+        _login(client2, 'bob')
+        r = client2.get('/uploads/' + stored)
+        assert r.status_code == 200
+
+    def test_schedule_group_denies_non_member(self, client):
+        _register(client, 'alice')
+        r = client.post('/groups', json={'name': 'g', 'members': ['alice']})
+        gid = r.get_json()['group']['id']
+        client2 = _new_client()
+        _register(client2, 'eve')
+        r = client2.post('/schedule', json={'group_id': gid, 'ciphertext': 'spam', 'send_at': '2099-01-01T12:00:00Z'})
+        assert r.status_code == 403
+
+    def test_send_location_group_denies_non_member(self, client):
+        _register(client, 'alice')
+        r = client.post('/groups', json={'name': 'g', 'members': ['alice']})
+        gid = r.get_json()['group']['id']
+        client2 = _new_client()
+        _register(client2, 'eve')
+        r = client2.post('/send/location', json={'group_id': gid, 'lat': 59.9, 'lng': 10.7})
+        assert r.status_code == 403
+
+    def test_forward_denies_non_participant(self, client):
+        _setup_pair(client)
+        client.post('/send', json={'recipient': 'bob', 'ciphertext': 'hemmelig', 'type': 'text'})
+        msgs = client.get('/messages/bob').get_json()['messages']
+        mid = msgs[0]['id']
+        client2 = _new_client()
+        _register(client2, 'eve')
+        r = client2.post(f'/messages/{mid}/forward', json={'target': 'bob', 'target_type': 'user'})
+        assert r.status_code == 403
+
+    def test_pins_user_chat_denies_stranger(self, client):
+        _setup_pair(client)
+        client.post('/send', json={'recipient': 'bob', 'ciphertext': 'pin me', 'type': 'text'})
+        msgs = client.get('/messages/bob').get_json()['messages']
+        mid = msgs[0]['id']
+        r = client.post('/pins', json={'chat_target': 'bob', 'msg_id': mid, 'pin': True})
+        assert r.status_code == 200
+        client2 = _new_client()
+        _register(client2, 'eve')
+        r = client2.get('/pins/bob')
+        assert r.status_code == 403
+
+    def test_reactions_deny_non_participant(self, client):
+        _setup_pair(client)
+        client.post('/send', json={'recipient': 'bob', 'ciphertext': 'hei', 'type': 'text'})
+        msgs = client.get('/messages/bob').get_json()['messages']
+        mid = msgs[0]['id']
+        client2 = _new_client()
+        _register(client2, 'eve')
+        r = client2.post('/reactions', json={'message_id': mid, 'emoji': '👍'})
+        assert r.status_code == 403
+
+    def test_calls_hangup_denies_non_participant(self, client):
+        _setup_pair(client)
+        r = client.post('/calls/init', json={'target': 'bob', 'type': 'video'})
+        call_id = r.get_json()['call_id']
+        client2 = _new_client()
+        _register(client2, 'eve')
+        r = client2.post('/calls/hangup', json={'call_id': call_id})
+        assert r.status_code == 200
+        r = client.get(f'/calls/status/{call_id}')
+        assert r.get_json()['status'] != 'ended'

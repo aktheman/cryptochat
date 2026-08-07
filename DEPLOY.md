@@ -61,8 +61,14 @@ chat.din-domene.no {
 3. Reload Caddy.
 
 ## Reports
-- Health: `GET /health`
-- Login page: `GET /login`
+- Health: `GET /health` — offentlig; verifiserer DB-tilgang.
+  Svar: `{"success":true,"status":"healthy","db":"ok","version":"..."}`.
+  `status` blir `degraded`/`db:error` ved DB-feil.
+- Login page: `GET /login` — inneholder CSRF-token.
+- End-to-end-sjekk (krever tilgang til tunnelen):
+  ```bash
+  .venv/bin/python scripts/verify_auth_flow.py
+  ```
 
 ## Backup og restore
 

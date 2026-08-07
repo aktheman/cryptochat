@@ -189,6 +189,23 @@ def fpair(a, b):
 def pair_key(a, b):
     return f"{fpair(a, b)[0]}:::{fpair(a, b)[1]}"
 
+def _can_access_message(me, m):
+    if not isinstance(m, dict):
+        return False
+    if m.get('group_id'):
+        groups = load_json(GROUPS_FILE, [])
+        g = next((x for x in groups if x.get('id') == m.get('group_id')), None)
+        return bool(g and me in g.get('members', []))
+    if m.get('channel_id'):
+        channels = load_json(CHANNELS_FILE, [])
+        c = next((x for x in channels if x.get('id') == m.get('channel_id')), None)
+        if not c:
+            return False
+        return me == c.get('created_by') or me in c.get('subscribers', [])
+    if m.get('pair_key'):
+        return me in str(m.get('pair_key', '')).split(':::')
+    return False
+
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
 
@@ -366,6 +383,16 @@ def require_login(f):
     return wrapper
 
 _encoded_prefixes = ('http://', 'https://')
+
+def _safe_strip(v):
+    return v.strip() if isinstance(v, str) else ''
+
+def _clamp_int(v, default, lo, hi):
+    try:
+        n = int(v)
+    except (TypeError, ValueError):
+        n = default
+    return max(lo, min(hi, n))
 
 def _is_public_ip(host: str) -> bool:
     try:
@@ -639,7 +666,7 @@ def verify_recovery_code(code_input, stored_hashes):
 @require_csrf
 def register():
     data = request.get_json(force=True, silent=True) or {}
-    username = (data.get('username') or '').strip().lower()
+    username = _safe_strip(data.get('username')).lower()
     password = data.get('password') or ''
     if not username or not password:
         return jsonify({'success': False, 'message': 'Brukernavn og passord er påkrevd.'}), 400
@@ -688,7 +715,7 @@ def register():
 @require_csrf
 def login():
     data = request.get_json(force=True, silent=True) or {}
-    username = (data.get('username') or '').strip().lower()
+    username = _safe_strip(data.get('username')).lower()
     password = data.get('password') or ''
     twofa_code = (data.get('twofa_code') or '').strip()
     if not username or not password:
@@ -769,7 +796,7 @@ def self_destruct_account():
         return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
     user = session['username']
     data = request.get_json(force=True, silent=True) or {}
-    delay = min(max(int(data.get('delay', 30)), 0), 90)
+    delay = _clamp_int(data.get('delay', 30), 30, 0, 90)
     users = load_json(USERS_FILE, {})
     u = users.get(user)
     if not u:
@@ -896,6 +923,16 @@ def qr_login():
         session['csrf_token'] = secrets.token_hex(32)
         session_id = secrets.token_hex(16)
         session['session_token'] = session_id
+        sessions = load_json(SESSIONS_FILE, {})
+        sessions.setdefault(username, {})[session_id] = {
+            'token': session_id,
+            'created': now_iso(),
+            'active': True,
+            'revoked': False,
+            'device': request.user_agent.string[:100] if request.user_agent else 'Unknown',
+            'ip': request.remote_addr or '',
+        }
+        save_json(SESSIONS_FILE, sessions)
         touch_presence(username)
         audit('qr_login', actor=username)
         return jsonify({'success': True, 'message': 'Logget inn via QR.', 'username': username})
@@ -966,7 +1003,7 @@ def disable_2fa():
 @require_csrf
 def recover_password():
     data = request.get_json(force=True, silent=True) or {}
-    username = (data.get('username') or '').strip().lower()
+    username = _safe_strip(data.get('username')).lower()
     code = (data.get('code') or '').strip()
     new_password = data.get('new_password') or ''
     if not username or not code or not new_password:
@@ -1324,6 +1361,7 @@ def _collect_unread(me, since=None):
 @app.route('/ai/summary', methods=['POST'])
 @rate_limit(max_requests=10, window_seconds=120)
 @require_login
+@require_csrf
 def ai_summary():
     me = session['username']
     digest = _collect_unread(me)
@@ -1340,6 +1378,7 @@ def ai_summary():
 @app.route('/ai/chat', methods=['POST'])
 @rate_limit(max_requests=10, window_seconds=120)
 @require_login
+@require_csrf
 def ai_chat():
     data = request.get_json(force=True, silent=True) or {}
     prompt = sanitize_input(data.get('prompt', ''), 4000)
@@ -1359,6 +1398,7 @@ def ai_chat():
 @app.route('/ai/replies', methods=['POST'])
 @rate_limit(max_requests=6, window_seconds=120)
 @require_login
+@require_csrf
 def ai_replies():
     data = request.get_json(force=True, silent=True) or {}
     text = sanitize_input(data.get('text', ''), 4000)
@@ -1384,6 +1424,7 @@ def ai_replies():
 @app.route('/ai/chat/summary', methods=['POST'])
 @rate_limit(max_requests=6, window_seconds=120)
 @require_login
+@require_csrf
 def ai_chat_summary():
     me = session['username']
     data = request.get_json(force=True, silent=True) or {}
@@ -1422,6 +1463,7 @@ def ai_chat_summary():
 @app.route('/ai/theme', methods=['POST'])
 @rate_limit(max_requests=6, window_seconds=120)
 @require_login
+@require_csrf
 def ai_theme():
     data = request.get_json(force=True, silent=True) or {}
     description = sanitize_input(data.get('description', ''), 500)
@@ -1465,6 +1507,7 @@ def ai_theme():
 @app.route('/ai/folder-suggest', methods=['POST'])
 @rate_limit(max_requests=6, window_seconds=120)
 @require_login
+@require_csrf
 def ai_folder_suggest():
     data = request.get_json(force=True, silent=True) or {}
     chat_name = sanitize_input(data.get('chat_name', ''), 100)
@@ -1511,12 +1554,14 @@ def send_message():
         return jsonify({'success': False, 'message': 'Du har blokkert denne brukeren.'}), 403
     if session['username'] in blocked.get(recipient, []):
         return jsonify({'success': False, 'message': 'Denne brukeren har blokkert deg.'}), 403
+    if recipient not in load_json(USERS_FILE, {}):
+        return jsonify({'success': False, 'message': 'Bruker ikke funnet.'}), 404
     shared_key = get_or_create_pair_key(session['username'], recipient)
     pk = pair_key(session['username'], recipient)
     messages = load_json(MESSAGES_FILE, [])
     self_destruct_at = None
-    if self_destruct_minutes and str(self_destruct_minutes).isdigit():
-        minutes = int(self_destruct_minutes)
+    if self_destruct_minutes is not None:
+        minutes = _clamp_int(self_destruct_minutes, 0, 0, 525600)
         if minutes > 0:
             self_destruct_at = (datetime.utcnow() + timedelta(minutes=minutes)).isoformat()
     messages.append({
@@ -2137,9 +2182,15 @@ def add_reaction():
         return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
     data = request.get_json(force=True, silent=True) or {}
     message_id = (data.get('message_id') or '').strip()
-    emoji = (data.get('emoji') or '').strip()
+    emoji = sanitize_input(data.get('emoji', ''), 32).strip()
     if not message_id or not emoji:
         return jsonify({'success': False, 'message': 'Manglende felt.'}), 400
+    messages = load_json(MESSAGES_FILE, [])
+    target = next((m for m in messages if m.get('id') == message_id), None)
+    if not target:
+        return jsonify({'success': False, 'message': 'Melding ikke funnet.'}), 404
+    if not _can_access_message(username, target):
+        return jsonify({'success': False, 'message': 'Ingen tilgang.'}), 403
     reactions = load_json(REACTIONS_FILE, {})
     msg_reactions = reactions.get(message_id, {})
     user_reactions = msg_reactions.get(username, [])
@@ -2159,10 +2210,14 @@ def add_reaction():
     return jsonify({'success': True, 'reactions': msg_reactions})
 
 @app.route('/reactions/<message_id>', methods=['GET'])
+@require_login
+@rate_limit(max_requests=60, window_seconds=60)
 def get_reactions(message_id):
-    username = session.get('username')
-    if not username:
-        return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
+    username = session['username']
+    messages = load_json(MESSAGES_FILE, [])
+    target = next((m for m in messages if m.get('id') == message_id), None)
+    if not target or not _can_access_message(username, target):
+        return jsonify({'success': False, 'message': 'Ingen tilgang.'}), 403
     reactions = load_json(REACTIONS_FILE, {})
     return jsonify({'success': True, 'reactions': reactions.get(message_id, {})})
 
@@ -2485,7 +2540,7 @@ def send_ice():
         return jsonify({'success': False, 'message': 'Manglende felt.'}), 400
     calls = load_json(CALLS_FILE, {})
     call = calls.get(call_id)
-    if not call:
+    if not call or username not in (call.get('caller'), call.get('callee')):
         return jsonify({'success': False, 'message': 'Ugyldig samtale.'}), 404
     call.setdefault('ice_candidates', []).append({'sender': username, 'candidate': candidate})
     save_json(CALLS_FILE, calls)
@@ -2498,7 +2553,7 @@ def get_ice(call_id):
         return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
     calls = load_json(CALLS_FILE, {})
     call = calls.get(call_id)
-    if not call:
+    if not call or username not in (call.get('caller'), call.get('callee')):
         return jsonify({'success': True, 'candidates': []})
     candidates = [c['candidate'] for c in call.get('ice_candidates', []) if c.get('sender') != username]
     return jsonify({'success': True, 'candidates': candidates})
@@ -2516,7 +2571,7 @@ def hangup_call():
         return jsonify({'success': False, 'message': 'Manglende samtale-ID.'}), 400
     calls = load_json(CALLS_FILE, {})
     call = calls.get(call_id)
-    if call:
+    if call and username in (call.get('caller'), call.get('callee')):
         call['status'] = 'ended'
         call['ended_at'] = now_iso()
         save_json(CALLS_FILE, calls)
@@ -2529,7 +2584,7 @@ def call_status(call_id):
         return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
     calls = load_json(CALLS_FILE, {})
     call = calls.get(call_id)
-    if not call:
+    if not call or username not in (call.get('caller'), call.get('callee')):
         return jsonify({'success': True, 'status': 'ended'})
     return jsonify({'success': True, 'status': call.get('status', 'ended')})
 
@@ -2976,7 +3031,11 @@ def _can_pin_chat(chat_target):
     for g in groups:
         if g.get('id') == chat_target:
             return me in g.get('members', [])
-    return chat_target in load_json(USERS_FILE, {})
+    if chat_target not in load_json(USERS_FILE, {}):
+        return False
+    pk = pair_key(me, chat_target)
+    messages = load_json(MESSAGES_FILE, [])
+    return any(m.get('pair_key') == pk for m in messages)
 
 def _pin_key(chat_target):
     groups = load_json(GROUPS_FILE, [])
@@ -3059,6 +3118,15 @@ def schedule_message():
         return jsonify({'success': False, 'message': 'Manglende innhold eller tid.'}), 400
     if not recipient and not group_id:
         return jsonify({'success': False, 'message': 'Manglende mottaker.'}), 400
+    if group_id:
+        groups = load_json(GROUPS_FILE, [])
+        group = next((g for g in groups if g.get('id') == group_id), None)
+        if not group or me not in group.get('members', []):
+            return jsonify({'success': False, 'message': 'Ingen tilgang til gruppen.'}), 403
+    elif recipient:
+        users = load_json(USERS_FILE, {})
+        if recipient not in users:
+            return jsonify({'success': False, 'message': 'Bruker ikke funnet.'}), 404
     try:
         scheduled_time = datetime.fromisoformat(send_at.replace('Z', '+00:00')).replace(tzinfo=None)
     except Exception:
@@ -3284,6 +3352,12 @@ def deliver_scheduled_messages():
                     'reply_to': None,
                 })
             elif entry.get('group_id'):
+                groups = load_json(GROUPS_FILE, [])
+                group = next((g for g in groups if g.get('id') == entry['group_id']), None)
+                if not group or entry['sender'] not in group.get('members', []):
+                    entry['sent'] = True
+                    changed = True
+                    continue
                 group_key = get_or_create_group_key(entry['group_id'])
                 messages.append({
                     'id': hashlib.sha256(f"{entry['ciphertext']}{entry['group_id']}{datetime.utcnow().isoformat()}{entry['sender']}".encode()).hexdigest(),
@@ -3383,9 +3457,18 @@ def forward_message(message_id):
     orig = next((m for m in messages if m.get('id') == message_id), None)
     if not orig:
         return jsonify({'success': False, 'message': 'Melding ikke funnet.'}), 404
+    if not _can_access_message(me, orig):
+        return jsonify({'success': False, 'message': 'Ingen tilgang til meldingen.'}), 403
     if target_type == 'user':
+        users = load_json(USERS_FILE, {})
+        if target not in users:
+            return jsonify({'success': False, 'message': 'Bruker ikke funnet.'}), 404
         pk = pair_key(me, target)
     else:
+        groups = load_json(GROUPS_FILE, [])
+        group = next((g for g in groups if g.get('id') == target), None)
+        if not group or me not in group.get('members', []):
+            return jsonify({'success': False, 'message': 'Ingen tilgang til gruppen.'}), 403
         pk = None
     fwd = {
         'id': hashlib.sha256(f"fwd:{message_id}:{target}:{datetime.utcnow().isoformat()}".encode()).hexdigest(),
@@ -3935,25 +4018,39 @@ def send_location():
         lat_f, lng_f = float(lat), float(lng)
     except (ValueError, TypeError):
         return jsonify({'success': False, 'message': 'Ugyldige koordinater.'}), 400
+    import math
+    if not (math.isfinite(lat_f) and math.isfinite(lng_f)) or not (-90 <= lat_f <= 90) or not (-180 <= lng_f <= 180):
+        return jsonify({'success': False, 'message': 'Ugyldige koordinater.'}), 400
     loc_data = json.dumps({'lat': lat_f, 'lng': lng_f, 'label': label})
     if group_id:
+        groups = load_json(GROUPS_FILE, [])
+        group = next((g for g in groups if g.get('id') == group_id), None)
+        if not group or me not in group.get('members', []):
+            return jsonify({'success': False, 'message': 'Ingen tilgang til gruppen.'}), 403
         pk = f"group::{group_id}"
         target = group_id
     else:
+        users = load_json(USERS_FILE, {})
+        if recipient not in users:
+            return jsonify({'success': False, 'message': 'Bruker ikke funnet.'}), 404
         pk = pair_key(me, recipient)
         target = recipient
     messages = load_json(MESSAGES_FILE, [])
-    messages.append({
+    msg = {
         'id': hashlib.sha256(f"loc:{loc_data}:{datetime.utcnow().isoformat()}{me}".encode()).hexdigest(),
         'pair_key': pk,
         'sender': me,
-        'recipient': target,
         'ciphertext': loc_data,
         'type': 'location',
         'timestamp': datetime.utcnow().isoformat(),
         'read': False,
         'self_destruct_at': None,
-    })
+    }
+    if group_id:
+        msg['group_id'] = group_id
+    else:
+        msg['recipient'] = target
+    messages.append(msg)
     save_json(MESSAGES_FILE, messages)
     return jsonify({'success': True})
 
@@ -5126,11 +5223,17 @@ def search_v2():
     msg_type = (request.args.get('type') or '').strip()
     if not q and not sender and not group_id:
         return jsonify({'success': True, 'results': []})
+    if group_id:
+        groups = load_json(GROUPS_FILE, [])
+        group = next((g for g in groups if g.get('id') == group_id), None)
+        if not group or me not in group.get('members', []):
+            return jsonify({'success': True, 'results': []})
     messages = load_json(MESSAGES_FILE, [])
     results = []
     for m in messages:
         is_group = bool(m.get('group_id'))
         is_dm = bool(m.get('pair_key'))
+        is_channel = bool(m.get('channel_id'))
         if group_id:
             if m.get('group_id') != group_id:
                 continue
@@ -5145,7 +5248,7 @@ def search_v2():
                 pk = m.get('pair_key', '')
                 if me not in pk.split(':::'):
                     continue
-            elif is_group:
+            elif is_group or is_channel:
                 continue
         if sender and m.get('sender', '').lower() != sender:
             continue
@@ -5738,7 +5841,9 @@ def service_worker_test():
 
 @app.route('/uploads/<path:filename>')
 @require_login
+@rate_limit(max_requests=120, window_seconds=60)
 def uploaded_file(filename):
+    me = session['username']
     safe_name = secure_filename(filename)
     if not safe_name:
         return jsonify({'success': False, 'message': 'Ugyldig filnavn.'}), 400
@@ -5746,39 +5851,54 @@ def uploaded_file(filename):
     abs_target = os.path.abspath(os.path.join(abs_root, safe_name))
     if not abs_target.startswith(abs_root + os.sep):
         return jsonify({'success': False, 'message': 'Ugyldig filsti.'}), 400
+    if safe_name.startswith('group_avatar_'):
+        gid = safe_name[len('group_avatar_'):].rsplit('.', 1)[0]
+        groups = load_json(GROUPS_FILE, [])
+        g = next((x for x in groups if x.get('id') == gid), None)
+        if not g or me not in g.get('members', []):
+            return jsonify({'success': False, 'message': 'Ingen tilgang.'}), 403
+    else:
+        messages = load_json(MESSAGES_FILE, [])
+        owner = next((m for m in messages if m.get('filename') == safe_name), None)
+        if not owner or not _can_access_message(me, owner):
+            return jsonify({'success': False, 'message': 'Ingen tilgang.'}), 403
     resp = send_from_directory(abs_root, safe_name, as_attachment=False)
     resp.headers['Content-Security-Policy'] = 'sandbox; default-src none; base-uri none; frame-ancestors none'
     resp.headers['X-Download-Options'] = 'noopen'
     return resp
 
 @app.route('/thread/<msg_id>', methods=['GET'])
+@require_login
+@rate_limit(max_requests=30, window_seconds=60)
 def get_thread(msg_id):
-    if 'username' not in session:
-        return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
+    me = session['username']
     messages = load_json(MESSAGES_FILE, [])
+    parent = None
+    for m in messages:
+        if m.get('id') == msg_id:
+            parent = m
+            break
+    if not parent or not _can_access_message(me, parent):
+        return jsonify({'success': False, 'message': 'Ingen tilgang.'}), 403
     thread = []
     for m in messages:
         if m.get('reply_to') == msg_id:
             thread.append({
                 'id': m.get('id'),
-                'sender': m['sender'],
+                'sender': m.get('sender', ''),
                 'text': m.get('ciphertext') or m.get('filename', ''),
                 'type': m.get('type'),
-                'timestamp': m['timestamp'],
+                'timestamp': m.get('timestamp', ''),
             })
     thread.sort(key=lambda x: x['timestamp'])
-    parent = None
-    for m in messages:
-        if m.get('id') == msg_id:
-            parent = {
-                'id': m.get('id'),
-                'sender': m['sender'],
-                'text': m.get('ciphertext') or m.get('filename', ''),
-                'type': m.get('type'),
-                'timestamp': m['timestamp'],
-            }
-            break
-    return jsonify({'success': True, 'thread': thread, 'parent': parent, 'count': len(thread)})
+    parent_out = {
+        'id': parent.get('id'),
+        'sender': parent.get('sender', ''),
+        'text': parent.get('ciphertext') or parent.get('filename', ''),
+        'type': parent.get('type'),
+        'timestamp': parent.get('timestamp', ''),
+    }
+    return jsonify({'success': True, 'thread': thread, 'parent': parent_out, 'count': len(thread)})
 
 @app.route('/labels', methods=['GET'])
 @require_login
