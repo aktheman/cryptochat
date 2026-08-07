@@ -1589,6 +1589,50 @@ class TestUpload:
         r = client.post('/upload', data={'recipient': 'bob'})
         assert r.status_code == 400
 
+    def test_upload_user_returns_stored_name_and_serves_file(self, client):
+        import io
+        import app as app_mod
+        _setup_pair(client)
+        r = client.post('/upload', data={'recipient': 'bob', 'file': (io.BytesIO(b'hello file'), 'cat.jpg')}, content_type='multipart/form-data')
+        assert r.status_code == 200
+        stored = r.get_json()['filename']
+        assert stored.endswith('_cat.jpg')
+        messages = app_mod.load_json(app_mod.MESSAGES_FILE, [])
+        file_msgs = [m for m in messages if m.get('type') == 'file']
+        assert len(file_msgs) == 1
+        assert file_msgs[0]['filename'] == stored
+        d = client.get('/uploads/' + stored)
+        assert d.status_code == 200
+        assert d.data == b'hello file'
+
+    def test_upload_group_stores_name_and_serves_file(self, client):
+        import io
+        import app as app_mod
+        _register(client, 'alice')
+        r = client.post('/groups', json={'name': 'g', 'members': ['alice']})
+        gid = r.get_json()['group']['id']
+        r = client.post('/upload', data={'groupId': gid, 'file': (io.BytesIO(b'group file'), 'doc.pdf')}, content_type='multipart/form-data')
+        assert r.status_code == 200
+        stored = r.get_json()['filename']
+        assert stored.endswith('_doc.pdf')
+        messages = app_mod.load_json(app_mod.MESSAGES_FILE, [])
+        file_msgs = [m for m in messages if m.get('type') == 'file']
+        assert len(file_msgs) == 1
+        assert file_msgs[0]['filename'] == stored
+        d = client.get('/uploads/' + stored)
+        assert d.status_code == 200
+        assert d.data == b'group file'
+
+    def test_upload_group_denies_non_member(self, client):
+        import io
+        _register(client, 'alice')
+        r = client.post('/groups', json={'name': 'g', 'members': ['alice']})
+        gid = r.get_json()['group']['id']
+        client2 = _new_client()
+        _register(client2, 'eve')
+        r = client2.post('/upload', data={'groupId': gid, 'file': (io.BytesIO(b'x'), 'a.txt')}, content_type='multipart/form-data')
+        assert r.status_code == 403
+
 
 class TestAdminRoutes:
     def test_admin_stats_requires_admin(self, client):
