@@ -889,6 +889,7 @@ class TestAvatarAuth:
 class TestLiveLocationOwnership:
     def test_non_owner_cannot_read_live_location(self, client):
         _register(client, 'alice')
+        _register(client, 'bob')
         r = client.post('/location/live', json={'lat': 60.0, 'lng': 10.0, 'target': 'bob', 'targetType': 'user', 'duration': 60})
         share_id = r.get_json().get('shareId')
         client2 = _new_client()
@@ -898,6 +899,7 @@ class TestLiveLocationOwnership:
 
     def test_owner_can_read_live_location(self, client):
         _register(client, 'alice')
+        _register(client, 'bob')
         r = client.post('/location/live', json={'lat': 60.0, 'lng': 10.0, 'target': 'bob', 'targetType': 'user', 'duration': 60})
         share_id = r.get_json().get('shareId')
         r = client.get(f'/location/live/{share_id}')
@@ -1210,9 +1212,18 @@ class TestStories:
         sid = r.get_json()['story']['id']
         client2 = _new_client()
         _register(client2, 'bob')
-        client.post('/contacts', json={'username': 'bob'})
+        client2.post('/contacts', json={'username': 'alice'})
         r = client2.post(f'/stories/{sid}/view')
         assert r.status_code == 200
+
+    def test_view_story_non_contact_forbidden(self, client):
+        _register(client, 'alice')
+        r = client.post('/stories', json={'content': 'Hei', 'type': 'text'})
+        sid = r.get_json()['story']['id']
+        client2 = _new_client()
+        _register(client2, 'bob')
+        r = client2.post(f'/stories/{sid}/view')
+        assert r.status_code == 403
 
 
 class TestSlowMode:
@@ -2272,3 +2283,292 @@ class TestAccessControlFixes:
         assert r.status_code == 200
         r = client.get(f'/calls/status/{call_id}')
         assert r.get_json()['status'] != 'ended'
+
+
+class TestLiveLocationSecurity:
+    def test_live_location_group_injection_forbidden(self, client):
+        _register(client, 'alice')
+        client2 = _new_client()
+        _register(client2, 'bob')
+        r = client2.post('/groups', json={'name': 'secret', 'members': []})
+        gid = r.get_json()['group']['id']
+        r = client.post('/location/live', json={'lat': 60.0, 'lng': 10.0, 'target': gid, 'targetType': 'group'})
+        assert r.status_code == 403
+
+    def test_live_location_group_member_allowed(self, client):
+        _register(client, 'alice')
+        _register(client, 'bob')
+        r = client.post('/groups', json={'name': 'g', 'members': ['alice', 'bob']})
+        gid = r.get_json()['group']['id']
+        r = client.post('/location/live', json={'lat': 60.0, 'lng': 10.0, 'target': gid, 'targetType': 'group'})
+        assert r.status_code == 200
+
+    def test_live_location_invalid_coords(self, client):
+        _register(client, 'alice')
+        _register(client, 'bob')
+        for lat, lng in [(999, 10.0), ('abc', 10.0), (60.0, float('inf'))]:
+            r = client.post('/location/live', json={'lat': lat, 'lng': lng, 'target': 'bob', 'targetType': 'user'})
+            assert r.status_code == 400
+
+    def test_live_location_to_blocked_user_forbidden(self, client):
+        _setup_pair(client)
+        client.post('/block/bob')
+        r = client.post('/location/live', json={'lat': 60.0, 'lng': 10.0, 'target': 'bob', 'targetType': 'user'})
+        assert r.status_code == 403
+
+
+class TestBlockBypass:
+    def test_forward_to_blocked_user_forbidden(self, client):
+        _setup_pair(client)
+        client.post('/send', json={'recipient': 'bob', 'ciphertext': 'hei', 'type': 'text'})
+        msgs = client.get('/messages/bob').get_json()['messages']
+        mid = msgs[-1]['id']
+        client.post('/block/bob')
+        r = client.post(f'/messages/{mid}/forward', json={'target': 'bob', 'target_type': 'user'})
+        assert r.status_code == 403
+
+    def test_send_location_to_blocked_user_forbidden(self, client):
+        _setup_pair(client)
+        client.post('/block/bob')
+        r = client.post('/send/location', json={'recipient': 'bob', 'lat': 60.0, 'lng': 10.0})
+        assert r.status_code == 403
+
+    def test_schedule_to_blocked_user_forbidden(self, client):
+        _setup_pair(client)
+        client.post('/block/bob')
+        future = (datetime.utcnow() + timedelta(hours=1)).isoformat()
+        r = client.post('/schedule', json={'recipient': 'bob', 'ciphertext': 'hei', 'send_at': future})
+        assert r.status_code == 403
+
+    def test_init_call_to_blocked_user_forbidden(self, client):
+        _setup_pair(client)
+        client.post('/block/bob')
+        r = client.post('/calls/init', json={'target': 'bob', 'type': 'audio'})
+        assert r.status_code == 403
+
+
+class TestPollAccess:
+    def test_poll_vote_non_participant_forbidden(self, client):
+        _setup_pair(client)
+        r = client.post('/polls', json={'question': 'Spørsmål', 'options': ['A', 'B'], 'target': 'bob', 'target_type': 'user'})
+        poll_id = r.get_json()['poll_id']
+        client2 = _new_client()
+        _register(client2, 'eve')
+        r = client2.post(f'/polls/{poll_id}/vote', json={'options': [0]})
+        assert r.status_code == 403
+        r = client2.get(f'/polls/{poll_id}')
+        assert r.status_code == 403
+
+    def test_poll_vote_participant_allowed(self, client):
+        _setup_pair(client)
+        r = client.post('/polls', json={'question': 'Spørsmål', 'options': ['A', 'B'], 'target': 'bob', 'target_type': 'user'})
+        poll_id = r.get_json()['poll_id']
+        r = client.post(f'/polls/{poll_id}/vote', json={'options': [0]})
+        assert r.status_code == 200
+
+
+class TestSessionPin:
+    def test_session_pin_blocks_api_when_locked(self, client):
+        _register(client, 'alice')
+        r = client.post('/profile/pin', json={'pin': '1234'})
+        assert r.status_code == 200
+        r = client.post('/auth/session/lock')
+        assert r.status_code == 200
+        r = client.get('/users')
+        assert r.status_code == 401
+        data = r.get_json()
+        assert data.get('locked') is True
+        r = client.post('/auth/session/pin', json={'pin': '9999'})
+        assert r.status_code == 401
+        r = client.get('/users')
+        assert r.status_code == 401
+        r = client.post('/auth/session/pin', json={'pin': '1234'})
+        assert r.status_code == 200
+        r = client.get('/users')
+        assert r.status_code == 200
+
+    def test_session_pin_not_required_without_pin(self, client):
+        _register(client, 'alice')
+        r = client.post('/auth/session/lock')
+        assert r.status_code == 200
+        r = client.get('/users')
+        assert r.status_code == 200
+
+    def test_session_pin_remove(self, client):
+        _register(client, 'alice')
+        client.post('/profile/pin', json={'pin': '1234'})
+        r = client.post('/profile/pin', json={'pin': ''})
+        assert r.status_code == 200
+        r = client.post('/auth/session/lock')
+        assert r.status_code == 200
+        r = client.get('/users')
+        assert r.status_code == 200
+
+
+class TestQrLoginSecurity:
+    def test_qr_login_token_single_use(self, client):
+        _register(client, 'alice')
+        r = client.post('/auth/qr/generate')
+        assert r.status_code == 200
+        token = r.get_json()['token']
+        r = client.post('/auth/qr/accept', json={'token': token})
+        assert r.status_code == 200
+        r = client.post('/auth/qr/login', json={'token': token})
+        assert r.status_code == 200
+        client.post('/auth/logout')
+        r = client.post('/auth/qr/login', json={'token': token})
+        assert r.status_code == 400
+
+    def test_qr_status_hides_username(self, client):
+        _register(client, 'alice')
+        r = client.post('/auth/qr/generate')
+        token = r.get_json()['token']
+        r = client.post('/auth/qr/accept', json={'token': token})
+        r = client.get(f'/auth/qr/status/{token}')
+        assert r.status_code == 200
+        data = r.get_json()
+        assert 'username' not in data
+
+    def test_qr_login_blocked_without_csrf(self, client):
+        app.config['CSRF_ENABLED'] = True
+        try:
+            _register(client, 'alice')
+            r = client.post('/auth/qr/generate')
+            token = r.get_json()['token']
+            client.post('/auth/qr/accept', json={'token': token})
+            r = client.post('/auth/qr/login', json={'token': token},
+                            headers={'Origin': 'http://evil.example.com'})
+            assert r.status_code == 400
+        finally:
+            app.config['CSRF_ENABLED'] = False
+
+
+class TestRecoveryCodeEntropy:
+    def test_recovery_codes_are_12_hex_chars(self, client):
+        _register(client, 'alice')
+        r = client.post('/auth/recovery/generate', json={})
+        codes = r.get_json()['recovery_codes']
+        assert len(codes) == 5
+        for c in codes:
+            assert len(c.replace('-', '')) == 12
+        client.post('/auth/logout')
+        r = client.post('/auth/recovery', json={
+            'username': 'alice', 'code': codes[0], 'new_password': 'N3wP@ssw0rd!'
+        })
+        assert r.status_code == 200
+
+
+class TestAnnouncementMode:
+    def _create_pair_group(self, client, client2):
+        _register(client, 'alice')
+        _register(client2, 'bob')
+        r = client.post('/groups', json={'name': 'ann', 'members': ['bob']})
+        return r.get_json()['group']['id']
+
+    def _enable_announcement(self, client, gid):
+        return client.post(f'/groups/{gid}/update', json={'announcement_mode': True})
+
+    def test_enable_announcement_mode_as_creator(self, client):
+        _register(client, 'alice')
+        _register(client, 'bob')
+        r = client.post('/groups', json={'name': 'g', 'members': ['alice', 'bob']})
+        gid = r.get_json()['group']['id']
+        r = self._enable_announcement(client, gid)
+        assert r.status_code == 200
+        assert r.get_json()['group']['announcement_mode'] is True
+
+    def test_non_admin_cannot_change_announcement_mode(self, client):
+        _register(client, 'alice')
+        client2 = _new_client()
+        _register(client2, 'bob')
+        r = client.post('/groups', json={'name': 'g', 'members': ['bob']})
+        gid = r.get_json()['group']['id']
+        r = client2.post(f'/groups/{gid}/update', json={'announcement_mode': True})
+        assert r.status_code == 403
+
+    def test_announcement_flag_in_list_groups(self, client):
+        _register(client, 'alice')
+        _register(client, 'bob')
+        r = client.post('/groups', json={'name': 'g', 'members': ['alice', 'bob']})
+        gid = r.get_json()['group']['id']
+        self._enable_announcement(client, gid)
+        r = client.get('/groups')
+        assert any(g.get('announcement_mode') for g in r.get_json()['groups'])
+
+    def test_creator_can_send_in_announcement_mode(self, client):
+        gid = self._create_pair_group(client, _new_client())
+        self._enable_announcement(client, gid)
+        r = client.post(f'/groups/{gid}/send', json={'ciphertext': 'hei', 'type': 'text'})
+        assert r.status_code == 200
+
+    def test_member_cannot_send_in_announcement_mode(self, client):
+        client2 = _new_client()
+        gid = self._create_pair_group(client, client2)
+        self._enable_announcement(client, gid)
+        r = client2.post(f'/groups/{gid}/send', json={'ciphertext': 'hei', 'type': 'text'})
+        assert r.status_code == 403
+        assert 'Kunngjøringsmodus' in r.get_json()['message']
+
+    def test_admin_can_send_in_announcement_mode(self, client):
+        client2 = _new_client()
+        gid = self._create_pair_group(client, client2)
+        client.post(f'/groups/{gid}/admins', json={'username': 'bob', 'role': 'admin'})
+        self._enable_announcement(client, gid)
+        r = client2.post(f'/groups/{gid}/send', json={'ciphertext': 'hei', 'type': 'text'})
+        assert r.status_code == 200
+
+    def test_member_cannot_create_poll_in_announcement_mode(self, client):
+        client2 = _new_client()
+        gid = self._create_pair_group(client, client2)
+        self._enable_announcement(client, gid)
+        r = client2.post('/polls', json={'question': 'Q?', 'options': ['a', 'b'], 'target': gid, 'target_type': 'group'})
+        assert r.status_code == 403
+
+    def test_member_cannot_schedule_in_announcement_mode(self, client):
+        client2 = _new_client()
+        gid = self._create_pair_group(client, client2)
+        self._enable_announcement(client, gid)
+        r = client2.post('/schedule', json={'group_id': gid, 'ciphertext': 'x', 'send_at': '2099-01-01T12:00:00Z'})
+        assert r.status_code == 403
+
+    def test_member_cannot_forward_in_announcement_mode(self, client):
+        client2 = _new_client()
+        gid = self._create_pair_group(client, client2)
+        client.post(f'/groups/{gid}/send', json={'ciphertext': 'original', 'type': 'text'})
+        self._enable_announcement(client, gid)
+        msgs = client2.get(f'/groups/{gid}/messages').get_json()['messages']
+        msg_id = msgs[0]['id']
+        r = client2.post(f'/messages/{msg_id}/forward', json={'target': gid, 'target_type': 'group'})
+        assert r.status_code == 403
+
+    def test_member_cannot_upload_in_announcement_mode(self, client):
+        import io
+        client2 = _new_client()
+        gid = self._create_pair_group(client, client2)
+        self._enable_announcement(client, gid)
+        r = client2.post('/upload', data={'groupId': gid, 'file': (io.BytesIO(b'x'), 'doc.pdf')}, content_type='multipart/form-data')
+        assert r.status_code == 403
+
+    def test_member_cannot_send_location_in_announcement_mode(self, client):
+        client2 = _new_client()
+        gid = self._create_pair_group(client, client2)
+        self._enable_announcement(client, gid)
+        r = client2.post('/send/location', json={'group_id': gid, 'lat': 59.9, 'lng': 10.7})
+        assert r.status_code == 403
+
+    def test_member_cannot_live_location_in_announcement_mode(self, client):
+        client2 = _new_client()
+        gid = self._create_pair_group(client, client2)
+        self._enable_announcement(client, gid)
+        r = client2.post('/location/live', json={'target': gid, 'targetType': 'group', 'lat': 59.9, 'lng': 10.7})
+        assert r.status_code == 403
+
+    def test_deliver_scheduled_drops_announcement_message(self, client):
+        import app as app_mod
+        client2 = _new_client()
+        gid = self._create_pair_group(client, client2)
+        client2.post('/schedule', json={'group_id': gid, 'ciphertext': 'planlagt', 'send_at': '2020-01-01T12:00:00Z'})
+        self._enable_announcement(client, gid)
+        app_mod.deliver_scheduled_messages()
+        msgs = client2.get(f'/groups/{gid}/messages').get_json()['messages']
+        assert all(m.get('ciphertext') != 'planlagt' for m in msgs)

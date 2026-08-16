@@ -206,6 +206,41 @@ def _can_access_message(me, m):
         return me in str(m.get('pair_key', '')).split(':::')
     return False
 
+def _is_blocked(me, other):
+    if not me or not other:
+        return False
+    blocked = load_json(BLOCKED_FILE, {})
+    return other in blocked.get(me, []) or me in blocked.get(other, [])
+
+def _valid_lat_lng(lat, lng):
+    import math
+    try:
+        lat_f, lng_f = float(lat), float(lng)
+    except (ValueError, TypeError):
+        return None
+    if not (math.isfinite(lat_f) and math.isfinite(lng_f)):
+        return None
+    if not (-90 <= lat_f <= 90) or not (-180 <= lng_f <= 180):
+        return None
+    return lat_f, lng_f
+
+def _can_access_poll(me, poll):
+    pk = (poll or {}).get('pair_key') or ''
+    if pk.startswith('group::'):
+        gid = pk.split('::', 1)[1]
+        groups = load_json(GROUPS_FILE, [])
+        g = next((x for x in groups if x.get('id') == gid), None)
+        return bool(g and me in g.get('members', []))
+    return me in str(pk).split(':::')
+
+def _group_write_ok(group, me):
+    """Kunngjøringsmodus: bare admin/oppretter kan skrive i gruppen."""
+    if not group or me not in group.get('members', []):
+        return False
+    if group.get('announcement_mode'):
+        return group.get('created_by') == me or me in group.get('admins', [])
+    return True
+
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
 
@@ -371,6 +406,26 @@ def get_user(username):
     users = load_json(USERS_FILE, {}, ttl=5)
     return users.get(username)
 
+_PIN_EXEMPT_ENDPOINTS = {'session_pin'}
+
+def _pin_locked(username):
+    user = get_user(username)
+    if not (user and user.get('session_pin')):
+        return False
+    if session.get('unlocked') is not True:
+        return True
+    unlocked_at = parse_iso(session.get('unlocked_at'))
+    if unlocked_at is None:
+        return True
+    relock_minutes = app.config.get('PIN_RELOCK_MINUTES', 30)
+    if datetime.utcnow() - unlocked_at > timedelta(minutes=relock_minutes):
+        return True
+    return False
+
+def _unlock_session():
+    session['unlocked'] = True
+    session['unlocked_at'] = now_iso()
+
 def require_login(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
@@ -378,6 +433,8 @@ def require_login(f):
         if not username or not is_user_session_active(username):
             session.clear()
             return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
+        if request.endpoint not in _PIN_EXEMPT_ENDPOINTS and _pin_locked(username):
+            return jsonify({'success': False, 'locked': True, 'message': 'Appen er låst. Skriv inn PIN.'}), 401
         touch_session_active(username)
         return f(*args, **kwargs)
     return wrapper
@@ -586,11 +643,9 @@ def require_csrf(f):
                 if not hmac.compare_digest(token, session.get('csrf_token', '')):
                     return jsonify({'success': False, 'message': 'Ugyldig CSRF-token.'}), 400
             elif origin:
-                if _is_same_origin(origin, request):
-                    pass
-                else:
+                if not _is_same_origin(origin, request):
                     allowed = app.config.get('CSRF_TRUSTED_ORIGINS', [])
-                    if allowed and not any(origin.startswith(o.rstrip('/')) for o in allowed):
+                    if not any(origin.startswith(o.rstrip('/')) for o in allowed):
                         return jsonify({'success': False, 'message': 'Ugyldig forespørselskilde.'}), 400
         return f(*args, **kwargs)
     return wrapper
@@ -641,17 +696,17 @@ def generate_recovery_codes(count=5):
     codes = []
     hashed = []
     for _ in range(count):
-        code = secrets.token_hex(4).upper()
-        code_formatted = f"{code[:4]}-{code[4:8]}"
+        code = secrets.token_hex(6).upper()
+        code_formatted = f"{code[:6]}-{code[6:12]}"
         codes.append(code_formatted)
         hashed.append(_recovery_code_hash(code_formatted))
     return codes, hashed
 
 def verify_recovery_code(code_input, stored_hashes):
     code = code_input.strip().upper().replace('-', '')
-    if len(code) != 8:
+    if len(code) != 12:
         return False, -1
-    code_formatted = f"{code[:4]}-{code[4:8]}"
+    code_formatted = f"{code[:6]}-{code[6:12]}"
     code_hash = _recovery_code_hash(code_formatted)
     for i, h in enumerate(stored_hashes):
         if _hmac_mod.compare_digest(code_hash, h):
@@ -708,6 +763,7 @@ def register():
     }
     save_json(SESSIONS_FILE, sessions)
     touch_presence(username)
+    _unlock_session()
     return jsonify({'success': True})
 
 @app.route('/auth/login', methods=['POST'])
@@ -764,6 +820,7 @@ def login():
     save_json(SESSIONS_FILE, sessions)
     touch_presence(username)
     audit('login_success', actor=username, target=username)
+    _unlock_session()
     return jsonify({'success': True})
 
 @app.route('/auth/logout', methods=['POST'])
@@ -860,10 +917,11 @@ def qr_status(token):
         if not row:
             return jsonify({'success': False, 'message': 'Token ugyldig.'}), 404
         data = json.loads(row['value'])
+        status = data.get('status')
         expires = parse_iso(data.get('expires'))
-        if expires and datetime.utcnow() > expires:
+        if status == 'used' or (expires and datetime.utcnow() > expires):
             return jsonify({'success': False, 'message': 'Token utløpt.', 'status': 'expired'}), 410
-        return jsonify({'success': True, 'status': data.get('status'), 'username': data.get('username')})
+        return jsonify({'success': True, 'status': status})
     except Exception as e:
         logger.warning('qr_status error: %s', e)
         return jsonify({'success': False, 'message': 'Feil.'}), 500
@@ -900,6 +958,7 @@ def qr_accept():
 
 @app.route('/auth/qr/login', methods=['POST'])
 @rate_limit(max_requests=5, window_seconds=60)
+@require_csrf
 def qr_login():
     data = request.get_json(force=True, silent=True) or {}
     token = (data.get('token') or '').strip()
@@ -921,6 +980,7 @@ def qr_login():
             return jsonify({'success': False, 'message': 'Ingen bruker.'}), 400
         session['username'] = username
         session['csrf_token'] = secrets.token_hex(32)
+        _unlock_session()
         session_id = secrets.token_hex(16)
         session['session_token'] = session_id
         sessions = load_json(SESSIONS_FILE, {})
@@ -933,6 +993,12 @@ def qr_login():
             'ip': request.remote_addr or '',
         }
         save_json(SESSIONS_FILE, sessions)
+        try:
+            with _get_conn() as conn:
+                conn.execute('INSERT OR REPLACE INTO kv_store (key, value) VALUES (?, ?)',
+                             (f'qr_login:{token}', json.dumps({'expires': data['expires'], 'status': 'used', 'username': username})))
+        except Exception as e:
+            logger.warning('qr_login mark used failed: %s', e)
         touch_presence(username)
         audit('qr_login', actor=username)
         return jsonify({'success': True, 'message': 'Logget inn via QR.', 'username': username})
@@ -1045,9 +1111,17 @@ def session_pin():
         return jsonify({'success': False, 'message': 'Bruker ikke funnet.'}), 404
     expected = user.get('session_pin')
     if expected and _pin_verify(pin, expected):
-        session['unlocked'] = True
+        _unlock_session()
         return jsonify({'success': True})
     return jsonify({'success': False, 'message': 'Feil PIN.'}), 401
+
+@app.route('/auth/session/lock', methods=['POST'])
+@rate_limit(max_requests=30, window_seconds=60)
+@require_csrf
+def session_lock():
+    session['unlocked'] = False
+    session.pop('unlocked_at', None)
+    return jsonify({'success': True})
 
 @app.route('/auth/recovery/generate', methods=['POST'])
 @rate_limit(max_requests=3, window_seconds=3600)
@@ -1190,6 +1264,7 @@ def get_user_key_endpoint(username):
 # Messages 1:1
 # ──────────────────────────────────────────────
 @app.route('/messages/<other_user>', methods=['GET'])
+@rate_limit(max_requests=30, window_seconds=60)
 def get_messages(other_user):
     if 'username' not in session:
         return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
@@ -1607,6 +1682,11 @@ def upload_file():
         return jsonify({'success': False, 'message': 'Du har blokkert denne brukeren.'}), 403
     if recipient and session['username'] in blocked.get(recipient, []):
         return jsonify({'success': False, 'message': 'Denne brukeren har blokkert deg.'}), 403
+    if group_id:
+        groups = load_json(GROUPS_FILE, [])
+        group = next((g for g in groups if g.get('id') == group_id), None)
+        if not _group_write_ok(group, session['username']):
+            return jsonify({'success': False, 'message': 'Kunngjøringsmodus: kun admins kan skrive.'}), 403
     if not allowed_file(file.filename):
         return jsonify({'success': False, 'message': 'Ugyldig filtype.'}), 400
     filename = secure_filename(file.filename)
@@ -1622,10 +1702,6 @@ def upload_file():
     me = session['username']
     messages = load_json(MESSAGES_FILE, [])
     if group_id:
-        groups = load_json(GROUPS_FILE, [])
-        group = next((g for g in groups if g['id'] == group_id), None)
-        if not group or me not in group.get('members', []):
-            return jsonify({'success': False, 'message': 'Ingen tilgang til gruppen.'}), 403
         messages.append({
             'id': hashlib.sha256(f"{target}{datetime.utcnow().isoformat()}{me}{group_id}".encode()).hexdigest(),
             'group_id': group_id,
@@ -1668,6 +1744,7 @@ def upload_file():
     return jsonify({'success': True, 'filename': stored_name})
 
 @app.route('/search', methods=['GET'])
+@rate_limit(max_requests=30, window_seconds=60)
 def search_messages():
     if 'username' not in session:
         return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
@@ -1942,6 +2019,7 @@ def create_group():
     return jsonify({'success': True, 'group': group})
 
 @app.route('/groups/<group_id>/messages', methods=['GET'])
+@rate_limit(max_requests=30, window_seconds=60)
 def get_group_messages(group_id):
     if 'username' not in session:
         return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
@@ -2041,7 +2119,10 @@ def update_group(group_id):
         group['description'] = (data['description'] or '').strip()[:200]
     if 'name' in data:
         group['name'] = (data['name'] or '').strip()[:50]
+    if 'announcement_mode' in data:
+        group['announcement_mode'] = bool(data['announcement_mode'])
     save_json(GROUPS_FILE, groups)
+    audit('group_updated', actor=session['username'], target=group_id)
     return jsonify({'success': True, 'group': group})
 
 @app.route('/groups/<group_id>/avatar', methods=['POST'])
@@ -2090,6 +2171,8 @@ def send_group_message(group_id):
     group = next((g for g in groups if g['id'] == group_id), None)
     if not group or session['username'] not in group.get('members', []):
         return jsonify({'success': False, 'message': 'Ingen tilgang til gruppen.'}), 403
+    if not _group_write_ok(group, session['username']):
+        return jsonify({'success': False, 'message': 'Kunngjøringsmodus: kun admins kan skrive.'}), 403
     if group.get('created_by') != session['username'] and session['username'] not in group.get('admins', []):
         sm = load_json(SLOWMODE_FILE, {})
         sm_seconds = sm.get(group_id, 0)
@@ -2364,23 +2447,31 @@ def get_avatar(target_user):
 
 @app.route('/profile/pin', methods=['POST'])
 @rate_limit(max_requests=5, window_seconds=60)
+@require_login
 @require_csrf
 def set_profile_pin():
     data = request.get_json(force=True, silent=True) or {}
     pin = (data.get('pin') or '').strip()
-    if not pin or len(pin) < 4:
-        return jsonify({'success': False, 'message': 'PIN må være minst 4 siffer.'}), 400
     username = session.get('username')
-    if not username:
-        return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
     users = load_json(USERS_FILE, {})
+    if username not in users:
+        return jsonify({'success': False, 'message': 'Bruker ikke funnet.'}), 404
+    if not pin:
+        users[username].pop('session_pin', None)
+        save_json(USERS_FILE, users)
+        audit('session_pin_removed', actor=username, target=username)
+        return jsonify({'success': True})
+    if len(pin) < 4:
+        return jsonify({'success': False, 'message': 'PIN må være minst 4 siffer.'}), 400
     users[username]['session_pin'] = _pin_pepper(pin)
     save_json(USERS_FILE, users)
+    _unlock_session()
     audit('session_pin_set', actor=username, target=username)
     return jsonify({'success': True})
 
 
 @app.route('/users/all', methods=['GET'])
+@rate_limit(max_requests=30, window_seconds=60)
 def list_users_with_profiles():
     if 'username' not in session:
         return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
@@ -2416,6 +2507,8 @@ def init_call():
     call_type = data.get('type', 'video')
     if not target:
         return jsonify({'success': False, 'message': 'Manglende mottaker.'}), 400
+    if _is_blocked(username, target):
+        return jsonify({'success': False, 'message': 'Kan ikke kontakte denne brukeren.'}), 403
     calls = load_json(CALLS_FILE, {})
     for cid, c in calls.items():
         if c.get('status') in ('ringing', 'active') and (
@@ -3121,12 +3214,14 @@ def schedule_message():
     if group_id:
         groups = load_json(GROUPS_FILE, [])
         group = next((g for g in groups if g.get('id') == group_id), None)
-        if not group or me not in group.get('members', []):
-            return jsonify({'success': False, 'message': 'Ingen tilgang til gruppen.'}), 403
+        if not _group_write_ok(group, me):
+            return jsonify({'success': False, 'message': 'Kunngjøringsmodus: kun admins kan skrive.'}), 403
     elif recipient:
         users = load_json(USERS_FILE, {})
         if recipient not in users:
             return jsonify({'success': False, 'message': 'Bruker ikke funnet.'}), 404
+        if _is_blocked(me, recipient):
+            return jsonify({'success': False, 'message': 'Kan ikke kontakte denne brukeren.'}), 403
     try:
         scheduled_time = datetime.fromisoformat(send_at.replace('Z', '+00:00')).replace(tzinfo=None)
     except Exception:
@@ -3337,6 +3432,10 @@ def deliver_scheduled_messages():
         send_at = parse_iso(entry.get('send_at'))
         if send_at and send_at.replace(tzinfo=None) <= now:
             if entry.get('recipient'):
+                if _is_blocked(entry['sender'], entry['recipient']):
+                    entry['sent'] = True
+                    changed = True
+                    continue
                 pk = pair_key(entry['sender'], entry['recipient'])
                 shared_key = get_or_create_pair_key(entry['sender'], entry['recipient'])
                 messages.append({
@@ -3354,7 +3453,7 @@ def deliver_scheduled_messages():
             elif entry.get('group_id'):
                 groups = load_json(GROUPS_FILE, [])
                 group = next((g for g in groups if g.get('id') == entry['group_id']), None)
-                if not group or entry['sender'] not in group.get('members', []):
+                if not _group_write_ok(group, entry['sender']):
                     entry['sent'] = True
                     changed = True
                     continue
@@ -3463,12 +3562,14 @@ def forward_message(message_id):
         users = load_json(USERS_FILE, {})
         if target not in users:
             return jsonify({'success': False, 'message': 'Bruker ikke funnet.'}), 404
+        if _is_blocked(me, target):
+            return jsonify({'success': False, 'message': 'Kan ikke kontakte denne brukeren.'}), 403
         pk = pair_key(me, target)
     else:
         groups = load_json(GROUPS_FILE, [])
         group = next((g for g in groups if g.get('id') == target), None)
-        if not group or me not in group.get('members', []):
-            return jsonify({'success': False, 'message': 'Ingen tilgang til gruppen.'}), 403
+        if not _group_write_ok(group, me):
+            return jsonify({'success': False, 'message': 'Kunngjøringsmodus: kun admins kan skrive.'}), 403
         pk = None
     fwd = {
         'id': hashlib.sha256(f"fwd:{message_id}:{target}:{datetime.utcnow().isoformat()}".encode()).hexdigest(),
@@ -3522,6 +3623,7 @@ def save_message():
     return jsonify({'success': True})
 
 @app.route('/saved')
+@rate_limit(max_requests=30, window_seconds=60)
 @require_login
 def get_saved_messages():
     me = session['username']
@@ -3534,6 +3636,7 @@ def get_saved_messages():
 # Unread Counts
 # ──────────────────────────────────────────────
 @app.route('/unread')
+@rate_limit(max_requests=30, window_seconds=60)
 @require_login
 def unread_counts():
     me = session['username']
@@ -3557,6 +3660,7 @@ def unread_counts():
 # Last Messages (sidebar previews)
 # ──────────────────────────────────────────────
 @app.route('/last-messages')
+@rate_limit(max_requests=30, window_seconds=60)
 @require_login
 def last_messages_preview():
     me = session['username']
@@ -3605,6 +3709,7 @@ def last_messages_preview():
 # Chat Export
 # ──────────────────────────────────────────────
 @app.route('/export/<chat_type>/<chat_id>')
+@rate_limit(max_requests=10, window_seconds=300)
 @require_login
 def export_chat(chat_type, chat_id):
     me = session['username']
@@ -3726,6 +3831,7 @@ def delete_key_backup():
     return jsonify({'success': True})
 
 @app.route('/export/<chat_type>/<chat_id>/pdf')
+@rate_limit(max_requests=10, window_seconds=300)
 @require_login
 def export_chat_pdf(chat_type, chat_id):
     html, error, status = _build_export_html(chat_type, chat_id, session['username'])
@@ -3734,6 +3840,7 @@ def export_chat_pdf(chat_type, chat_id):
     return Response(html, mimetype='text/html')
 
 @app.route('/export/<chat_type>/<chat_id>/html')
+@rate_limit(max_requests=10, window_seconds=300)
 @require_login
 def export_chat_html(chat_type, chat_id):
     html, error, status = _build_export_html(chat_type, chat_id, session['username'])
@@ -3798,6 +3905,10 @@ def create_poll():
     if target_type == 'user':
         pk = pair_key(me, target)
     else:
+        groups = load_json(GROUPS_FILE, [])
+        group = next((g for g in groups if g.get('id') == target), None)
+        if not _group_write_ok(group, me):
+            return jsonify({'success': False, 'message': 'Kunngjøringsmodus: kun admins kan skrive.'}), 403
         pk = f"group::{target}"
     polls = load_json(POLLS_FILE, {})
     poll = {
@@ -3831,10 +3942,13 @@ def create_poll():
 @app.route('/polls/<poll_id>')
 @require_login
 def get_poll(poll_id):
+    me = session['username']
     polls = load_json(POLLS_FILE, {})
     poll = polls.get(poll_id)
     if not poll:
         return jsonify({'success': False, 'message': 'Avstemning ikke funnet.'}), 404
+    if not _can_access_poll(me, poll):
+        return jsonify({'success': False, 'message': 'Ingen tilgang til avstemningen.'}), 403
     return jsonify({'success': True, 'poll': poll})
 
 @app.route('/polls/<poll_id>/vote', methods=['POST'])
@@ -3849,6 +3963,8 @@ def vote_poll(poll_id):
     poll = polls.get(poll_id)
     if not poll:
         return jsonify({'success': False, 'message': 'Avstemning ikke funnet.'}), 404
+    if not _can_access_poll(me, poll):
+        return jsonify({'success': False, 'message': 'Ingen tilgang til avstemningen.'}), 403
     if poll.get('closed'):
         return jsonify({'success': False, 'message': 'Avstemning er lukket.'}), 400
     for opt in poll['options']:
@@ -4025,14 +4141,16 @@ def send_location():
     if group_id:
         groups = load_json(GROUPS_FILE, [])
         group = next((g for g in groups if g.get('id') == group_id), None)
-        if not group or me not in group.get('members', []):
-            return jsonify({'success': False, 'message': 'Ingen tilgang til gruppen.'}), 403
+        if not _group_write_ok(group, me):
+            return jsonify({'success': False, 'message': 'Kunngjøringsmodus: kun admins kan skrive.'}), 403
         pk = f"group::{group_id}"
         target = group_id
     else:
         users = load_json(USERS_FILE, {})
         if recipient not in users:
             return jsonify({'success': False, 'message': 'Bruker ikke funnet.'}), 404
+        if _is_blocked(me, recipient):
+            return jsonify({'success': False, 'message': 'Kan ikke kontakte denne brukeren.'}), 403
         pk = pair_key(me, recipient)
         target = recipient
     messages = load_json(MESSAGES_FILE, [])
@@ -5211,6 +5329,7 @@ def set_chat_notif(chat_type, chat_id):
 # Enhanced Search (date range + groups + mentions)
 # ──────────────────────────────────────────────
 @app.route('/search/v2')
+@rate_limit(max_requests=30, window_seconds=60)
 @require_login
 def search_v2():
     me = session['username']
@@ -5509,7 +5628,7 @@ def start_live_location():
     data = request.get_json(force=True, silent=True) or {}
     lat = data.get('lat')
     lng = data.get('lng')
-    target = data.get('target', '')
+    target = (data.get('target') or '').strip()
     target_type = data.get('targetType', 'user')
     try:
         duration = min(int(data.get('duration', 600)), 3600)
@@ -5517,10 +5636,27 @@ def start_live_location():
         duration = 600
     if lat is None or lng is None:
         return jsonify({'success': False, 'message': 'Manglende posisjon.'}), 400
+    coords = _valid_lat_lng(lat, lng)
+    if not coords:
+        return jsonify({'success': False, 'message': 'Ugyldige koordinater.'}), 400
+    lat_f, lng_f = coords
+    if target_type == 'group':
+        groups = load_json(GROUPS_FILE, [])
+        group = next((g for g in groups if g.get('id') == target), None)
+        if not _group_write_ok(group, me):
+            return jsonify({'success': False, 'message': 'Kunngjøringsmodus: kun admins kan skrive.'}), 403
+        recipient = None
+    else:
+        users = load_json(USERS_FILE, {})
+        if target not in users:
+            return jsonify({'success': False, 'message': 'Bruker ikke funnet.'}), 404
+        if _is_blocked(me, target):
+            return jsonify({'success': False, 'message': 'Kan ikke kontakte denne brukeren.'}), 403
+        recipient = target
     live = load_json(LIVE_LOCATION_FILE, {})
     share_id = secrets.token_hex(8)
     live[share_id] = {
-        'sender': me, 'lat': lat, 'lng': lng,
+        'sender': me, 'lat': lat_f, 'lng': lng_f,
         'target': target, 'targetType': target_type,
         'started': now_iso(), 'duration': duration,
         'active': True,
@@ -5530,9 +5666,9 @@ def start_live_location():
     messages.append({
         'id': hashlib.sha256(f"live_loc{share_id}{datetime.utcnow().isoformat()}".encode()).hexdigest(),
         'sender': me,
-        'recipient': target if target_type == 'user' else None,
+        'recipient': recipient if target_type == 'user' else None,
         'group_id': target if target_type == 'group' else None,
-        'ciphertext': json.dumps({'shareId': share_id, 'lat': lat, 'lng': lng, 'duration': duration, 'live': True}),
+        'ciphertext': json.dumps({'shareId': share_id, 'lat': lat_f, 'lng': lng_f, 'duration': duration, 'live': True}),
         'type': 'live_location',
         'timestamp': datetime.utcnow().isoformat(),
     })
@@ -5665,9 +5801,14 @@ def create_story():
 def view_story(story_id):
     me = session['username']
     stories = load_json(STORIES_FILE, {})
-    for user, user_stories in stories.items():
+    contacts = load_json(CONTACTS_FILE, {})
+    my_contacts = set(contacts.get(me, {}).keys())
+    my_contacts.add(me)
+    for owner, user_stories in stories.items():
         for s in user_stories:
             if s['id'] == story_id:
+                if owner != me and owner not in my_contacts:
+                    return jsonify({'success': False, 'message': 'Ingen tilgang til story.'}), 403
                 s.setdefault('views', [])
                 if me not in s['views']:
                     s['views'].append(me)

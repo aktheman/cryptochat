@@ -319,6 +319,8 @@
     @keyframes fadeIn { from { opacity:0; transform:scale(.95); } to { opacity:1; transform:scale(1); } }
     .msg { transition: transform .15s ease, opacity .15s ease; }
     .touching { transition: background .05s; }
+    .announcement-badge { display:inline-block; padding:2px 8px; background:rgba(250,204,21,.15); border:1px solid rgba(250,204,21,.4); color:#facc15; border-radius:10px; font-size:.72rem; font-weight:600; margin-left:6px; vertical-align:middle; }
+    .announcement-banner { text-align:center; padding:8px; margin:8px 12px; background:rgba(250,204,21,.1); border:1px dashed rgba(250,204,21,.4); color:#facc15; border-radius:10px; font-size:.8rem; }
   `;
   document.head.appendChild(_featureCSS);
 
@@ -333,13 +335,37 @@
     try { return await res.json(); } catch { return {}; }
   }
 
+  let _unlockWaiter = null;
+
+  function _waitForUnlock() {
+    if (!_unlockWaiter) {
+      let resolveFn;
+      const promise = new Promise(r => { resolveFn = r; });
+      _unlockWaiter = { promise, resolve: resolveFn };
+    }
+    return _unlockWaiter.promise;
+  }
+
+  function _resolveUnlock() {
+    if (_unlockWaiter) {
+      _unlockWaiter.resolve();
+      _unlockWaiter = null;
+    }
+  }
+
   async function loadJSON(path, opts) {
-    const res = await fetch(path, opts);
-    if (res.status === 401 && !sessionStorage.getItem('auth-redirecting')) {
-      sessionStorage.setItem('auth-redirecting', '1');
-      const ret = encodeURIComponent(window.location.pathname + window.location.hash);
-      window.location.href = '/login?next=' + ret;
-      throw new Error('Ikke innlogget');
+    let res = await fetch(path, opts);
+    if (res.status === 401) {
+      const errData = await safeJson(res);
+      if (errData && errData.locked) {
+        await showUnlockModal();
+        res = await fetch(path, opts);
+      } else if (!sessionStorage.getItem('auth-redirecting')) {
+        sessionStorage.setItem('auth-redirecting', '1');
+        const ret = encodeURIComponent(window.location.pathname + window.location.hash);
+        window.location.href = '/login?next=' + ret;
+        throw new Error('Ikke innlogget');
+      }
     }
     const data = await safeJson(res);
     if (!res.ok) throw new Error(data.message || data.error || 'HTTP ' + res.status);
@@ -1225,8 +1251,10 @@
       }
 
       async function showUnlockModal() {
-        if (window._cryptoChatLocked) return;
+        if (window._cryptoChatLocked) return _waitForUnlock();
         window._cryptoChatLocked = true;
+        _unlockWaiter = null;
+        try { await fetch('/auth/session/lock', { method: 'POST' }); } catch (e) {}
         document.getElementById('lockBtn').textContent = '🔒';
         const overlay = document.createElement('div');
         overlay.id = 'lockOverlay';
@@ -1235,19 +1263,32 @@
         box.style.cssText = 'background:#fff;padding:14px;border-radius:14px;width:280px;max-width:92vw;box-shadow:0 10px 30px rgba(0,0,0,.35);';
         box.innerHTML = '<div style="font-weight:800;margin-bottom:8px;">🔐 Låst</div>' +
           '<input id="lockPin" type="password" inputmode="numeric" pattern="[0-9]*" placeholder="PIN" autocomplete="one-time-code" style="width:100%;padding:10px;font-size:1rem;letter-spacing:.4rem;text-align:center;border:1px solid #ccc;border-radius:10px;" />' +
+          '<div id="lockErr" style="color:#c0392b;font-size:.8rem;margin-top:4px;display:none;"></div>' +
           '<button id="unlockBtn" style="margin-top:8px;width:100%;padding:8px;border:0;border-radius:10px;background:#1a73e8;color:#fff;font-weight:800;">Lås opp</button>';
         overlay.appendChild(box);
         document.body.appendChild(overlay);
         const input = document.getElementById('lockPin');
         input.focus();
+        const errEl = document.getElementById('lockErr');
         const attempt = async () => {
           const pin = input.value.trim();
           if (!pin) return;
           const ok = await fetch('/auth/session/pin', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({pin})});
-          if (ok.status === 200) { overlay.remove(); window._cryptoChatLocked = false; document.getElementById('lockBtn').textContent = '🔓'; };
+          if (ok.status === 200) {
+            overlay.remove();
+            window._cryptoChatLocked = false;
+            document.getElementById('lockBtn').textContent = '🔓';
+            _resolveUnlock();
+          } else {
+            input.value = '';
+            errEl.style.display = 'block';
+            errEl.textContent = 'Feil PIN-kode';
+            input.focus();
+          }
         };
         document.getElementById('unlockBtn').addEventListener('click', attempt);
         input.addEventListener('keydown', (e) => { if (e.key === 'Enter') attempt(); });
+        return _waitForUnlock();
       }
 
       function setupIdleTimer() {
@@ -1306,6 +1347,14 @@
         });
       }
 
+      function activeGroupReadOnly() {
+        if (!activeChat || activeChat.type !== 'group') return false;
+        const group = groups.find(g => g.id === activeChat.target);
+        if (!group || !group.announcement_mode) return false;
+        const me = window.__APP__?.username || '';
+        return group.created_by !== me && !(group.admins || []).includes(me);
+      }
+
       function renderGroups() {
         groupsList.innerHTML = '';
         groups.forEach(g => {
@@ -1319,9 +1368,10 @@
           const hasKey = !!(g && g.encryptedKey);
           const lockIcon = hasKey ? '<span class="e2ee" title="E2EE">🔒</span>' : '';
           const inviteIcon = g.invite_token ? '<span class="e2ee" title="Invitasjon aktiv">🔗</span>' : '';
+          const annIcon = g.announcement_mode ? '<span class="e2ee" title="Kunngjøringsmodus">📣</span>' : '';
           const labels = chatLabels[g.id] || [];
           const labelBadges = labels.length ? '<div class="label-badges">' + labels.map(l => '<span class="label-badge">' + escapeHtml(l) + '</span>').join('') + '</div>' : '';
-          item.innerHTML = '<div class="avatar-wrap">' + avatarHtml(g.name) + '</div><div class="item-info"><div class="item-top"><span class="name">' + escapeHtml(g.name) + lockIcon + inviteIcon + '</span>' + (groupMsgTime ? '<span class="preview-time">' + escapeHtml(groupMsgTime) + '</span>' : '') + '</div><div class="preview">' + escapeHtml(preview || ((g.members || []).length + ' medlemmer')) + '</div>' + labelBadges + '</div><button class="btn btn-small btn-ghost delete-group" data-id="' + escapeHtml(g.id) + '">Slett</button>';
+          item.innerHTML = '<div class="avatar-wrap">' + avatarHtml(g.name) + '</div><div class="item-info"><div class="item-top"><span class="name">' + escapeHtml(g.name) + lockIcon + inviteIcon + annIcon + '</span>' + (groupMsgTime ? '<span class="preview-time">' + escapeHtml(groupMsgTime) + '</span>' : '') + '</div><div class="preview">' + escapeHtml(preview || ((g.members || []).length + ' medlemmer')) + '</div>' + labelBadges + '</div><button class="btn btn-small btn-ghost delete-group" data-id="' + escapeHtml(g.id) + '">Slett</button>';
           item.addEventListener('click', (e) => { if (e.target.closest('.delete-group')) return; activateItem(groupsList, item); openGroup(g.id); });
           const del = item.querySelector('.delete-group');
           if (del) del.addEventListener('click', async () => { await deleteGroup(g.id); });
@@ -1691,8 +1741,8 @@
         chatTitle.textContent = '📌 Lagrede meddelelser';
         setChatMeta('');
         await transitionMessages(() => { const box = document.getElementById('messages'); if (box) box.innerHTML = ''; });
-        composer.style.display = 'flex';
-        setMobileChat(true);
+        const readOnly = activeGroupReadOnly();
+        composer.style.display = readOnly ? 'none' : 'flex';
         clearImagePreview();
         document.getElementById('exportBtn').style.display = 'none';
         document.getElementById('threadSummaryBtn').style.display = 'none';
@@ -2025,12 +2075,13 @@
             if (anyKey) e2eeHtml = '<span class="e2ee">🔒 Delvis E2EE i gruppe</span>';
           }
         }
-        setChatMeta(e2eeHtml);
+        const readOnly = activeGroupReadOnly();
+        setChatMeta(e2eeHtml + (readOnly ? ' <span class="announcement-badge">📣 Kunngjøring</span>' : ''));
         updateVerifyButton();
         document.getElementById('exportBtn').style.display = '';
         document.getElementById('threadSummaryBtn').style.display = '';
         document.getElementById('folderSuggestBtn').style.display = '';
-        document.getElementById('pollBtn').style.display = '';
+        document.getElementById('pollBtn').style.display = readOnly ? 'none' : '';
         await loadGroup(groupId);
         loadPinnedMessages(groupId);
         await checkTypingIndicator();
@@ -2778,6 +2829,7 @@
       }
 
       async function postTextMessage(text) {
+        if (activeGroupReadOnly()) { toast('Kunngjøringsmodus: kun admins kan skrive', 'info'); return; }
         if (activeChat.type === 'channel') {
           const url = '/channels/' + encodeURIComponent(activeChat.target) + '/send';
           const body = { ciphertext: text, type: 'text' };
@@ -2836,6 +2888,7 @@
         const fileInput = document.getElementById('fileInput');
         const sendBtn = document.getElementById('sendBtn');
         if (!input || !activeChat) return;
+        if (activeGroupReadOnly()) { toast('Kunngjøringsmodus: kun admins kan skrive', 'info'); return; }
         input.disabled = true;
         sendBtn.disabled = true;
         const text = (input.value || '').trim();
@@ -5121,6 +5174,7 @@
         });
         html += '</div></div>';
         if (isCreator || isAdmin) {
+          html += '<div class="field"><label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="announcementToggle" ' + (group.announcement_mode ? 'checked' : '') + ' />📣 Kunngjøringsmodus <span style="font-weight:400;color:var(--c-text-muted)">(kun admins kan skrive)</span></label></div>';
           html += '<div class="field"><label>Legg til medlem</label><div style="display:flex;gap:8px;">';
           html += '<input id="addMemberInput" class="input-text" placeholder="Brukernavn" style="flex:1;">';
           html += '<button id="addMemberBtn" class="btn btn-primary btn-small">Legg til</button></div></div>';
@@ -5139,6 +5193,28 @@
         modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
         modal.querySelector('#groupAdminClose').addEventListener('click', () => modal.remove());
         if (isCreator || isAdmin) {
+          const annToggle = modal.querySelector('#announcementToggle');
+          if (annToggle) {
+            annToggle.addEventListener('change', async () => {
+              try {
+                await loadJSON('/groups/' + encodeURIComponent(activeChat.target) + '/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ announcement_mode: annToggle.checked }) });
+                toast(annToggle.checked ? 'Kunngjøringsmodus på' : 'Kunngjøringsmodus av', 'success');
+                const data = await loadJSON('/groups');
+                groups.length = 0;
+                groups.push(...(data.groups || []));
+                renderGroups();
+                const metaEl = document.getElementById('chatMeta');
+                if (metaEl) {
+                  const badge = metaEl.querySelector('.announcement-badge');
+                  if (activeGroupReadOnly() && !badge) metaEl.insertAdjacentHTML('beforeend', ' <span class="announcement-badge">📣 Kunngjøring</span>');
+                  else if (!activeGroupReadOnly() && badge) badge.remove();
+                }
+                composer.style.display = activeGroupReadOnly() ? 'none' : 'flex';
+                const pollBtn = document.getElementById('pollBtn');
+                if (pollBtn) pollBtn.style.display = activeGroupReadOnly() ? 'none' : '';
+              } catch (e) { toast('Kunne ikke endre innstilling'); }
+            });
+          }
           const addBtn = modal.querySelector('#addMemberBtn');
           const addInput = modal.querySelector('#addMemberInput');
           if (addBtn && addInput) {
