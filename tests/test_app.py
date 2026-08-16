@@ -1321,6 +1321,136 @@ class TestInviteLinks:
         links = app_mod.load_json(app_mod.INVITE_LINKS_FILE, {})
         assert links[gid]['uses'] == 1
 
+
+class TestOneTimeInvite:
+    def _create(self, client, gid):
+        return client.post(f'/groups/{gid}/invite', json={})
+
+    def test_create_invite(self, client):
+        _register(client, 'alice')
+        r = client.post('/groups', json={'name': 'g', 'members': []})
+        gid = r.get_json()['group']['id']
+        r = self._create(client, gid)
+        assert r.status_code == 200
+        data = r.get_json()
+        assert data['success'] is True
+        assert data['invite_url'].startswith('/invite/')
+        assert data['token']
+        assert data['expires_in_seconds'] > 0
+        assert data['groupName'] == 'g'
+
+    def test_create_invite_requires_membership(self, client):
+        _register(client, 'alice')
+        r = client.post('/groups', json={'name': 'g', 'members': []})
+        gid = r.get_json()['group']['id']
+        client2 = _new_client()
+        _register(client2, 'bob')
+        r = self._create(client2, gid)
+        assert r.status_code == 403
+
+    def test_create_invite_requires_login(self, client):
+        _register(client, 'alice')
+        r = client.post('/groups', json={'name': 'g', 'members': []})
+        gid = r.get_json()['group']['id']
+        anon = _new_client()
+        r = anon.post(f'/groups/{gid}/invite', json={})
+        assert r.status_code == 401
+
+    def test_resolve_one_time_invite(self, client):
+        _register(client, 'alice')
+        r = client.post('/groups', json={'name': 'g', 'members': []})
+        gid = r.get_json()['group']['id']
+        token = self._create(client, gid).get_json()['token']
+        r = client.get(f'/invite/{token}')
+        assert r.status_code == 200
+        assert r.get_json()['groupId'] == gid
+        assert r.get_json()['oneTime'] is True
+
+    def test_join_one_time_invite_single_use(self, client):
+        import app as app_mod
+        _register(client, 'alice')
+        r = client.post('/groups', json={'name': 'g', 'members': []})
+        gid = r.get_json()['group']['id']
+        token = self._create(client, gid).get_json()['token']
+        client2 = _new_client()
+        _register(client2, 'bob')
+        r = client2.post(f'/invite/{token}/join')
+        assert r.status_code == 200
+        assert r.get_json()['groupId'] == gid
+        invites = app_mod.load_json(app_mod.ONE_TIME_INVITES_FILE, {})
+        assert token not in invites
+        r = client2.get(f'/invite/{token}')
+        assert r.status_code == 404
+
+    def test_expired_one_time_invite_rejected(self, client):
+        import app as app_mod
+        _register(client, 'alice')
+        r = client.post('/groups', json={'name': 'g', 'members': []})
+        gid = r.get_json()['group']['id']
+        token = self._create(client, gid).get_json()['token']
+        invites = app_mod.load_json(app_mod.ONE_TIME_INVITES_FILE, {})
+        invites[token]['payload'] = app_mod._encrypt_payload(
+            app_mod.json.dumps({'group_id': gid, 'exp': '2000-01-01T00:00:00Z'}))
+        app_mod.save_json(app_mod.ONE_TIME_INVITES_FILE, invites)
+        r = client.get(f'/invite/{token}')
+        assert r.status_code == 404
+
+    def test_join_already_member(self, client):
+        _register(client, 'alice')
+        r = client.post('/groups', json={'name': 'g', 'members': []})
+        gid = r.get_json()['group']['id']
+        token = self._create(client, gid).get_json()['token']
+        r = client.post(f'/invite/{token}/join')
+        assert r.status_code == 200
+        assert r.get_json()['message'] == 'Allerede medlem.'
+
+    def test_store_wrapped_key(self, client):
+        import app as app_mod
+        _register(client, 'alice')
+        r = client.post('/groups', json={'name': 'g', 'members': []})
+        gid = r.get_json()['group']['id']
+        token = self._create(client, gid).get_json()['token']
+        r = client.post(f'/groups/{gid}/invite/{token}/key', json={'wrappedKey': 'abc.def'})
+        assert r.status_code == 200
+        invites = app_mod.load_json(app_mod.ONE_TIME_INVITES_FILE, {})
+        assert invites[token]['wrapped_key'] == 'abc.def'
+
+    def test_store_wrapped_key_only_owner(self, client):
+        _register(client, 'alice')
+        r = client.post('/groups', json={'name': 'g', 'members': ['alice']})
+        gid = r.get_json()['group']['id']
+        token = self._create(client, gid).get_json()['token']
+        client2 = _new_client()
+        _register(client2, 'bob')
+        r = client2.post(f'/groups/{gid}/invite/{token}/key', json={'wrappedKey': 'x.y'})
+        assert r.status_code == 403
+
+    def test_join_returns_wrapped_key(self, client):
+        _register(client, 'alice')
+        r = client.post('/groups', json={'name': 'g', 'members': []})
+        gid = r.get_json()['group']['id']
+        token = self._create(client, gid).get_json()['token']
+        client.post(f'/groups/{gid}/invite/{token}/key', json={'wrappedKey': 'abc.def'})
+        client2 = _new_client()
+        _register(client2, 'bob')
+        r = client2.post(f'/invite/{token}/join')
+        data = r.get_json()
+        assert data['success'] is True
+        assert data['wrappedKey'] == 'abc.def'
+        assert data['e2ee'] is True
+
+    def test_invite_payload_is_encrypted(self, client):
+        import app as app_mod
+        _register(client, 'alice')
+        r = client.post('/groups', json={'name': 'g', 'members': []})
+        gid = r.get_json()['group']['id']
+        self._create(client, gid)
+        invites = app_mod.load_json(app_mod.ONE_TIME_INVITES_FILE, {})
+        token, rec = next(iter(invites.items()))
+        assert 'wrapped_key' in rec
+        assert gid not in rec['payload']
+        assert 'http' not in rec['payload']
+
     def test_security_headers(self, client):
         _register(client, 'alice')
         r = client.get('/health')
@@ -1328,6 +1458,143 @@ class TestInviteLinks:
         assert r.headers.get('Cross-Origin-Opener-Policy') == 'same-origin'
         assert 'sandbox' in r.headers.get('Content-Security-Policy', '') or 'default-src' in r.headers.get('Content-Security-Policy', '')
         assert r.headers.get('X-Frame-Options') == 'DENY'
+
+
+class TestInvisibleMode:
+    def _enable_invisible(self, client, enabled=True):
+        return client.post('/settings/invisible', json={'enabled': enabled})
+
+    def test_toggle_invisible(self, client):
+        _register(client, 'alice')
+        r = self._enable_invisible(client, True)
+        assert r.status_code == 200
+        assert r.get_json()['invisible'] is True
+        r = client.get('/profile')
+        assert r.get_json()['invisible'] is True
+
+    def test_toggle_off(self, client):
+        _register(client, 'alice')
+        self._enable_invisible(client, True)
+        r = self._enable_invisible(client, False)
+        assert r.get_json()['invisible'] is False
+        r = client.get('/profile')
+        assert r.get_json()['invisible'] is False
+
+    def test_requires_login(self, client):
+        anon = _new_client()
+        r = anon.post('/settings/invisible', json={'enabled': True})
+        assert r.status_code == 401
+
+    def test_presence_hidden_for_others(self, client):
+        import app as app_mod
+        _register(client, 'alice')
+        client2 = _new_client()
+        _register(client2, 'bob')
+        app_mod.touch_presence('bob')
+        self._enable_invisible(client2, True)
+        r = client.get('/presence/bob')
+        assert r.status_code == 200
+        data = r.get_json()
+        assert data['online'] is False
+        assert data['lastSeen'] is None
+        assert data.get('hidden') is True
+
+    def test_presence_visible_to_self(self, client):
+        import app as app_mod
+        _register(client, 'alice')
+        app_mod.touch_presence('alice')
+        self._enable_invisible(client, True)
+        r = client.get('/presence/alice')
+        data = r.get_json()
+        assert data['online'] is True
+        assert data['lastSeen'] is not None
+
+    def test_presence_batch_hides_invisible(self, client):
+        import app as app_mod
+        _register(client, 'alice')
+        client2 = _new_client()
+        _register(client2, 'bob')
+        app_mod.touch_presence('bob')
+        self._enable_invisible(client2, True)
+        r = client.post('/presence/batch', json={'users': ['bob']})
+        entries = {e['username']: e for e in r.get_json()['presence']}
+        assert entries['bob']['online'] is False
+        assert entries['bob']['lastSeen'] is None
+        assert entries['bob'].get('hidden') is True
+
+    def test_group_members_hide_invisible(self, client):
+        import app as app_mod
+        _register(client, 'alice')
+        client2 = _new_client()
+        _register(client2, 'bob')
+        r = client.post('/groups', json={'name': 'g', 'members': ['bob']})
+        gid = r.get_json()['group']['id']
+        app_mod.touch_presence('bob')
+        self._enable_invisible(client2, True)
+        r = client.get(f'/groups/{gid}/members')
+        members = {m['username']: m for m in r.get_json()['members']}
+        assert members['bob']['online'] is False
+        assert members['bob']['lastSeen'] is None
+
+    def test_group_members_show_own_status(self, client):
+        import app as app_mod
+        _register(client, 'alice')
+        client2 = _new_client()
+        _register(client2, 'bob')
+        r = client.post('/groups', json={'name': 'g', 'members': ['bob']})
+        gid = r.get_json()['group']['id']
+        app_mod.touch_presence('bob')
+        self._enable_invisible(client2, True)
+        r = client2.get(f'/groups/{gid}/members')
+        members = {m['username']: m for m in r.get_json()['members']}
+        assert members['bob']['online'] is True
+
+
+class TestDeleteForEveryoneWindow:
+    def _send_and_get_id(self, client):
+        _setup_pair(client)
+        client.post('/send', json={'recipient': 'bob', 'ciphertext': 'hemmelig', 'type': 'text'})
+        return client.get('/messages/bob').get_json()['messages'][0]['id']
+
+    def _age_message(self, mid, minutes=10):
+        import app as app_mod
+        messages = app_mod.load_json(app_mod.MESSAGES_FILE, [])
+        for m in messages:
+            if m['id'] == mid:
+                m['timestamp'] = (app_mod.datetime.utcnow() - app_mod.timedelta(minutes=minutes)).isoformat()
+        app_mod.save_json(app_mod.MESSAGES_FILE, messages)
+
+    def test_delete_within_window(self, client):
+        mid = self._send_and_get_id(client)
+        r = client.delete(f'/messages/{mid}')
+        assert r.status_code == 200
+        assert r.get_json()['success'] is True
+
+    def test_delete_after_window_rejected(self, client):
+        mid = self._send_and_get_id(client)
+        self._age_message(mid)
+        r = client.delete(f'/messages/{mid}')
+        assert r.status_code == 403
+        assert 'utløpt' in r.get_json()['message']
+
+    def test_delete_for_me_after_window(self, client):
+        mid = self._send_and_get_id(client)
+        self._age_message(mid)
+        r = client.delete(f'/messages/{mid}/me')
+        assert r.status_code == 200
+
+    def test_restore_within_window(self, client):
+        mid = self._send_and_get_id(client)
+        client.delete(f'/messages/{mid}')
+        r = client.post(f'/messages/{mid}/restore')
+        assert r.status_code == 200
+
+    def test_restore_after_window_rejected(self, client):
+        mid = self._send_and_get_id(client)
+        self._age_message(mid)
+        r = client.post(f'/messages/{mid}/restore')
+        assert r.status_code == 403
+        assert 'utløpt' in r.get_json()['message']
 
 
 class TestMessageReporting:
@@ -1699,6 +1966,37 @@ class TestAIReplies:
         r = client.post('/ai/replies', json={'text': 'Vil du møtes i morgen?'})
         assert r.status_code == 200
         assert len(r.get_json()['replies']) >= 3
+
+
+class TestAIDraft:
+    def test_draft_requires_login(self, client):
+        r = client.post('/ai/draft', json={'mode': 'suggest', 'text': 'hei'})
+        assert r.status_code in (401, 302)
+
+    def test_draft_invalid_mode(self, client):
+        _register(client, 'alice')
+        r = client.post('/ai/draft', json={'mode': 'bogus', 'text': 'hei'})
+        assert r.status_code == 400
+
+    def test_draft_suggest_fallback(self, client):
+        _register(client, 'alice')
+        r = client.post('/ai/draft', json={'mode': 'suggest', 'text': 'Vil du møtes i morgen?'})
+        assert r.status_code == 200
+        data = r.get_json()
+        assert data['success'] is True
+        assert data['draft']
+
+    def test_draft_rewrite_fallback_returns_draft(self, client):
+        _register(client, 'alice')
+        r = client.post('/ai/draft', json={'mode': 'rewrite', 'draft': 'Ja takk, det høres fint ut'})
+        assert r.status_code == 200
+        assert r.get_json()['draft'] == 'Ja takk, det høres fint ut'
+
+    def test_draft_shorten_fallback_returns_draft(self, client):
+        _register(client, 'alice')
+        r = client.post('/ai/draft', json={'mode': 'shorten', 'draft': 'Jeg er veldig opptatt akkurat nå'})
+        assert r.status_code == 200
+        assert r.get_json()['draft'] == 'Jeg er veldig opptatt akkurat nå'
 
 
 class TestReminders:

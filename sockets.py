@@ -1,8 +1,16 @@
 from flask import request, session
 from flask_socketio import emit, join_room, leave_room, disconnect
 from functools import wraps
+from config import USERS_FILE
+from db import load_json
 
 online_users = set()
+
+def _is_invisible(username):
+    try:
+        return bool(load_json(USERS_FILE, {}).get(username, {}).get('invisible'))
+    except Exception:
+        return False
 
 def require_socket_auth(f):
     @wraps(f)
@@ -22,13 +30,15 @@ def register_socket_handlers(socketio):
         join_room(f'user:{username}')
         online_users.add(username)
         emit('connected', {'username': username})
-        socketio.emit('presence_update', {'username': username, 'status': 'online'})
+        if not _is_invisible(username):
+            socketio.emit('presence_update', {'username': username, 'status': 'online'})
 
     @socketio.on('disconnect')
     @require_socket_auth
     def handle_disconnect(username):
         online_users.discard(username)
-        socketio.emit('presence_update', {'username': username, 'status': 'offline'})
+        if not _is_invisible(username):
+            socketio.emit('presence_update', {'username': username, 'status': 'offline'})
 
     @socketio.on('join')
     @require_socket_auth

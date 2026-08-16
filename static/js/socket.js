@@ -61,6 +61,14 @@ function initSocketIO() {
     if (window.__onPairKeyRotated) window.__onPairKeyRotated(data);
   });
 
+  socket.on('group_members_changed', (data) => {
+    if (window.__onGroupMembersChanged) window.__onGroupMembersChanged(data);
+  });
+
+  socket.on('message_deleted', (data) => {
+    if (window.__onMessageDeleted) window.__onMessageDeleted(data);
+  });
+
   window.__SOCKET = socket;
 }
 

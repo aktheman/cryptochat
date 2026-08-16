@@ -801,6 +801,7 @@
                 <button id="videoRecordBtn" class="btn btn-small btn-ghost" title="Videomelding" aria-label="Videomelding">📹</button>
                 <button id="locationBtn" class="btn btn-small btn-ghost" title="Del posisjon" aria-label="Del posisjon">📍</button>
                 <button id="templateBtn" class="btn-attach" title="Maler" style="font-size:1rem;">📋</button>
+                <button id="aiDraftBtn" class="btn btn-small btn-ghost" title="AI-draft: foreslå, omskriv eller forkort" aria-label="AI-draft">✍️</button>
                 <button id="aiRepliesBtn" class="btn btn-small btn-ghost" title="Foreslå svar med AI" aria-label="Foreslå svar med AI">✨</button>
                 <button id="pollBtn" class="btn btn-small btn-ghost" title="Opprett avstemning" aria-label="Opprett avstemning" style="display:none">📊</button>
                 <span id="silentToggle" class="silent-toggle" title="Lydløs melding" aria-label="Lydløs melding">🔇</span>
@@ -1140,22 +1141,121 @@
         toast(activeChat.type === 'group' ? 'Gruppe er ende-til-ende-kryptert' : 'Dette er en kryptert samtale');
       });
 
+      async function deriveInviteKey(token) {
+        const enc = new TextEncoder();
+        const baseKey = await window.crypto.subtle.importKey('raw', enc.encode('cryptochat-invite:' + token), 'PBKDF2', false, ['deriveKey']);
+        return window.crypto.subtle.deriveKey(
+          { name: 'PBKDF2', hash: 'SHA-256', salt: enc.encode('cryptochat-invite'), iterations: 120000 },
+          baseKey, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']
+        );
+      }
+
+      function showInviteShareModal(data) {
+        document.querySelectorAll('.modal-overlay').forEach(el => el.remove());
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        const link = window.location.origin + '/chat?invite=' + encodeURIComponent(data.token);
+        const expText = data.expires_at ? new Date(data.expires_at).toLocaleString('nb-NO') : '';
+        overlay.innerHTML = '<div class="modal" style="max-width:340px;">'
+          + '<h2>🔗 E2EE-gjestelenke</h2>'
+          + '<p style="font-size:.85rem;color:var(--c-text-muted);">Inviter noen til «' + escapeHtml(data.groupName || '') + '» med en kryptert lenke. Lenken kan kun brukes én gang og utløper ' + escapeHtml(expText) + '.</p>'
+          + '<div id="inviteQr" style="display:flex;justify-content:center;margin:10px 0;"></div>'
+          + '<div style="display:flex;gap:6px;margin-top:6px;">'
+          + '<input id="inviteLinkInput" class="input-text" readonly value="' + escapeHtml(link) + '" style="flex:1;font-size:.72rem;" />'
+          + '<button id="inviteCopyBtn" class="btn btn-small btn-primary">📋</button>'
+          + '</div>'
+          + '<p style="font-size:.75rem;color:var(--c-text-muted);margin-top:8px;">🔒 Gruppenøkkelen krypteres og leveres til gjesten via lenken. Etter bruk slettes lenken.</p>'
+          + '<div class="modal-actions"><button id="inviteCloseBtn" class="btn btn-primary">Ferdig</button></div>'
+          + '</div>';
+        document.body.appendChild(overlay);
+        const qrBox = overlay.querySelector('#inviteQr');
+        try {
+          const canvas = generateQRCode(link, 168);
+          canvas.style.cssText = 'width:168px;height:168px;border-radius:8px;';
+          qrBox.appendChild(canvas);
+        } catch (e) {}
+        overlay.querySelector('#inviteCopyBtn').addEventListener('click', async () => {
+          try {
+            await navigator.clipboard.writeText(link);
+            toast('Invitasjonslenke kopiert', 'success');
+          } catch (e) {
+            overlay.querySelector('#inviteLinkInput').select();
+            document.execCommand('copy');
+            toast('Invitasjonslenke kopiert', 'success');
+          }
+        });
+        overlay.querySelector('#inviteCloseBtn').addEventListener('click', () => overlay.remove());
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+      }
+
+      async function handleInviteOnLoad() {
+        const params = new URLSearchParams(window.location.search);
+        const token = params.get('invite');
+        if (!token) return;
+        const url = new URL(window.location.href);
+        url.search = '';
+        window.history.replaceState({}, '', url.pathname + url.hash);
+        try {
+          const info = await loadJSON('/invite/' + token);
+          if (!info || !info.success) {
+            toast(info && info.message ? info.message : 'Ugyldig invitasjonslenke');
+            return;
+          }
+          if (!confirm('Bli med i gruppen "' + (info.groupName || '') + '" (' + info.members + ' medlemmer)?')) return;
+          const res = await loadJSON('/invite/' + token + '/join', { method: 'POST' });
+          toast(res && res.message ? res.message : 'Bli med!', 'success');
+          let e2eeKey = null;
+          if (res && res.e2ee && res.wrappedKey) {
+            try {
+              const encKey = await deriveInviteKey(token);
+              const parts = res.wrappedKey.split('.');
+              const iv = window.__CRYPTO__.base64ToArrayBuffer(parts[0]);
+              const ct = window.__CRYPTO__.base64ToArrayBuffer(parts[1]);
+              const raw = await window.crypto.subtle.decrypt({ name: 'AES-GCM', iv }, encKey, ct);
+              e2eeKey = await window.crypto.subtle.importKey('raw', raw, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+            } catch (e) { e2eeKey = null; }
+          }
+          const groupsData = await loadJSON('/groups');
+          groups.length = 0;
+          groups.push(...(groupsData.groups || []));
+          renderGroups();
+          if (res && res.groupId) {
+            await openGroup(res.groupId);
+            if (e2eeKey) {
+              activeChat.groupE2EEKey = e2eeKey;
+              await loadGroup(res.groupId);
+            }
+          }
+        } catch (e) {
+          toast('Kunne ikke behandle invitasjonslenken');
+        }
+      }
+
       document.getElementById('inviteBtn').addEventListener('click', async () => {
         if (!activeChat || activeChat.type !== 'group') return;
         const inviteBtn = document.getElementById('inviteBtn');
         try {
-          const res = await fetch('/groups/' + encodeURIComponent(activeChat.target) + '/invite', {
+          const data = await loadJSON('/groups/' + encodeURIComponent(activeChat.target) + '/invite', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: '{}',
           });
-          const data = await safeJson(res);
           if (data && data.success && data.invite_url) {
-            await navigator.clipboard.writeText(data.invite_url).catch(() => {});
-            inviteBtn.textContent = '✅';
-            inviteBtn.title = 'Invitasjonslenke kopiert';
-            toast('Invitasjonslenke kopiert');
-            setTimeout(() => { inviteBtn.textContent = '🔗'; inviteBtn.title = 'Del invitasjon'; }, 2500);
+            if (activeChat.groupE2EEKey) {
+              try {
+                const rawKey = await window.crypto.subtle.exportKey('raw', activeChat.groupE2EEKey);
+                const encKey = await deriveInviteKey(data.token);
+                const iv = window.crypto.getRandomValues(new Uint8Array(12));
+                const ct = await window.crypto.subtle.encrypt({ name: 'AES-GCM', iv }, encKey, rawKey);
+                const wrapped = window.__CRYPTO__.arrayBufferToBase64(iv.buffer) + '.' + window.__CRYPTO__.arrayBufferToBase64(ct);
+                await loadJSON('/groups/' + encodeURIComponent(activeChat.target) + '/invite/' + encodeURIComponent(data.token) + '/key', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ wrappedKey: wrapped }),
+                });
+              } catch (e) {}
+            }
+            showInviteShareModal(data);
           } else {
             toast(data && data.message ? data.message : 'Kunne ikke opprette invitasjon');
           }
@@ -1194,6 +1294,7 @@
 
       function closeChat() {
         setMobileChat(false);
+        closeAiDraftPanel();
         activeChat = null;
         chatLoadState = {};
         chatTitle.textContent = 'Velg en samtale';
@@ -1908,6 +2009,7 @@
       });
 
       async function openChat(user) {
+        closeAiDraftPanel();
         activeChat = { type: 'user', target: user };
         replyingTo = null;
         userScrolledUp = false;
@@ -2031,6 +2133,7 @@
       }
 
       async function openGroup(groupId) {
+        closeAiDraftPanel();
         const group = groups.find(g => g.id === groupId);
         activeChat = { type: 'group', target: groupId, groupE2EEKey: null };
         replyingTo = null;
@@ -2611,6 +2714,7 @@
         item.className = 'msg ' + (isMe ? 'sent' : 'received') + (message.deleted ? ' deleted-msg' : '') + (message.edited ? ' edited' : '') + (message.effect ? ' msg-effect ' + message.effect : '');
         if (message.id) item.dataset.messageId = message.id;
         item.dataset.msgId = message.id || '';
+        item.dataset.timestamp = message.timestamp || '';
 
         item.addEventListener('contextmenu', (e) => {
           e.preventDefault();
@@ -2781,7 +2885,7 @@
         if (deleteBtn) {
           deleteBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            deleteMessage(message.id);
+            showDeleteChoice(message.id, item);
           });
         }
 
@@ -2935,6 +3039,7 @@
           input.value = '';
           clearImagePreview();
           replyingTo = null;
+          closeAiDraftPanel();
           const replyBar = document.getElementById('replyBar');
           if (replyBar) replyBar.style.display = 'none';
           if (fileInput) fileInput.value = '';
@@ -4002,12 +4107,12 @@
       async function deleteMessage(messageId) {
         if (!confirm('Slett denne meldingen?')) return;
         try {
-          await fetch('/messages/' + encodeURIComponent(messageId), { method: 'DELETE' });
+          await loadJSON('/messages/' + encodeURIComponent(messageId), { method: 'DELETE' });
           toast('Melding slettet', 'success');
           if (activeChat?.type === 'user') await loadChat(activeChat.target);
           else if (activeChat?.type === 'group') await loadGroup(activeChat.target);
         } catch (e) {
-          toast('Kunne ikke slette');
+          toast(e && e.message ? e.message : 'Kunne ikke slette');
         }
       }
 
@@ -4169,6 +4274,14 @@
            + '<div id="destructStatus" style="font-size:.8rem;color:#6d8094;margin-top:4px;"></div>'
            + '</div>'
             + '<div class="setting-section" style="border-top:1px solid var(--c-border);padding-top:10px;margin-top:6px;">'
+            + '<h3>👻 Usynlig modus</h3>'
+            + '<p style="font-size:.85rem;color:#6d8094;">Skjul din online-status og «sist sett» for andre brukere</p>'
+            + '<label style="display:flex;align-items:center;gap:8px;margin-top:6px;cursor:pointer;">'
+            + '<input type="checkbox" id="invisibleToggle" ' + (profile.invisible ? 'checked' : '') + ' style="width:18px;height:18px;accent-color:var(--c-primary);" />'
+            + 'Aktiv</label>'
+            + '<div id="invisibleStatus" style="font-size:.8rem;color:#6d8094;margin-top:4px;"></div>'
+            + '</div>'
+            + '<div class="setting-section" style="border-top:1px solid var(--c-border);padding-top:10px;margin-top:6px;">'
             + '<h3>Meldingsinnstillinger</h3>'
              + '<label style="display:flex;align-items:center;gap:8px;margin-top:6px;cursor:pointer;">'
              + '<input type="checkbox" id="sendOnEnterToggle" ' + (sendOnEnter ? 'checked' : '') + ' style="width:18px;height:18px;accent-color:var(--c-primary);" />'
@@ -4303,6 +4416,33 @@
               }
             } catch (e) {
               toast('Kunne ikke lagre PIN');
+            }
+          });
+        }
+
+        const invisibleToggle = overlay.querySelector('#invisibleToggle');
+        if (invisibleToggle) {
+          invisibleToggle.addEventListener('change', async () => {
+            const statusEl = overlay.querySelector('#invisibleStatus');
+            if (statusEl) statusEl.textContent = 'Lagrer...';
+            try {
+              const res = await loadJSON('/settings/invisible', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled: invisibleToggle.checked })
+              });
+              if (res && res.success) {
+                if (statusEl) statusEl.textContent = '💾 Lagret';
+                if (userProfiles[me]) userProfiles[me].invisible = !!res.invisible;
+                toast(res.invisible ? 'Usynlig modus på' : 'Usynlig modus av', 'success');
+                renderUsers();
+              } else {
+                if (statusEl) statusEl.textContent = '';
+                toast(res && res.message ? res.message : 'Kunne ikke lagre innstilling');
+              }
+            } catch (e) {
+              if (statusEl) statusEl.textContent = '';
+              toast('Kunne ikke lagre innstilling');
             }
           });
         }
@@ -4768,6 +4908,25 @@
         if (statsData.success) document.getElementById('adminBtn').style.display = '';
       } catch {}
       document.getElementById('adminBtn').addEventListener('click', () => { window.open('/admin/pages', '_blank'); });
+
+      window.__onGroupMembersChanged = (data) => {
+        loadJSON('/groups').then(d => {
+          groups.length = 0;
+          groups.push(...(d.groups || []));
+          renderGroups();
+          if (activeChat && activeChat.type === 'group' && data && data.group_id === activeChat.target) {
+            loadGroup(activeChat.target).catch(() => {});
+          }
+        }).catch(() => {});
+      };
+
+      window.__onMessageDeleted = (data) => {
+        if (!data || !data.message_id) return;
+        const el = messagesBox.querySelector('.msg[data-msg-id="' + CSS.escape(String(data.message_id)) + '"]');
+        if (!el) return;
+        el.classList.add('deleted-msg');
+        el.querySelectorAll('.msg-text').forEach(t => { t.textContent = '🗑️ [Melding slettet]'; });
+      };
 
       const _pollFast = setInterval(() => {
         if (activeChat?.type === 'user') loadChat(activeChat.target);
@@ -5844,20 +6003,43 @@
       // ──────────────────────────────────────────────
       // DELETE CHOICE DIALOG
       // ──────────────────────────────────────────────
+      const DELETE_EVERYONE_WINDOW_MS = 120000;
+      function canDeleteForEveryone(msgEl) {
+        try {
+          const ts = msgEl && msgEl.dataset.timestamp;
+          if (!ts) return true;
+          return (Date.now() - new Date(ts).getTime()) <= DELETE_EVERYONE_WINDOW_MS;
+        } catch (e) { return true; }
+      }
+
       function showDeleteChoice(msgId, msgEl) {
         document.querySelectorAll('.delete-choice').forEach(el => el.remove());
         const overlay = document.createElement('div');
         overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:999998;';
         const dialog = document.createElement('div');
         dialog.className = 'delete-choice';
+        const inWindow = canDeleteForEveryone(msgEl);
         dialog.innerHTML = '<h3>Slette melding</h3>'
-          + '<button class="del-everyone">🗑️ Slett for alle</button>'
+          + (inWindow
+            ? '<button class="del-everyone">🗑️ Slett for alle</button>'
+            : '<div style="font-size:.8rem;color:#6d8094;padding:4px 0 8px;text-align:center;">⏳ Fristen for å slette for alle er utløpt (2 min)</div>')
           + '<button class="del-me">👤 Slett for meg</button>'
           + '<button class="del-cancel">Avbryt</button>';
-        dialog.querySelector('.del-everyone').addEventListener('click', () => {
-          overlay.remove();
-          deleteMessageWithUndo(msgId, msgEl);
-        });
+        const everyoneBtn = dialog.querySelector('.del-everyone');
+        if (everyoneBtn) {
+          everyoneBtn.addEventListener('click', async () => {
+            overlay.remove();
+            try {
+              await loadJSON('/messages/' + encodeURIComponent(msgId), { method: 'DELETE' });
+              toast('Slettet for alle', 'success');
+              if (msgEl) msgEl.remove();
+              if (activeChat?.type === 'user') loadChat(activeChat.target);
+              else if (activeChat?.type === 'group') loadGroup(activeChat.target);
+            } catch (e) {
+              toast(e && e.message ? e.message : 'Kunne ikke slette for alle');
+            }
+          });
+        }
         dialog.querySelector('.del-me').addEventListener('click', async () => {
           overlay.remove();
           try {
@@ -6692,6 +6874,79 @@
 
       document.getElementById('aiRepliesBtn')?.addEventListener('click', toggleAiReplies);
 
+      let aiDraftPanel = null;
+      function closeAiDraftPanel() {
+        if (aiDraftPanel) { aiDraftPanel.remove(); aiDraftPanel = null; }
+      }
+
+      function openAiDraftPanel() {
+        closeAiDraftPanel();
+        if (!activeChat) { toast('Velg en kontakt først', 'info'); return; }
+        const composerEl = document.getElementById('composer');
+        if (!composerEl) return;
+        const input = document.getElementById('messageInput');
+        const ctx = lastIncomingText();
+        const panel = document.createElement('div');
+        panel.className = 'ai-replies-panel';
+        panel.style.flexDirection = 'column';
+        panel.style.alignItems = 'stretch';
+        aiDraftPanel = panel;
+        panel.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;width:100%;">'
+          + '<span class="ai-replies-title">✍️ AI-draft</span>'
+          + '<button class="ai-draft-close" style="background:none;border:none;color:var(--c-text-muted);cursor:pointer;font-size:1rem;" title="Lukk">✕</button></div>'
+          + '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0;">'
+          + '<button class="ai-draft-action" data-mode="suggest">💡 Foreslå svar</button>'
+          + '<button class="ai-draft-action" data-mode="rewrite">✏️ Omskriv</button>'
+          + '<button class="ai-draft-action" data-mode="shorten">✂️ Gjør kortere</button>'
+          + '</div>'
+          + '<div class="ai-draft-result" style="display:none;font-size:.85rem;color:var(--c-text);background:var(--c-surface-2);padding:8px;border-radius:8px;margin:4px 0;"></div>'
+          + '<div style="display:flex;justify-content:flex-end;"><button class="ai-draft-use" style="display:none;">Bruk</button></div>';
+        composerEl.parentElement.insertBefore(panel, composerEl);
+        panel.querySelector('.ai-draft-close').addEventListener('click', closeAiDraftPanel);
+        const resultEl = panel.querySelector('.ai-draft-result');
+        const useBtn = panel.querySelector('.ai-draft-use');
+        useBtn.addEventListener('click', () => {
+          const res = (resultEl.textContent || '').trim();
+          if (input && res) {
+            input.value = res;
+            input.focus();
+            input.dispatchEvent(new Event('input'));
+          }
+          closeAiDraftPanel();
+        });
+        panel.querySelectorAll('.ai-draft-action').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const mode = btn.dataset.mode;
+            const draft = (document.getElementById('messageInput')?.value || '').trim();
+            if (mode === 'suggest' && !ctx) { toast('Ingen innkommende melding å svare på', 'info'); return; }
+            if ((mode === 'rewrite' || mode === 'shorten') && !draft) { toast('Skriv noe i meldingsfeltet først', 'info'); return; }
+            resultEl.style.display = 'block';
+            resultEl.textContent = '⏳ Laster...';
+            useBtn.style.display = 'none';
+            try {
+              const data = await loadJSON('/ai/draft', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mode, text: ctx, draft })
+              });
+              if (data && data.success) {
+                resultEl.textContent = data.draft;
+                useBtn.style.display = '';
+              } else {
+                resultEl.textContent = data && data.message ? data.message : 'Kunne ikke generere';
+              }
+            } catch (e) {
+              resultEl.textContent = 'Feil: ' + (e.message || '');
+            }
+          });
+        });
+      }
+
+      document.getElementById('aiDraftBtn')?.addEventListener('click', () => {
+        if (aiDraftPanel) closeAiDraftPanel();
+        else openAiDraftPanel();
+      });
+
       // ── Push notifications for incoming messages ──
       window.__onNewMessage = async (data) => {
         const message = data.message || {};
@@ -6812,6 +7067,8 @@
         document.body.classList.add('offline');
         if (onlineBadge) { onlineBadge.textContent = '● Offline'; onlineBadge.style.color = '#ff6b6b'; }
       }
+
+      handleInviteOnLoad();
     } catch (e) {
       const appEl = document.getElementById('app');
       if (appEl) {

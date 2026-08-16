@@ -60,6 +60,8 @@ app.config.update(
 )
 INVITE_TTL_DAYS = int(os.environ.get('INVITE_TTL_DAYS', '7'))
 INVITE_MAX_USES = int(os.environ.get('INVITE_MAX_USES', '50'))
+ONE_TIME_INVITE_TTL_SECONDS = int(os.environ.get('ONE_TIME_INVITE_TTL_SECONDS', str(7 * 24 * 3600)))
+DELETE_FOR_EVERYONE_WINDOW_SECONDS = int(os.environ.get('DELETE_FOR_EVERYONE_WINDOW_SECONDS', '120'))
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 def _strip_server_private_keys():
@@ -1146,12 +1148,17 @@ def regenerate_recovery_codes():
 @require_login
 @require_csrf
 def presence_batch():
+    me = session['username']
     data = request.get_json(force=True, silent=True) or {}
     users = data.get('users', [])
     presence = load_json(USER_PRESENCE_FILE, {})
+    users_data = load_json(USERS_FILE, {})
     now = datetime.utcnow()
     result = []
     for u in users:
+        if u != me and users_data.get(u, {}).get('invisible'):
+            result.append({'username': u, 'online': False, 'lastSeen': None, 'hidden': True})
+            continue
         entry = presence.get(u)
         ts = entry.get('lastSeen') if isinstance(entry, dict) else entry
         last_dt = parse_iso(ts)
@@ -1163,13 +1170,31 @@ def presence_batch():
 @rate_limit(max_requests=120, window_seconds=60)
 @require_login
 def presence_single(username):
+    me = session['username']
     presence = load_json(USER_PRESENCE_FILE, {})
+    users_data = load_json(USERS_FILE, {})
+    if username != me and users_data.get(username, {}).get('invisible'):
+        return jsonify({'success': True, 'username': username, 'online': False, 'lastSeen': None, 'hidden': True})
     entry = presence.get(username)
     ts = entry.get('lastSeen') if isinstance(entry, dict) else entry
     last_dt = parse_iso(ts)
     now = datetime.utcnow()
     online = bool(last_dt and (now - last_dt) < timedelta(minutes=5))
     return jsonify({'success': True, 'username': username, 'online': online, 'lastSeen': ts})
+
+@app.route('/settings/invisible', methods=['POST'])
+@rate_limit(max_requests=20, window_seconds=120)
+@require_login
+@require_csrf
+def set_invisible():
+    me = session['username']
+    data = request.get_json(force=True, silent=True) or {}
+    enabled = convert_to_bool(data.get('enabled'), False)
+    users = load_json(USERS_FILE, {})
+    users.setdefault(me, {})['invisible'] = bool(enabled)
+    save_json(USERS_FILE, users)
+    audit('invisible_set', actor=me, meta='on' if enabled else 'off')
+    return jsonify({'success': True, 'invisible': bool(enabled)})
 
 # ──────────────────────────────────────────────
 # Public key identity
@@ -1469,6 +1494,40 @@ def ai_chat():
     if not reply:
         return jsonify({'success': False, 'message': 'Ingen svar fra AI.'}), 502
     return jsonify({'success': True, 'reply': reply})
+
+@app.route('/ai/draft', methods=['POST'])
+@rate_limit(max_requests=6, window_seconds=120)
+@require_login
+@require_csrf
+def ai_draft():
+    data = request.get_json(force=True, silent=True) or {}
+    mode = (data.get('mode') or 'suggest').strip()
+    if mode not in ('suggest', 'rewrite', 'shorten'):
+        return jsonify({'success': False, 'message': 'Ugyldig modus.'}), 400
+    text = sanitize_input(data.get('text', ''), 4000)
+    draft = sanitize_input(data.get('draft', ''), 4000)
+    if not _ai_enabled():
+        if mode == 'suggest':
+            return jsonify({'success': True, 'draft': 'Høres fint ut 👍'})
+        return jsonify({'success': True, 'draft': draft})
+    if mode == 'suggest':
+        prompt = "Foreslå ett kort, naturlig svar på norsk for meldingen nedenfor. Maks 20 ord. Svar kun med selve svaret.\n\nMelding: " + text
+        system = 'Du foreslår chat-svar som høres menneskelige ut.'
+    elif mode == 'rewrite':
+        prompt = "Omskriv utkastet nedenfor til et mer naturlig, vennlig svar på norsk. Behold meningen. Svar kun med den omskrevne teksten.\n\nUtkast: " + draft
+        system = 'Du hjelper med å omskrive chat-svar.'
+    else:
+        prompt = "Gjør svaret nedenfor kortere og mer konsist på norsk, maks 10 ord. Behold meningen. Svar kun med den forkortede teksten.\n\nSvar: " + draft
+        system = 'Du gjør chat-svar kortere.'
+    try:
+        raw = _llm_chat(prompt, system=system, max_tokens=120, temperature=0.5)
+    except Exception as e:
+        logger.warning('ai draft failed: %s', e)
+        return jsonify({'success': False, 'message': 'AI-tjenesten er utilgjengelig akkurat nå.'}), 502
+    result = re.sub(r'\s+', ' ', (raw or '').strip()).strip('"\'')
+    if not result:
+        return jsonify({'success': False, 'message': 'Ingen tekst fra AI.'}), 502
+    return jsonify({'success': True, 'draft': result[:4000]})
 
 @app.route('/ai/replies', methods=['POST'])
 @rate_limit(max_requests=6, window_seconds=120)
@@ -2337,13 +2396,20 @@ def delete_message(message_id):
     if not username:
         return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
     messages = load_json(MESSAGES_FILE, [])
+    now = datetime.utcnow()
     for m in messages:
         if m.get('id') == message_id and m.get('sender') == username:
+            created = parse_iso(m.get('timestamp'))
+            age_seconds = (now - created).total_seconds() if created else 0
+            if age_seconds > DELETE_FOR_EVERYONE_WINDOW_SECONDS:
+                return jsonify({'success': False, 'message': 'Fristen for å slette for alle er utløpt.'}), 403
             m['deleted'] = True
             m['ciphertext'] = ''
             m['type'] = 'deleted'
+            m['deleted_at'] = now_iso()
             save_json(MESSAGES_FILE, messages)
             audit('message_deleted', actor=username, target=message_id)
+            notify_message_deleted(m)
             return jsonify({'success': True})
     return jsonify({'success': False, 'message': 'Melding ikke funnet.'}), 404
 
@@ -2353,12 +2419,32 @@ def restore_message(msg_id):
     if 'username' not in session:
         return jsonify({'success': False, 'message': 'Ikke innlogget.'}), 401
     messages = load_json(MESSAGES_FILE, [])
+    now = datetime.utcnow()
     for m in messages:
         if m.get('id') == msg_id and m.get('sender') == session['username']:
+            created = parse_iso(m.get('timestamp'))
+            age_seconds = (now - created).total_seconds() if created else 0
+            if age_seconds > DELETE_FOR_EVERYONE_WINDOW_SECONDS:
+                return jsonify({'success': False, 'message': 'Fristen for å gjenopprette er utløpt.'}), 403
             m['deleted'] = False
             save_json(MESSAGES_FILE, messages)
             return jsonify({'success': True})
     return jsonify({'success': False, 'message': 'Melding ikke funnet.'}), 404
+
+def notify_message_deleted(m):
+    targets = []
+    if m.get('group_id'):
+        groups = load_json(GROUPS_FILE, [])
+        group = next((g for g in groups if g.get('id') == m['group_id']), None)
+        if group:
+            targets = [u for u in group.get('members', []) if u != m.get('sender')]
+    elif m.get('recipient'):
+        targets = [m.get('recipient')]
+    for t in targets:
+        try:
+            notify_user(socketio, t, 'message_deleted', {'message_id': m.get('id')})
+        except Exception:
+            pass
 
 @app.route('/clear_messages/<other_user>', methods=['POST'])
 @require_csrf
@@ -2388,6 +2474,7 @@ def get_profile():
         'display_name': user.get('display_name', username),
         'avatar': user.get('avatar', ''),
         'bio': user.get('bio', ''),
+        'invisible': bool(user.get('invisible', False)),
     })
 
 @app.route('/profile', methods=['POST'])
@@ -4275,8 +4362,9 @@ def get_group_members(group_id):
     for u in group.get('members', []):
         ud = users.get(u, {})
         p = presence.get(u, {})
+        hidden = u != me and ud.get('invisible')
         is_online = False
-        if isinstance(p, dict) and p.get('lastSeen'):
+        if not hidden and isinstance(p, dict) and p.get('lastSeen'):
             try:
                 ls = parse_iso(p['lastSeen'])
                 if ls and (datetime.utcnow() - ls.replace(tzinfo=None)).total_seconds() < 300:
@@ -4288,7 +4376,7 @@ def get_group_members(group_id):
             'displayName': ud.get('displayName', u),
             'role': 'owner' if u == group.get('created_by') else ('admin' if u in group.get('admins', []) else 'member'),
             'online': is_online,
-            'lastSeen': p.get('lastSeen') if isinstance(p, dict) else None,
+            'lastSeen': None if hidden else (p.get('lastSeen') if isinstance(p, dict) else None),
         })
     return jsonify({'success': True, 'members': members, 'total': len(members)})
 
@@ -5164,6 +5252,12 @@ def get_invite_link(group_id):
 @app.route('/invite/<token>')
 @require_login
 def resolve_invite(token):
+    if request.accept_mimetypes['text/html'] > request.accept_mimetypes['application/json']:
+        return redirect(url_for('chat_page') + '?invite=' + token)
+    ot = _get_one_time_invite(token)
+    if ot is not None:
+        group = ot['group']
+        return jsonify({'success': True, 'groupId': group['id'], 'groupName': group['name'], 'members': len(group.get('members', [])), 'oneTime': True})
     links = load_json(INVITE_LINKS_FILE, {})
     link_data = next((v for v in links.values() if v.get('token') == token), None)
     if not link_data:
@@ -5185,6 +5279,31 @@ def resolve_invite(token):
 @require_csrf
 def join_via_invite(token):
     me = session['username']
+    ot = _get_one_time_invite(token)
+    if ot is not None:
+        group = ot['group']
+        if me in group.get('members', []):
+            return jsonify({'success': True, 'message': 'Allerede medlem.', 'groupId': group['id'], 'oneTime': True})
+        invites = load_json(ONE_TIME_INVITES_FILE, {})
+        if token in invites:
+            del invites[token]
+            save_json(ONE_TIME_INVITES_FILE, invites)
+        groups = load_json(GROUPS_FILE, [])
+        for g in groups:
+            if g.get('id') == group['id']:
+                g.setdefault('members', []).append(me)
+                break
+        save_json(GROUPS_FILE, groups)
+        audit('invite_joined', actor=me, target=group['id'], meta='engangslenke')
+        notify_group_members_updated(group)
+        return jsonify({
+            'success': True,
+            'message': 'Bli med!',
+            'groupId': group['id'],
+            'oneTime': True,
+            'wrappedKey': ot.get('wrapped_key') or None,
+            'e2ee': bool(ot.get('wrapped_key')),
+        })
     links = load_json(INVITE_LINKS_FILE, {})
     link_data = next((v for v in links.values() if v.get('token') == token), None)
     if not link_data:
@@ -5205,6 +5324,107 @@ def join_via_invite(token):
     group.setdefault('members', []).append(me)
     save_json(GROUPS_FILE, groups)
     return jsonify({'success': True, 'message': 'Bli med!', 'groupId': group['id']})
+
+# ──────────────────────────────────────────────
+# One-time encrypted invite links (E2EE-gjestelenke)
+# ──────────────────────────────────────────────
+def _get_one_time_invite(token):
+    """Henter en engangs-invitasjon. Returnerer dict eller None hvis ugyldig."""
+    invites = load_json(ONE_TIME_INVITES_FILE, {})
+    rec = invites.get(token)
+    if not rec:
+        return None
+    try:
+        data = json.loads(_decrypt_payload(rec.get('payload', '')))
+    except Exception:
+        return None
+    group_id = data.get('group_id')
+    exp = data.get('exp')
+    if exp and exp <= now_iso():
+        return None
+    if rec.get('used'):
+        return None
+    groups = load_json(GROUPS_FILE, [])
+    group = next((g for g in groups if g['id'] == group_id), None)
+    if not group:
+        return None
+    return {
+        'token': token,
+        'group_id': group_id,
+        'group': group,
+        'wrapped_key': rec.get('wrapped_key') or '',
+    }
+
+def notify_group_members_updated(group):
+    for m in group.get('members', []):
+        try:
+            notify_user(socketio, m, 'group_members_changed', {
+                'group_id': group.get('id'),
+                'members': len(group.get('members', [])),
+            })
+        except Exception:
+            pass
+
+@app.route('/groups/<group_id>/invite', methods=['POST'])
+@rate_limit(max_requests=10, window_seconds=300)
+@require_login
+@require_csrf
+def create_single_use_invite(group_id):
+    me = session['username']
+    groups = load_json(GROUPS_FILE, [])
+    group = next((g for g in groups if g['id'] == group_id), None)
+    if not group:
+        return jsonify({'success': False, 'message': 'Gruppe ikke funnet.'}), 404
+    if me not in group.get('members', []):
+        return jsonify({'success': False, 'message': 'Ikke medlem.'}), 403
+    token = secrets.token_urlsafe(32)
+    exp_iso = (datetime.utcnow() + timedelta(seconds=ONE_TIME_INVITE_TTL_SECONDS)).isoformat() + 'Z'
+    payload = _encrypt_payload(json.dumps({'group_id': group_id, 'exp': exp_iso}))
+    invites = load_json(ONE_TIME_INVITES_FILE, {})
+    invites[token] = {
+        'payload': payload,
+        'created': now_iso(),
+        'created_by': me,
+        'used': False,
+        'wrapped_key': '',
+    }
+    save_json(ONE_TIME_INVITES_FILE, invites)
+    audit('invite_created', actor=me, target=group_id, meta='engangslenke')
+    return jsonify({
+        'success': True,
+        'invite_url': '/invite/' + token,
+        'invite_link': '/invite/' + token,
+        'token': token,
+        'expires_at': exp_iso,
+        'expires_in_seconds': ONE_TIME_INVITE_TTL_SECONDS,
+        'groupName': group['name'],
+    })
+
+@app.route('/groups/<group_id>/invite/<token>/key', methods=['POST'])
+@rate_limit(max_requests=20, window_seconds=120)
+@require_login
+@require_csrf
+def store_invite_wrapped_key(group_id, token):
+    me = session['username']
+    invites = load_json(ONE_TIME_INVITES_FILE, {})
+    rec = invites.get(token)
+    if not rec:
+        return jsonify({'success': False, 'message': 'Ugyldig lenke.'}), 404
+    if rec.get('created_by') != me:
+        return jsonify({'success': False, 'message': 'Ikke din invitasjon.'}), 403
+    try:
+        data = json.loads(_decrypt_payload(rec.get('payload', '')))
+    except Exception:
+        return jsonify({'success': False, 'message': 'Ugyldig lenke.'}), 404
+    if data.get('group_id') != group_id:
+        return jsonify({'success': False, 'message': 'Ugyldig gruppe.'}), 400
+    wrapped = (request.get_json(force=True, silent=True) or {}).get('wrappedKey') or ''
+    if not wrapped or len(wrapped) > 20000:
+        return jsonify({'success': False, 'message': 'Manglende nøkkel.'}), 400
+    rec['wrapped_key'] = wrapped
+    save_json(ONE_TIME_INVITES_FILE, invites)
+    audit('invite_key_stored', actor=me, target=group_id)
+    return jsonify({'success': True})
 
 # ──────────────────────────────────────────────
 # Per-Chat Notification Mute
