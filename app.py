@@ -399,7 +399,7 @@ def get_user_sessions(username):
             'created': sdata.get('created'),
             'last_active': sdata.get('last_active'),
             'active': active,
-            'device': sdata.get('device', 'Unknown'),
+            'device': sdata.get('device', 'Ukjent'),
             'ip': sdata.get('ip', ''),
         })
     return result
@@ -760,7 +760,7 @@ def register():
         'created': now_iso(),
         'active': True,
         'revoked': False,
-        'device': request.user_agent.string[:100] if request.user_agent else 'Unknown',
+        'device': request.user_agent.string[:100] if request.user_agent else 'Ukjent',
         'ip': request.remote_addr or '',
     }
     save_json(SESSIONS_FILE, sessions)
@@ -816,7 +816,7 @@ def login():
         'created': now_iso(),
         'active': True,
         'revoked': False,
-        'device': request.user_agent.string[:100] if request.user_agent else 'Unknown',
+        'device': request.user_agent.string[:100] if request.user_agent else 'Ukjent',
         'ip': request.remote_addr or '',
     }
     save_json(SESSIONS_FILE, sessions)
@@ -991,7 +991,7 @@ def qr_login():
             'created': now_iso(),
             'active': True,
             'revoked': False,
-            'device': request.user_agent.string[:100] if request.user_agent else 'Unknown',
+            'device': request.user_agent.string[:100] if request.user_agent else 'Ukjent',
             'ip': request.remote_addr or '',
         }
         save_json(SESSIONS_FILE, sessions)
@@ -3314,7 +3314,7 @@ def schedule_message():
     except Exception:
         return jsonify({'success': False, 'message': 'Ugyldig tidspunkt.'}), 400
     if scheduled_time <= datetime.utcnow():
-        return jsonify({'success': False, 'message': 'Tidspunkt maa vaere i fremtiden.'}), 400
+        return jsonify({'success': False, 'message': 'Tidspunkt må være i fremtiden.'}), 400
     scheduled = load_json(SCHEDULED_FILE, [])
     entry = {
         'id': secrets.token_hex(8),
@@ -3383,7 +3383,7 @@ def create_reminder():
     else:
         return jsonify({'success': False, 'message': 'Mangler tidspunkt.'}), 400
     if remind_dt <= datetime.utcnow():
-        return jsonify({'success': False, 'message': 'Tidspunkt maa vaere i fremtiden.'}), 400
+        return jsonify({'success': False, 'message': 'Tidspunkt må være i fremtiden.'}), 400
     reminders = load_json(REMINDERS_FILE, [])
     entry = {
         'id': secrets.token_hex(8),
@@ -4895,7 +4895,7 @@ def rotate_key():
     users[me]['key_rotated_at'] = now_iso()
     save_json(USERS_FILE, users)
     audit('key_rotated', actor=me, target=me)
-    return jsonify({'success': True, 'message': 'Noekkel rotert. Del den nye offentlige noekkelen med kontakter.'})
+    return jsonify({'success': True, 'message': 'Nøkkel rotert. Del den nye offentlige nøkkelen med kontakter.'})
 
 @app.route('/key/rotation-status')
 @require_login

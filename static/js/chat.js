@@ -679,7 +679,7 @@
             </div>
             <button id="fa2Btn" class="btn btn-small btn-ghost" aria-label="Tofaktorautentisering">2FA</button>
             <button id="sessionsBtn" class="btn btn-small btn-ghost" aria-label="Administrer enheter">Enheter</button>
-            <button id="rotateKeyBtn" class="btn btn-small btn-ghost" title="Roter.noekkel" aria-label="Roter krypteringsnoekkel">🔄</button>
+            <button id="rotateKeyBtn" class="btn btn-small btn-ghost" title="Roter nøkkel" aria-label="Roter krypteringsnøkkel">🔄</button>
             <button id="lockToggle" class="btn btn-small btn-ghost" title="App-lås">🔐</button>
             <button id="stealthToggle" class="btn btn-small btn-ghost" title="Stealth-modus">👁️</button>
             <button id="globalSearchBtn" class="btn btn-small btn-ghost" title="Globalt søk">🔍</button>
@@ -738,7 +738,7 @@
                 <input id="searchDateTo" type="date" class="input-text" style="width:130px;font-size:.8rem;" aria-label="Til dato" />
                 <button id="searchBtn" class="btn btn-small btn-ghost" aria-label="Soek">Soek</button>
                 <button id="fileSearchBtn" class="btn btn-small btn-ghost" title="Soek i filer" aria-label="Soek i filer">📎</button>
-                <button id="myKeyBtn" class="btn btn-small btn-ghost" aria-label="Vis min offentlige noekkel">Min noekkel</button>
+                <button id="myKeyBtn" class="btn btn-small btn-ghost" aria-label="Vis min offentlige nøkkel">Min nøkkel</button>
                 <button id="verifyBtn" class="btn btn-small btn-ghost verify-btn" style="display:none" title="Sikkerhetsnummer" aria-label="Verifiser samtale">🛡️</button>
                 <button id="exportBtn" class="btn btn-small btn-ghost" title="Eksporter samtale" aria-label="Eksporter chat" style="display:none">💾</button>
                 <button id="threadSummaryBtn" class="btn btn-small btn-ghost" title="Oppsummer samtale med AI" aria-label="Oppsummer samtale med AI" style="display:none">📝</button>
@@ -1669,7 +1669,7 @@
         const scheduleBtn = document.getElementById('scheduleBtn');
         if (!scheduleBtn) return;
         scheduleBtn.addEventListener('click', () => {
-          if (!activeChat) { toast('Velg en samtale foerst'); return; }
+          if (!activeChat) { toast('Velg en samtale først'); return; }
           const overlay = document.createElement('div');
           overlay.className = 'modal-overlay';
           overlay.innerHTML = '<div class="modal" style="max-width:360px"><div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><strong>Planlegg melding</strong><button class="modal-close" data-close-schedule="1">✕</button></div><textarea id="scheduleModalText" class="input-text" placeholder="Skriv melding..." style="width:100%;min-height:80px;resize:vertical;margin-bottom:8px"></textarea><input id="scheduleModalTime" type="datetime-local" class="input-text" style="width:100%;margin-bottom:12px" /><button id="scheduleModalSendBtn" class="btn btn-primary" style="width:100%">Planlegg</button></div>';
@@ -1822,6 +1822,14 @@
 
       renderUsers();
       renderGroups();
+
+      loadJSON('/profile').then(p => {
+        if (p && p.username) {
+          if (!userProfiles[p.username]) userProfiles[p.username] = {};
+          Object.assign(userProfiles[p.username], p);
+          updateInvisibleIndicator();
+        }
+      }).catch(() => {});
 
       loadJSON('/last-messages').then(data => {
         if (data.users) Object.assign(lastMessages, data.users);
@@ -3743,7 +3751,7 @@
 
       // ── Polls ──
       document.getElementById('pollBtn')?.addEventListener('click', () => {
-        if (!activeChat || (activeChat.type !== 'group' && activeChat.type !== 'user')) { toast('Velg en samtale foerst'); return; }
+        if (!activeChat || (activeChat.type !== 'group' && activeChat.type !== 'user')) { toast('Velg en samtale først'); return; }
         const question = prompt('Spørsmål:');
         if (!question) return;
         const optionsStr = prompt('Alternativer (kommadelt):');
@@ -4033,12 +4041,12 @@
 
       // ── Key Rotation ──
       document.getElementById('rotateKeyBtn')?.addEventListener('click', async () => {
-        if (!confirm('Roter.noekkel? Du maa dele den nye offentlige noekkelen med alle kontakter.')) return;
+        if (!confirm('Roter nøkkel? Du må dele den nye offentlige nøkkelen med alle kontakter.')) return;
         try {
           const data = await loadJSON('/key/rotate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-          toast(data.message || 'Noekkel rotert', 'success');
+          toast(data.message || 'Nøkkel rotert', 'success');
           await window.__CRYPTO__.getOrCreateIdentity();
-        } catch (e) { toast('Kunne ikke rotere noekkel'); }
+        } catch (e) { toast('Kunne ikke rotere nøkkel'); }
       });
 
       // ── Pin action in message context menu ──
@@ -4449,6 +4457,7 @@
                 if (userProfiles[me]) userProfiles[me].invisible = !!res.invisible;
                 toast(res.invisible ? 'Usynlig modus på' : 'Usynlig modus av', 'success');
                 renderUsers();
+                updateInvisibleIndicator();
               } else {
                 if (statusEl) statusEl.textContent = '';
                 toast(res && res.message ? res.message : 'Kunne ikke lagre innstilling');
@@ -4893,11 +4902,11 @@
           const pub = data.publicKey || '';
           const imported = data.importedKey || '';
           const text = pub
-            ? 'Offentlig noekkel:\n' + pub + (imported ? '\n\nImportert noekkel:\n' + imported : '')
-            : 'Ingen noekkel funnet. Opprettes automatisk ved foerste sending.';
+            ? 'Offentlig nøkkel:\n' + pub + (imported ? '\n\nImportert nøkkel:\n' + imported : '')
+            : 'Ingen nøkkel funnet. Opprettes automatisk ved første sending.';
           alert(text);
         } catch (e) {
-          toast('Kunne ikke hente noekkel');
+          toast('Kunne ikke hente nøkkel');
         }
       });
 
@@ -7083,24 +7092,50 @@
       document.getElementById('remindersBtn')?.addEventListener('click', openRemindersPanel);
 
       const onlineBadge = document.getElementById('onlineStatus');
-      window.addEventListener('online', () => {        document.body.classList.remove('offline');
-        if (onlineBadge) { onlineBadge.textContent = '● Online'; onlineBadge.style.color = '#4ade80'; }
+      function updateInvisibleIndicator() {
+        if (!onlineBadge) return;
+        const inv = userProfiles[me]?.invisible;
+        if (inv && onlineBadge.textContent.includes('Online')) {
+          onlineBadge.textContent = '👻 Usynlig';
+          onlineBadge.style.color = '#a78bfa';
+        }
+      }
+      function refreshOnlineStatus() {
+        if (!onlineBadge) return;
+        if (navigator.onLine) {
+          onlineBadge.textContent = '● Online';
+          onlineBadge.style.color = '#4ade80';
+        } else {
+          onlineBadge.textContent = '● Offline';
+          onlineBadge.style.color = '#ff6b6b';
+        }
+        updateInvisibleIndicator();
+      }
+      window.addEventListener('online', () => {
+        document.body.classList.remove('offline');
+        refreshOnlineStatus();
         toast('Tilkobling gjenopprettet', 'success');
       });
       window.addEventListener('offline', () => {
         document.body.classList.add('offline');
-        if (onlineBadge) { onlineBadge.textContent = '● Offline'; onlineBadge.style.color = '#ff6b6b'; }
+        refreshOnlineStatus();
         toast('Ingen internettilkobling — noen funksjoner er utilgjengelige');
       });
       if (!navigator.onLine) {
         document.body.classList.add('offline');
-        if (onlineBadge) { onlineBadge.textContent = '● Offline'; onlineBadge.style.color = '#ff6b6b'; }
+        refreshOnlineStatus();
       }
 
       handleInviteOnLoad();
 
+      try {
+        const cached = JSON.parse(localStorage.getItem('cryptochat_config') || 'null');
+        if (cached && cached.w && Date.now() - (cached.t || 0) < 300000) DELETE_EVERYONE_WINDOW_MS = cached.w * 1000;
+      } catch (e) {}
+
       loadJSON('/config').then(cfg => {
         if (cfg && cfg.deleteEveryoneWindowSeconds) DELETE_EVERYONE_WINDOW_MS = cfg.deleteEveryoneWindowSeconds * 1000;
+        try { localStorage.setItem('cryptochat_config', JSON.stringify({ w: cfg.deleteEveryoneWindowSeconds, t: Date.now() })); } catch (e) {}
       }).catch(() => {});
     } catch (e) {
       const appEl = document.getElementById('app');
