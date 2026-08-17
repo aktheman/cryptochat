@@ -2870,3 +2870,95 @@ class TestAnnouncementMode:
         app_mod.deliver_scheduled_messages()
         msgs = client2.get(f'/groups/{gid}/messages').get_json()['messages']
         assert all(m.get('ciphertext') != 'planlagt' for m in msgs)
+
+
+class TestOneTimeInviteEdgeCases:
+    def _create(self, client, gid):
+        return client.post(f'/groups/{gid}/invite', json={})
+
+    def test_corrupt_payload_returns_none(self, client):
+        import app as app_mod
+        _register(client, 'alice')
+        r = client.post('/groups', json={'name': 'g', 'members': []})
+        gid = r.get_json()['group']['id']
+        token = self._create(client, gid).get_json()['token']
+        invites = app_mod.load_json(app_mod.ONE_TIME_INVITES_FILE, {})
+        invites[token]['payload'] = 'not-valid-base64-!!!'
+        app_mod.save_json(app_mod.ONE_TIME_INVITES_FILE, invites)
+        r = client.get(f'/invite/{token}')
+        assert r.status_code == 404
+
+    def test_key_store_wrong_group(self, client):
+        _register(client, 'alice')
+        gid = client.post('/groups', json={'name': 'g', 'members': []}).get_json()['group']['id']
+        token = self._create(client, gid).get_json()['token']
+        r = client.post(f'/groups/WRONG_GROUP/invite/{token}/key', json={'wrappedKey': 'a.b'})
+        assert r.status_code == 400
+
+    def test_key_store_nonexistent_token(self, client):
+        _register(client, 'alice')
+        r = client.post('/groups/x/invite/faketoken/key', json={'wrappedKey': 'a.b'})
+        assert r.status_code == 404
+
+    def test_already_member_does_not_delete_token(self, client):
+        import app as app_mod
+        _register(client, 'alice')
+        gid = client.post('/groups', json={'name': 'g', 'members': []}).get_json()['group']['id']
+        token = self._create(client, gid).get_json()['token']
+        r = client.post(f'/invite/{token}/join')
+        assert r.get_json()['message'] == 'Allerede medlem.'
+        invites = app_mod.load_json(app_mod.ONE_TIME_INVITES_FILE, {})
+        assert token in invites, 'Token should NOT be deleted when already a member'
+
+    def test_unauthenticated_resolve(self, client):
+        _register(client, 'alice')
+        gid = client.post('/groups', json={'name': 'g', 'members': []}).get_json()['group']['id']
+        token = self._create(client, gid).get_json()['token']
+        anon = _new_client()
+        r = anon.get(f'/invite/{token}')
+        assert r.status_code in (401, 302)
+
+    def test_html_redirect_for_browser(self, client):
+        _register(client, 'alice')
+        gid = client.post('/groups', json={'name': 'g', 'members': []}).get_json()['group']['id']
+        token = self._create(client, gid).get_json()['token']
+        r = client.get(f'/invite/{token}', headers={'Accept': 'text/html,text/html;q=0.9,*/*;q=0.8'})
+        assert r.status_code == 302
+        assert '/chat?invite=' in r.headers.get('Location', '')
+
+
+class TestGroupMemberSocketNotifications:
+    def test_remove_group_member_sends_kicked_socket(self, client):
+        _register(client, 'alice')
+        gid = client.post('/groups', json={'name': 'g', 'members': []}).get_json()['group']['id']
+        bob = _new_client()
+        _register(bob, 'bob')
+        client.post(f'/groups/{gid}/members', json={'username': 'bob'})
+        r = client.delete(f'/groups/{gid}/members/bob')
+        assert r.status_code == 200
+        assert r.get_json()['success'] is True
+
+    def test_add_group_member_triggers_notification(self, client):
+        _register(client, 'alice')
+        gid = client.post('/groups', json={'name': 'g', 'members': []}).get_json()['group']['id']
+        bob = _new_client()
+        _register(bob, 'bob')
+        r = client.post(f'/groups/{gid}/members', json={'username': 'bob'})
+        assert r.status_code == 200
+        groups = client.get('/groups').get_json()['groups']
+        g = next((x for x in groups if x['id'] == gid), None)
+        assert g and 'bob' in g.get('members', [])
+
+
+class TestDeleteForEveryoneSystemMessage:
+    def test_delete_adds_deleted_at(self, client):
+        import app as app_mod
+        _register(client, 'alice')
+        client.post('/send', json={'recipient': 'alice', 'ciphertext': 'test', 'type': 'text'})
+        msgs = app_mod.load_json(app_mod.MESSAGES_FILE, [])
+        mid = msgs[-1]['id']
+        r = client.delete(f'/messages/{mid}')
+        assert r.status_code == 200
+        msgs = app_mod.load_json(app_mod.MESSAGES_FILE, [])
+        m = next((x for x in msgs if x['id'] == mid), {})
+        assert m.get('deleted_at') is not None

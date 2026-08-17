@@ -69,6 +69,10 @@ function initSocketIO() {
     if (window.__onMessageDeleted) window.__onMessageDeleted(data);
   });
 
+  socket.on('kicked', (data) => {
+    if (window.__onKicked) window.__onKicked(data);
+  });
+
   window.__SOCKET = socket;
 }
 

@@ -2716,6 +2716,14 @@
         item.dataset.msgId = message.id || '';
         item.dataset.timestamp = message.timestamp || '';
 
+        if (message.deleted) {
+          item.className = 'msg deleted-for-everyone';
+          item.style.cssText = 'display:flex;justify-content:center;align-items:center;padding:6px 12px;margin:6px auto;width:fit-content;max-width:80%;background:none;border:none;';
+          item.innerHTML = '<span style="font-size:.8rem;color:var(--c-text-muted);text-align:center;">🗑️ Melding slettet for alle</span>';
+          box.appendChild(item);
+          return;
+        }
+
         item.addEventListener('contextmenu', (e) => {
           e.preventDefault();
           if (message.deleted) return;
@@ -4924,8 +4932,23 @@
         if (!data || !data.message_id) return;
         const el = messagesBox.querySelector('.msg[data-msg-id="' + CSS.escape(String(data.message_id)) + '"]');
         if (!el) return;
-        el.classList.add('deleted-msg');
-        el.querySelectorAll('.msg-text').forEach(t => { t.textContent = '🗑️ [Melding slettet]'; });
+        el.className = 'msg deleted-for-everyone';
+        el.style.cssText = 'display:flex;justify-content:center;align-items:center;padding:6px 12px;margin:6px auto;width:fit-content;max-width:80%;background:none;border:none;opacity:1;font-style:normal;';
+        el.innerHTML = '<span style="font-size:.8rem;color:var(--c-text-muted);text-align:center;white-space:nowrap;">🗑️ Melding slettet for alle</span>';
+      };
+
+      window.__onKicked = (data) => {
+        const gid = data && data.group_id;
+        const gname = data && data.group_name ? data.group_name : '';
+        toast('Du ble fjernet fra gruppen ' + (gname ? '"' + gname + '"' : gid || '') + '.', 'info');
+        loadJSON('/groups').then(d => {
+          groups.length = 0;
+          groups.push(...(d.groups || []));
+          renderGroups();
+          if (activeChat && activeChat.type === 'group' && gid === activeChat.target) {
+            closeChat();
+          }
+        }).catch(() => {});
       };
 
       const _pollFast = setInterval(() => {

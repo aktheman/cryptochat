@@ -4405,6 +4405,7 @@ def add_group_member(group_id):
         return jsonify({'success': False, 'message': 'Allerede medlem.'}), 400
     group.setdefault('members', []).append(target)
     save_json(GROUPS_FILE, groups)
+    notify_group_members_updated(group)
     return jsonify({'success': True, 'message': f'{target} lagt til.'})
 
 @app.route('/groups/<group_id>/members/<username>', methods=['DELETE'])
@@ -4436,6 +4437,13 @@ def remove_group_member(group_id, username):
         save_json(KEYS_FILE, keys_data)
     _force_group_rekey(group_id)
     audit('group_member_removed', actor=me, target=group_id, meta=username)
+    notify_group_members_updated(group)
+    try:
+        notify_user(socketio, username, 'kicked', {
+            'group_id': group_id, 'group_name': group.get('name', ''),
+        })
+    except Exception:
+        pass
     return jsonify({'success': True, 'message': f'{username} fjernet.', 'rekey': True})
 
 @app.route('/groups/<group_id>/leave', methods=['POST'])
@@ -4463,6 +4471,7 @@ def leave_group(group_id):
         save_json(KEYS_FILE, keys_data)
     _force_group_rekey(group_id)
     audit('group_left', actor=me, target=group_id)
+    notify_group_members_updated(group)
     return jsonify({'success': True, 'message': 'Forlatt gruppe.', 'rekey': True})
 
 # ──────────────────────────────────────────────
