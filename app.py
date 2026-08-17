@@ -4420,9 +4420,18 @@ def remove_group_member(group_id, username):
         return jsonify({'success': False, 'message': 'Gruppe ikke funnet.'}), 404
     is_owner = me == group.get('created_by')
     is_admin = me in group.get('admins', [])
+    is_mod = me in group.get('mods', [])
     is_self = me == username
-    if not is_owner and not is_admin and not is_self:
+    target_is_owner = username == group.get('created_by')
+    target_is_admin = username in group.get('admins', [])
+    if not is_owner and not is_admin and not is_mod and not is_self:
         return jsonify({'success': False, 'message': 'Mangler tillatelse.'}), 403
+    if is_self and not is_owner:
+        pass
+    elif not is_owner and is_admin and target_is_owner:
+        return jsonify({'success': False, 'message': 'Admin kan ikke fjerne eieren.'}), 403
+    elif not is_owner and is_mod and (target_is_admin or target_is_owner):
+        return jsonify({'success': False, 'message': 'Mod kan ikke fjerne admin eller eier.'}), 403
     if username not in group.get('members', []):
         return jsonify({'success': False, 'message': 'Ikke medlem.'}), 400
     group['members'] = [m for m in group.get('members', []) if m != username]
@@ -6187,6 +6196,14 @@ def admin_resolve_report(report_id):
             audit('report_resolved', actor=me, target=report_id, meta=action)
             return jsonify({'success': True})
     return jsonify({'success': False, 'message': 'Rapport ikke funnet.'}), 404
+
+@app.route('/config')
+def get_client_config():
+    return jsonify({
+        'success': True,
+        'deleteEveryoneWindowSeconds': DELETE_FOR_EVERYONE_WINDOW_SECONDS,
+        'version': '3.6.0',
+    })
 
 @app.route('/health')
 def health_check():

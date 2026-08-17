@@ -2962,3 +2962,62 @@ class TestDeleteForEveryoneSystemMessage:
         msgs = app_mod.load_json(app_mod.MESSAGES_FILE, [])
         m = next((x for x in msgs if x['id'] == mid), {})
         assert m.get('deleted_at') is not None
+
+
+class TestClientConfig:
+    def test_config_returns_window(self, client):
+        r = client.get('/config')
+        assert r.status_code == 200
+        data = r.get_json()
+        assert data['success'] is True
+        assert isinstance(data['deleteEveryoneWindowSeconds'], int)
+        assert data['deleteEveryoneWindowSeconds'] > 0
+
+
+class TestRoleBasedRemoval:
+    def _setup_group(self, client):
+        _register(client, 'alice')
+        gid = client.post('/groups', json={'name': 'g', 'members': []}).get_json()['group']['id']
+        bob = _new_client()
+        _register(bob, 'bob')
+        charlie = _new_client()
+        _register(charlie, 'charlie')
+        dave = _new_client()
+        _register(dave, 'dave')
+        client.post(f'/groups/{gid}/members', json={'username': 'bob'})
+        client.post(f'/groups/{gid}/members', json={'username': 'charlie'})
+        client.post(f'/groups/{gid}/members', json={'username': 'dave'})
+        client.post(f'/groups/{gid}/admins', json={'username': 'bob', 'role': 'admin'})
+        client.post(f'/groups/{gid}/admins', json={'username': 'charlie', 'role': 'mod'})
+        return gid, bob, charlie, dave
+
+    def test_owner_can_remove_admin(self, client):
+        gid, bob, _, _ = self._setup_group(client)
+        r = client.delete(f'/groups/{gid}/members/bob')
+        assert r.status_code == 200
+
+    def test_admin_cannot_remove_owner(self, client):
+        gid, bob, _, _ = self._setup_group(client)
+        r = bob.delete(f'/groups/{gid}/members/alice')
+        assert r.status_code == 403
+
+    def test_mod_cannot_remove_admin(self, client):
+        gid, bob, charlie, _ = self._setup_group(client)
+        r = charlie.delete(f'/groups/{gid}/members/bob')
+        assert r.status_code == 403
+
+    def test_mod_can_remove_regular_member(self, client):
+        gid, _, charlie, dave = self._setup_group(client)
+        r = charlie.delete(f'/groups/{gid}/members/dave')
+        assert r.status_code == 200
+
+    def test_sender_cannot_delete_others_message(self, client):
+        _register(client, 'alice')
+        bob = _new_client()
+        _register(bob, 'bob')
+        client.post('/send', json={'recipient': 'bob', 'ciphertext': 'msg', 'type': 'text'})
+        import app as app_mod
+        msgs = app_mod.load_json(app_mod.MESSAGES_FILE, [])
+        mid = msgs[-1]['id']
+        r = bob.delete(f'/messages/{mid}')
+        assert r.status_code == 404

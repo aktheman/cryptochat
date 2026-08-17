@@ -3878,6 +3878,7 @@
       // ── Keyboard Shortcuts ──
       document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
+          if (aiDraftPanel) { closeAiDraftPanel(); return; }
           const modal = document.querySelector('.modal-overlay');
           if (modal) { modal.remove(); return; }
           const mediaViewer = document.querySelector('.media-viewer');
@@ -3890,6 +3891,10 @@
         if (e.ctrlKey && e.key === 'Enter') {
           e.preventDefault();
           sendMessage();
+        }
+        if (e.ctrlKey && e.key === 'd') {
+          e.preventDefault();
+          document.getElementById('aiDraftBtn')?.click();
         }
         if (e.ctrlKey && e.key === 'n') {
           e.preventDefault();
@@ -6026,7 +6031,7 @@
       // ──────────────────────────────────────────────
       // DELETE CHOICE DIALOG
       // ──────────────────────────────────────────────
-      const DELETE_EVERYONE_WINDOW_MS = 120000;
+      let DELETE_EVERYONE_WINDOW_MS = 120000;
       function canDeleteForEveryone(msgEl) {
         try {
           const ts = msgEl && msgEl.dataset.timestamp;
@@ -6858,7 +6863,8 @@
       function lastIncomingText() {
         const msgs = messagesBox.querySelectorAll('.msg:not(.sent) .msg-text');
         if (!msgs.length) return '';
-        return (msgs[msgs.length - 1].textContent || '').trim();
+        const recent = Array.from(msgs).slice(-3);
+        return recent.map(el => (el.textContent || '').trim()).filter(Boolean).join('\n');
       }
 
       async function toggleAiReplies() {
@@ -7092,6 +7098,10 @@
       }
 
       handleInviteOnLoad();
+
+      loadJSON('/config').then(cfg => {
+        if (cfg && cfg.deleteEveryoneWindowSeconds) DELETE_EVERYONE_WINDOW_MS = cfg.deleteEveryoneWindowSeconds * 1000;
+      }).catch(() => {});
     } catch (e) {
       const appEl = document.getElementById('app');
       if (appEl) {
