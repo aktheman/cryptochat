@@ -690,7 +690,7 @@
           <aside class="sidebar" role="navigation" aria-label="Kontakter">
             <div class="sidebar-search">
               <svg class="sidebar-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-              <input id="sidebarSearch" class="sidebar-search-input" type="text" placeholder="Soek" autocomplete="off" aria-label="Soek i kontakter" />
+              <input id="sidebarSearch" class="sidebar-search-input" type="text" placeholder="Søk" autocomplete="off" aria-label="Søk i kontakter" />
             </div>
             <div id="folderTabs" class="folder-tabs" role="tablist"></div>
             <button id="folderEditBtn" class="btn btn-small btn-ghost" title="Rediger mapper" style="margin: 0 12px 6px;font-size:.78rem;">✎ Mapper</button>
@@ -732,12 +732,12 @@
                 <span id="selCount" class="sel-count"></span>
               </div>
               <div class="chat-actions">
-                <input id="searchPartner" class="input-text" placeholder="Kontakt for soek" autocomplete="off" aria-label="Soek paa kontakt" />
-                <input id="searchInput" class="input-text" placeholder="Soek i meldinger..." autocomplete="off" aria-label="Soek i meldinger" />
+                <input id="searchPartner" class="input-text" placeholder="Kontakt for søk" autocomplete="off" aria-label="Søk på kontakt" />
+                <input id="searchInput" class="input-text" placeholder="Søk i meldinger..." autocomplete="off" aria-label="Søk i meldinger" />
                 <input id="searchDateFrom" type="date" class="input-text" style="width:130px;font-size:.8rem;" aria-label="Fra dato" />
                 <input id="searchDateTo" type="date" class="input-text" style="width:130px;font-size:.8rem;" aria-label="Til dato" />
-                <button id="searchBtn" class="btn btn-small btn-ghost" aria-label="Soek">Soek</button>
-                <button id="fileSearchBtn" class="btn btn-small btn-ghost" title="Soek i filer" aria-label="Soek i filer">📎</button>
+                <button id="searchBtn" class="btn btn-small btn-ghost" aria-label="Søk">Søk</button>
+                <button id="fileSearchBtn" class="btn btn-small btn-ghost" title="Søk i filer" aria-label="Søk i filer">📎</button>
                 <button id="myKeyBtn" class="btn btn-small btn-ghost" aria-label="Vis min offentlige nøkkel">Min nøkkel</button>
                 <button id="verifyBtn" class="btn btn-small btn-ghost verify-btn" style="display:none" title="Sikkerhetsnummer" aria-label="Verifiser samtale">🛡️</button>
                 <button id="exportBtn" class="btn btn-small btn-ghost" title="Eksporter samtale" aria-label="Eksporter chat" style="display:none">💾</button>
@@ -745,7 +745,7 @@
                 <button id="folderSuggestBtn" class="btn btn-small btn-ghost" title="Foreslå mappe med AI" aria-label="Foreslå mappe med AI" style="display:none">📁✨</button>
                 <button id="wallpaperBtn" class="btn btn-small btn-ghost" title="Bakgrunn" aria-label="Velg bakgrunn" style="display:none">🖼️</button>
                 <button id="muteBtn" class="btn btn-small btn-ghost" title="Demp varsler" style="display:none">🔔</button>
-                <button id="chatSearchBtn" class="btn btn-small btn-ghost" title="Soek i chat" aria-label="Soek i chat" style="display:none">🔍</button>
+                <button id="chatSearchBtn" class="btn btn-small btn-ghost" title="Søk i chat" aria-label="Søk i chat" style="display:none">🔍</button>
                 <button id="inviteBtn" class="btn btn-small btn-ghost" title="Del invitasjon" style="display:none" aria-label="Del gruppeinvitasjon">🔗</button>
                 <button id="lockBtn" class="btn btn-small btn-ghost" title="E2EE-status" style="display:none" aria-label="Krypteringsstatus">🔓</button>
                 <button id="groupAdminBtn" class="btn btn-small btn-ghost" title="Gruppeinnstillinger" aria-label="Gruppeinnstillinger" style="display:none">⚙️</button>
@@ -757,11 +757,11 @@
               <button id="pinnedClose" class="btn btn-small btn-ghost" title="Fjern" style="margin-left:auto;">✕</button>
             </div>
             <div id="chatSearchBar" class="chat-search-bar" style="display:none">
-              <input id="chatSearchInput" type="text" class="input-text" placeholder="Soek i denne samtalen..." aria-label="Soek i chat" />
+              <input id="chatSearchInput" type="text" class="input-text" placeholder="Søk i denne samtalen..." aria-label="Søk i chat" />
               <span id="chatSearchCount" class="search-count"></span>
               <button id="chatSearchPrev" class="btn btn-small btn-ghost" title="Forrige">⬆</button>
               <button id="chatSearchNext" class="btn btn-small btn-ghost" title="Neste">⬇</button>
-              <button id="chatSearchClose" class="btn btn-small btn-ghost" title="Lukk soek">✕</button>
+              <button id="chatSearchClose" class="btn btn-small btn-ghost" title="Lukk søk">✕</button>
             </div>
             <div id="messages" class="messages" role="log" aria-live="polite" aria-label="Meldinger">
               <div class="empty-state">
@@ -780,7 +780,7 @@
               <div id="imagePreview" class="image-preview" style="display:none"></div>
               <input id="fileInput" type="file" class="input-text" aria-label="Velg fil" />
               <div id="replyBar" class="reply-bar" style="display:none" aria-live="polite">
-                <span class="reply-bar-text">Svarer paa: <strong id="replyBarName"></strong> <span id="replyBarPreview"></span></span>
+                <span class="reply-bar-text">Svarer på: <strong id="replyBarName"></strong> <span id="replyBarPreview"></span></span>
                 <button id="cancelReply" class="reply-bar-cancel" aria-label="Avbryt svar">&#10005;</button>
               </div>
               <div class="composer-row" style="position:relative">
@@ -791,7 +791,7 @@
                   <div id="stickerContent" class="sticker-grid"></div>
                 </div>
                 <div id="fullEmojiPicker" class="full-emoji-picker" role="dialog" aria-label="Emoji-velger">
-                  <input id="emojiSearch" class="emoji-search" placeholder="Soek emoji..." aria-label="Soek emoji" />
+                  <input id="emojiSearch" class="emoji-search" placeholder="Søk emoji..." aria-label="Søk emoji" />
                   <div id="emojiCategories" class="emoji-categories"></div>
                   <div id="emojiGrid" class="emoji-grid" role="grid" aria-label="Emoji"></div>
                 </div>
@@ -1481,7 +1481,7 @@
       }
 
       async function deleteGroup(groupId) {
-        const nameInput = prompt('Skriv inn gruppenavn for aa bekrefte sletting:');
+        const nameInput = prompt('Skriv inn gruppenavn for å bekrefte sletting:');
         if (!nameInput) return;
         const allGroups = await loadJSON('/groups');
         const group = (allGroups.groups || []).find(g => g.id === groupId);
@@ -3471,7 +3471,7 @@
       });
 
       document.getElementById('fileSearchBtn').addEventListener('click', async () => {
-        const query = prompt('Soek i filnavn:');
+        const query = prompt('Søk i filnavn:');
         if (!query) return;
         messagesBox.innerHTML = '<div class="skeleton-loader"><div class="skeleton-msg skeleton-sent"></div></div>';
         try {
@@ -5355,7 +5355,7 @@
           const isMod = (group.mods || []).includes(m);
           const role = m === group.created_by ? 'Oppretter' : isAdm ? 'Admin' : isMod ? 'Mod' : '';
           html += '<div style="display:flex;align-items:center;gap:8px;margin:4px 0;">';
-          html += '<span style="flex:1;">' + escapeHtml(m) + (role ? ' <span class="' + (isAdm ? 'admin-badge' : 'mod-badge') + '">' + role + '</span>' : '') + '</span>';
+          html += '<span style="flex:1;">' + escapeHtml(m) + (role ? ' <span class="' + (isAdm || m === group.created_by ? 'admin-badge' : 'mod-badge') + '">' + role + '</span>' : '') + '</span>';
           if (isCreator && m !== group.created_by) {
             html += '<select class="input-text admin-role-select" data-user="' + escapeHtml(m) + '" style="width:100px;padding:4px;font-size:.8rem;">';
             html += '<option value="member"' + (!isAdm && !isMod ? ' selected' : '') + '>Medlem</option>';
