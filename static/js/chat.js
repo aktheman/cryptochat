@@ -411,19 +411,6 @@
     setTimeout(() => { if (item.parentElement) item.remove(); }, 5000);
   }
 
-  function deleteMessageWithUndo(msgId, msgEl) {
-    const savedHTML = msgEl ? msgEl.innerHTML : null;
-    fetch('/messages/' + encodeURIComponent(msgId), { method: 'DELETE' }).then(r => r.json()).then(data => {
-      if (data.success) {
-        if (msgEl) msgEl.style.opacity = '0.3';
-        showUndoToast('Melding slettet', () => {
-          fetch('/messages/' + encodeURIComponent(msgId) + '/restore', { method: 'POST' }).then(r => r.json()).then(d => {
-            if (d.success && msgEl) { msgEl.style.opacity = '1'; }
-          });
-        });
-      }
-    }).catch(() => toast('Kunne ikke slette'));
-  }
 
   function escapeHtml(str) {
     return String(str || '').replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[m]);
@@ -671,8 +658,8 @@
             <button id="adminBtn" class="btn btn-small btn-ghost" style="display:none">⚙️ Admin</button>
             <button id="remindersBtn" class="btn btn-small btn-ghost" title="Påminnelser" aria-label="Påminnelser">⏰</button>
             <button id="profileBtn" class="btn btn-small btn-ghost">Min profil</button>
-            <button id="audioCallBtn" class="btn btn-small btn-primary" title="Lydsamtale">📞</button>
-            <button id="videoCallBtn" class="btn btn-small btn-primary" title="Videosamtale">📹</button>
+            <button id="audioCallBtn" class="btn btn-small btn-primary" title="Lydsamtale" aria-label="Start lydsamtale">📞</button>
+            <button id="videoCallBtn" class="btn btn-small btn-primary" title="Videosamtale" aria-label="Start videosamtale">📹</button>
             <div class="theme-wrapper">
               <button id="themeBtn" class="btn btn-small btn-ghost">Tema</button>
               <div id="themePicker" class="theme-picker"></div>
@@ -680,10 +667,10 @@
             <button id="fa2Btn" class="btn btn-small btn-ghost" aria-label="Tofaktorautentisering">2FA</button>
             <button id="sessionsBtn" class="btn btn-small btn-ghost" aria-label="Administrer enheter">Enheter</button>
             <button id="rotateKeyBtn" class="btn btn-small btn-ghost" title="Roter nøkkel" aria-label="Roter krypteringsnøkkel">🔄</button>
-            <button id="lockToggle" class="btn btn-small btn-ghost" title="App-lås">🔐</button>
-            <button id="stealthToggle" class="btn btn-small btn-ghost" title="Stealth-modus">👁️</button>
-            <button id="globalSearchBtn" class="btn btn-small btn-ghost" title="Globalt søk">🔍</button>
-            <button id="aiSummaryBtn" class="btn btn-small btn-ghost" title="AI-sammendrag">🤖</button>
+            <button id="lockToggle" class="btn btn-small btn-ghost" title="App-lås" aria-label="App-lås">🔐</button>
+            <button id="stealthToggle" class="btn btn-small btn-ghost" title="Stealth-modus" aria-label="Stealth-modus">👁️</button>
+            <button id="globalSearchBtn" class="btn btn-small btn-ghost" title="Globalt søk" aria-label="Globalt søk">🔍</button>
+            <button id="aiSummaryBtn" class="btn btn-small btn-ghost" title="AI-sammendrag" aria-label="AI-sammendrag">🤖</button>
           </div>
         </header>
         <div class="app-row">
@@ -726,9 +713,9 @@
                 <div id="chatMeta" class="chat-meta" aria-live="polite"></div>
               </div>
               <div id="selectionToolbar" class="selection-toolbar" style="display:none">
-                <button id="selDeleteBtn" class="btn btn-small btn-ghost" title="Slett valgte">🗑️</button>
-                <button id="selForwardBtn" class="btn btn-small btn-ghost" title="Videresend">↪</button>
-                <button id="selCancelBtn" class="btn btn-small btn-ghost" title="Avbryt">✕</button>
+                <button id="selDeleteBtn" class="btn btn-small btn-ghost" title="Slett valgte" aria-label="Slett valgte">🗑️</button>
+                <button id="selForwardBtn" class="btn btn-small btn-ghost" title="Videresend" aria-label="Videresend valgte">↪</button>
+                <button id="selCancelBtn" class="btn btn-small btn-ghost" title="Avbryt" aria-label="Avbryt valg">✕</button>
                 <span id="selCount" class="sel-count"></span>
               </div>
               <div class="chat-actions">
@@ -744,7 +731,7 @@
                 <button id="threadSummaryBtn" class="btn btn-small btn-ghost" title="Oppsummer samtale med AI" aria-label="Oppsummer samtale med AI" style="display:none">📝</button>
                 <button id="folderSuggestBtn" class="btn btn-small btn-ghost" title="Foreslå mappe med AI" aria-label="Foreslå mappe med AI" style="display:none">📁✨</button>
                 <button id="wallpaperBtn" class="btn btn-small btn-ghost" title="Bakgrunn" aria-label="Velg bakgrunn" style="display:none">🖼️</button>
-                <button id="muteBtn" class="btn btn-small btn-ghost" title="Demp varsler" style="display:none">🔔</button>
+                <button id="muteBtn" class="btn btn-small btn-ghost" title="Demp varsler" aria-label="Demp varsler" style="display:none">🔔</button>
                 <button id="chatSearchBtn" class="btn btn-small btn-ghost" title="Søk i chat" aria-label="Søk i chat" style="display:none">🔍</button>
                 <button id="inviteBtn" class="btn btn-small btn-ghost" title="Del invitasjon" style="display:none" aria-label="Del gruppeinvitasjon">🔗</button>
                 <button id="lockBtn" class="btn btn-small btn-ghost" title="E2EE-status" style="display:none" aria-label="Krypteringsstatus">🔓</button>
@@ -754,14 +741,14 @@
             <div id="pinnedBar" class="pinned-bar" style="display:none" role="button" tabindex="0" aria-label="Fast melding">
               <span class="pin-icon">📌</span>
               <span class="pin-text" id="pinnedText"></span>
-              <button id="pinnedClose" class="btn btn-small btn-ghost" title="Fjern" style="margin-left:auto;">✕</button>
+              <button id="pinnedClose" class="btn btn-small btn-ghost" title="Fjern" aria-label="Fjern festet melding" style="margin-left:auto;">✕</button>
             </div>
             <div id="chatSearchBar" class="chat-search-bar" style="display:none">
               <input id="chatSearchInput" type="text" class="input-text" placeholder="Søk i denne samtalen..." aria-label="Søk i chat" />
               <span id="chatSearchCount" class="search-count"></span>
-              <button id="chatSearchPrev" class="btn btn-small btn-ghost" title="Forrige">⬆</button>
-              <button id="chatSearchNext" class="btn btn-small btn-ghost" title="Neste">⬇</button>
-              <button id="chatSearchClose" class="btn btn-small btn-ghost" title="Lukk søk">✕</button>
+              <button id="chatSearchPrev" class="btn btn-small btn-ghost" title="Forrige" aria-label="Forrige treff">⬆</button>
+              <button id="chatSearchNext" class="btn btn-small btn-ghost" title="Neste" aria-label="Neste treff">⬇</button>
+              <button id="chatSearchClose" class="btn btn-small btn-ghost" title="Lukk søk" aria-label="Lukk søk">✕</button>
             </div>
             <div id="messages" class="messages" role="log" aria-live="polite" aria-label="Meldinger">
               <div class="empty-state">
@@ -800,7 +787,7 @@
                 <button id="dictateBtn" class="btn btn-small btn-ghost" title="Tale-til-tekst (diktat)" aria-label="Tale-til-tekst">🎤</button>
                 <button id="videoRecordBtn" class="btn btn-small btn-ghost" title="Videomelding" aria-label="Videomelding">📹</button>
                 <button id="locationBtn" class="btn btn-small btn-ghost" title="Del posisjon" aria-label="Del posisjon">📍</button>
-                <button id="templateBtn" class="btn-attach" title="Maler" style="font-size:1rem;">📋</button>
+                <button id="templateBtn" class="btn-attach" title="Maler" aria-label="Meldingsmaler" style="font-size:1rem;">📋</button>
                 <button id="aiDraftBtn" class="btn btn-small btn-ghost" title="AI-draft: foreslå, omskriv eller forkort" aria-label="AI-draft">✍️</button>
                 <button id="aiRepliesBtn" class="btn btn-small btn-ghost" title="Foreslå svar med AI" aria-label="Foreslå svar med AI">✨</button>
                 <button id="pollBtn" class="btn btn-small btn-ghost" title="Opprett avstemning" aria-label="Opprett avstemning" style="display:none">📊</button>
@@ -850,23 +837,7 @@
       let peerConnection = null;
       let localStream = null;
       let callPollInterval = null;
-      let _iceServers = null;
-      async function getIceServers() {
-        if (_iceServers) return _iceServers;
-        const servers = [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-        ];
-        try {
-          const res = await fetch('/webrtc/turn', {credentials:'same-origin'});
-          const data = await res.json();
-          if (data.url && data.user && data.pass) {
-            servers.push({ urls: data.url, username: data.user, credential: data.pass });
-          }
-        } catch (e) {}
-        _iceServers = { iceServers: servers };
-        return _iceServers;
-      }
+
       let presence = {};
       const onlineUsers = new Set();
       window.__onlineUsers = onlineUsers;
@@ -1106,35 +1077,6 @@
         }
       }
 
-      async function updateE2EEStatus() {
-        const inviteBtn = document.getElementById('inviteBtn');
-        const lockBtn = document.getElementById('lockBtn');
-        if (!lockBtn) return;
-        let html = window.__CRYPTO__ ? '🔒' : '🔓';
-        if (activeChat) {
-          if (activeChat.type === 'user' && window.__CRYPTO__) {
-            html = '🔒';
-            lockBtn.style.display = '';
-          } else if (activeChat.type === 'group' && activeChat.groupE2EEKey) {
-            html = '🔒';
-            lockBtn.style.display = '';
-          } else {
-            lockBtn.style.display = 'none';
-          }
-        } else {
-          lockBtn.style.display = 'none';
-        }
-        lockBtn.textContent = html;
-        if (inviteBtn) inviteBtn.style.display = 'none';
-        if (lockBtn && activeChat && activeChat.type === 'group') {
-          const group = groups.find(g => g.id === activeChat.target) || {};
-          if (group.invite_token || (group.members || []).length) {
-            if (inviteBtn) inviteBtn.style.display = '';
-          } else {
-            if (inviteBtn) inviteBtn.style.display = 'none';
-          }
-        }
-      }
 
       document.getElementById('lockBtn').addEventListener('click', () => {
         if (!activeChat || !document.getElementById('lockBtn').textContent.includes('🔒')) return;
@@ -1162,7 +1104,7 @@
           + '<div id="inviteQr" style="display:flex;justify-content:center;margin:10px 0;"></div>'
           + '<div style="display:flex;gap:6px;margin-top:6px;">'
           + '<input id="inviteLinkInput" class="input-text" readonly value="' + escapeHtml(link) + '" style="flex:1;font-size:.72rem;" />'
-          + '<button id="inviteCopyBtn" class="btn btn-small btn-primary">📋</button>'
+          + '<button id="inviteCopyBtn" class="btn btn-small btn-primary" aria-label="Kopier lenke">📋</button>'
           + '</div>'
           + '<p style="font-size:.75rem;color:var(--c-text-muted);margin-top:8px;">🔒 Gruppenøkkelen krypteres og leveres til gjesten via lenken. Etter bruk slettes lenken.</p>'
           + '<div class="modal-actions"><button id="inviteCloseBtn" class="btn btn-primary">Ferdig</button></div>'
@@ -1173,7 +1115,7 @@
           const canvas = generateQRCode(link, 168);
           canvas.style.cssText = 'width:168px;height:168px;border-radius:8px;';
           qrBox.appendChild(canvas);
-        } catch (e) {}
+        } catch (e) { toast('Kunne ikke generere QR-kode'); }
         overlay.querySelector('#inviteCopyBtn').addEventListener('click', async () => {
           try {
             await navigator.clipboard.writeText(link);
@@ -1253,7 +1195,7 @@
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ wrappedKey: wrapped }),
                 });
-              } catch (e) {}
+              } catch (e) { toast('Kunne ikke dele nøkkel'); }
             }
             showInviteShareModal(data);
           } else {
@@ -1392,14 +1334,6 @@
         return _waitForUnlock();
       }
 
-      function setupIdleTimer() {
-        let timer;
-        const reset = () => { clearTimeout(timer); timer = setTimeout(() => { if (window.__APP__?.username) showUnlockModal(); }, 60000); };
-        window.addEventListener('mousemove', reset);
-        window.addEventListener('keydown', reset);
-        document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reset(); else clearTimeout(timer); });
-        reset();
-      }
 
 
       // (Escape handler consolidated below in keyboard shortcuts block)
@@ -1919,48 +1853,6 @@
         });
       }
 
-      function showForwardModal(msgId) {
-        const overlay = document.createElement('div');
-        overlay.id = 'forwardOverlay';
-        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;';
-        overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
-        const users = window.__APP__?.userList || [];
-        const groups = window.__groups || [];
-        let html = '<div style="background:#17213b;border-radius:16px;max-width:360px;width:90%;max-height:70vh;overflow-y:auto;padding:16px;">'
-          + '<h3 style="color:#e7e8f3;margin:0 0 12px;font-size:1rem;">Videresend melding</h3>';
-        if (users.length) {
-          html += '<div style="font-size:.75rem;color:#6d8094;margin:4px 0;">BRUKERE</div>';
-          users.forEach(u => {
-            html += '<div class="forward-item" data-target="' + escapeHtml(u) + '" data-type="user"><div class="forward-avatar">' + escapeHtml((u[0] || '?').toUpperCase()) + '</div><div class="forward-name">' + escapeHtml(u) + '</div></div>';
-          });
-        }
-        if (groups.length) {
-          html += '<div style="font-size:.75rem;color:#6d8094;margin:8px 0 4px;">GRUPPER</div>';
-          groups.forEach(g => {
-            html += '<div class="forward-item" data-target="' + escapeHtml(g.id || g.name) + '" data-type="group"><div class="forward-avatar">' + escapeHtml((g.name || 'G')[0].toUpperCase()) + '</div><div class="forward-name">' + escapeHtml(g.name || g.id) + '</div></div>';
-          });
-        }
-        html += '</div>';
-        overlay.innerHTML = html;
-        document.body.appendChild(overlay);
-        overlay.querySelectorAll('.forward-item').forEach(el => {
-          el.addEventListener('click', async () => {
-            const target = el.dataset.target;
-            const type = el.dataset.type;
-            const msgEl = document.querySelector('.msg[data-msg-id="' + msgId + '"]');
-            const textEl = msgEl?.querySelector('.text');
-            const origText = textEl?.textContent || '';
-            const forwardedText = '➡️ Videresendt:\n' + origText;
-            if (type === 'user') {
-              await loadJSON('/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ recipient: target, text: forwardedText }) });
-            } else {
-              await loadJSON('/groups/' + encodeURIComponent(target) + '/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: forwardedText }) });
-            }
-            toast('Videresendt til ' + target, 'success');
-            overlay.remove();
-          });
-        });
-      }
 
       // ── Export chat ──
       document.getElementById('exportBtn').addEventListener('click', () => {
@@ -2255,10 +2147,10 @@
               <video id="localVideo" class="call-video local" autoplay playsinline muted></video>
             </div>
             <div class="call-actions">
-              <button id="callMicToggle" class="call-btn" title="Mikrofon">🎤</button>
-              <button id="callCamToggle" class="call-btn" title="Kamera">📷</button>
-              <button id="callScreenShare" class="call-btn" title="Del skjerm">🖥️</button>
-              <button id="callHangup" class="call-btn call-hangup" title="Legg på">📞</button>
+              <button id="callMicToggle" class="call-btn" title="Mikrofon" aria-label="Slå av/på mikrofon">🎤</button>
+              <button id="callCamToggle" class="call-btn" title="Kamera" aria-label="Slå av/på kamera">📷</button>
+              <button id="callScreenShare" class="call-btn" title="Del skjerm" aria-label="Del skjerm">🖥️</button>
+              <button id="callHangup" class="call-btn call-hangup" title="Legg på" aria-label="Legg på samtale">📞</button>
             </div>
           </div>
         `;
@@ -2640,7 +2532,7 @@
                 const dec = window.crypto.subtle.decrypt({ name: 'AES-GCM', iv }, activeChat.groupE2EEKey, enc);
                 return dec.then(buf => new TextDecoder().decode(buf));
               }
-            } catch (e) {}
+            } catch (e) { /* E2EE dekryptering feilet — vis placeholder */ }
             return '[Kunne ikke dekryptere]';
           }
           return message.text || '';
@@ -3716,7 +3608,7 @@
             await loadJSON('/pins', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_target: activeChat.target, msg_id: data.pins[0].id, pin: false }) });
             document.getElementById('pinnedBar').style.display = 'none';
           }
-        } catch (e) {}
+        } catch (e) { toast('Kunne ikke fjerne festing'); }
       });
 
       // ── Scheduled Messages ──
@@ -4298,7 +4190,7 @@
             + '<h3>👻 Usynlig modus</h3>'
             + '<p style="font-size:.85rem;color:#6d8094;">Skjul din online-status og «sist sett» for andre brukere</p>'
             + '<label style="display:flex;align-items:center;gap:8px;margin-top:6px;cursor:pointer;">'
-            + '<input type="checkbox" id="invisibleToggle" ' + (profile.invisible ? 'checked' : '') + ' style="width:18px;height:18px;accent-color:var(--c-primary);" />'
+            + '<input type="checkbox" id="invisibleToggle" ' + (profile.invisible ? 'checked' : '') + ' aria-label="Usynlig modus" style="width:18px;height:18px;accent-color:var(--c-primary);" />'
             + 'Aktiv</label>'
             + '<div id="invisibleStatus" style="font-size:.8rem;color:#6d8094;margin-top:4px;"></div>'
             + '</div>'
@@ -4543,7 +4435,7 @@
                 localStorage.setItem('translateLang', translateSelect.value);
                 toast('Oversettelsesspråk: ' + translateSelect.options[translateSelect.selectedIndex].text, 'success');
               });
-            } catch (e) {}
+            } catch (e) { toast('Kunne ikke laste oversettelsesspråk'); }
           }
         })();
 
@@ -4561,7 +4453,7 @@
               if (q.start) quietStart.value = q.start;
               if (q.end) quietEnd.value = q.end;
               if (q.enabled) quietStatus.textContent = 'Stille-timer aktiv: ' + q.start + '–' + q.end;
-            } catch (e) {}
+            } catch (e) { toast('Kunne ikke laste stille-timer'); }
             saveQuietBtn.addEventListener('click', async () => {
               const enabled = quietEnabled.checked;
               try {
@@ -4585,7 +4477,7 @@
               digestEnabled.checked = !!d.enabled;
               if (d.time) digestTime.value = d.time;
               if (d.enabled) digestStatus.textContent = 'Dagsoppsummering: ' + d.time + ' (server-tid)';
-            } catch (e) {}
+            } catch (e) { toast('Kunne ikke laste dagsoppsummering'); }
             saveDigestBtn.addEventListener('click', async () => {
               const enabled = digestEnabled.checked;
               const localVal = digestTime.value;
@@ -5087,7 +4979,7 @@
             stickerTabs.appendChild(btn);
           });
           renderStickerContent();
-        } catch (e) {}
+        } catch (e) { toast('Kunne ikke laste stickers'); }
       }
 
       function updateStickerTabs() {
@@ -5113,7 +5005,7 @@
                 item.addEventListener('click', () => { sendStickerOrGif(gif.url, 'gif'); stickerPicker.classList.remove('open'); });
                 stickerContent.appendChild(item);
               });
-            } catch (e) {}
+            } catch (e) { toast('Kunne ikke laste GIFer'); }
           } else {
             stickerContent.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:#7c7e9a;padding:20px;">Søk etter GIFs...</div>';
           }
@@ -5128,7 +5020,7 @@
               item.addEventListener('click', () => { sendStickerOrGif(sticker.url, 'sticker'); stickerPicker.classList.remove('open'); });
               stickerContent.appendChild(item);
             });
-          } catch (e) {}
+          } catch (e) { toast('Kunne ikke laste sticker-pakke'); }
         } else {
           try {
             const data = await loadJSON('/stickers');
@@ -5146,7 +5038,7 @@
                 }
               } catch (e2) {}
             }
-          } catch (e) {}
+          } catch (e) { toast('Kunne ikke laste stickers/GIFer'); }
         }
       }
 
@@ -5381,7 +5273,7 @@
             html += '<option value="' + s + '">' + (s === 0 ? 'Av' : s + ' sek') + '</option>';
           });
           html += '</select></div>';
-          html += '<div class="field"><label>E2EE Nøkkel</label><button id="rotateKeyBtn" class="btn btn-ghost btn-small" style="border-color:var(--c-accent);">Roter nøkkel</button></div>';
+          html += '<div class="field"><label>E2EE Nøkkel</label><button id="groupRotateKeyBtn" class="btn btn-ghost btn-small" style="border-color:var(--c-accent);">Roter nøkkel</button></div>';
         }
         html += '<div class="modal-actions"><button class="btn btn-ghost" id="groupAdminClose">Lukk</button></div></div></div>';
         document.body.insertAdjacentHTML('beforeend', html);
@@ -5440,7 +5332,7 @@
                   groups.length = 0;
                   groups.push(...(data.groups || []));
                   renderGroups();
-                } catch (e) {}
+                } catch (e) { toast('Kunne ikke oppdatere grupper'); }
               }, 500);
             });
           }
@@ -5495,7 +5387,7 @@
           });
         }
         if (isCreator) {
-          const rotateBtn = modal.querySelector('#rotateKeyBtn');
+          const rotateBtn = modal.querySelector('#groupRotateKeyBtn');
           if (rotateBtn) {
             rotateBtn.addEventListener('click', async () => {
               if (!confirm('Roter E2EE-nøkkel? Alle medlemmer må laste nøkler på nytt.')) return;

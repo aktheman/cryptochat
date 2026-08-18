@@ -3021,3 +3021,193 @@ class TestRoleBasedRemoval:
         mid = msgs[-1]['id']
         r = bob.delete(f'/messages/{mid}')
         assert r.status_code == 404
+
+
+class TestMissingRouteCoverage:
+    def test_logout_all(self, client):
+        _register(client, 'alice')
+        r = client.post('/auth/logout-all')
+        assert r.status_code == 200
+        assert r.get_json()['success'] is True
+
+    def test_self_destruct_and_cancel(self, client):
+        _register(client, 'alice')
+        r = client.post('/account/self-destruct', json={'days': 1})
+        assert r.status_code == 200
+        r2 = client.post('/account/cancel-self-destruct')
+        assert r2.status_code == 200
+        assert r2.get_json()['success'] is True
+
+    def test_translate_languages(self, client):
+        _register(client, 'alice')
+        r = client.get('/translate/languages')
+        assert r.status_code == 200
+        j = r.get_json()
+        assert 'languages' in j or 'success' in j
+
+    def test_translate_missing_text(self, client):
+        _register(client, 'alice')
+        r = client.post('/translate', json={})
+        assert r.status_code in (400, 200)
+
+    def test_unread_endpoint(self, client):
+        _register(client, 'alice')
+        r = client.get('/unread')
+        assert r.status_code == 200
+        assert r.get_json()['success'] is True
+
+    def test_settings_notifications(self, client):
+        _register(client, 'alice')
+        r = client.post('/settings/notifications', json={})
+        assert r.status_code in (200, 400)
+
+    def test_users_all(self, client):
+        _register(client, 'alice')
+        bob = _new_client()
+        _register(bob, 'bob')
+        r = client.get('/users/all')
+        assert r.status_code == 200
+        j = r.get_json()
+        assert j['success'] is True
+        assert len(j['users']) == 1
+        assert j['users'][0]['username'] == 'bob'
+
+    def test_forward_message(self, client):
+        _register(client, 'alice')
+        bob = _setup_pair(client, 'alice', 'bob')
+        client.post('/send', json={'recipient': 'bob', 'ciphertext': 'heisann', 'type': 'text'})
+        import app as app_mod
+        msgs = app_mod.load_json(app_mod.MESSAGES_FILE, [])
+        mid = msgs[-1]['id']
+        r = client.post(f'/messages/{mid}/forward', json={'target': 'bob', 'target_type': 'user'})
+        assert r.status_code == 200
+        assert r.get_json()['success'] is True
+
+    def test_delete_for_me(self, client):
+        _register(client, 'alice')
+        bob = _setup_pair(client, 'alice', 'bob')
+        client.post('/send', json={'recipient': 'bob', 'ciphertext': 'hei', 'type': 'text'})
+        import app as app_mod
+        msgs = app_mod.load_json(app_mod.MESSAGES_FILE, [])
+        mid = msgs[-1]['id']
+        r = client.delete(f'/messages/{mid}/me')
+        assert r.status_code == 200
+
+    def test_clear_messages(self, client):
+        _register(client, 'alice')
+        bob = _setup_pair(client, 'alice', 'bob')
+        client.post('/send', json={'recipient': 'bob', 'ciphertext': 'test', 'type': 'text'})
+        r = client.post('/clear_messages/bob')
+        assert r.status_code == 200
+
+    def test_contacts_sync(self, client):
+        _register(client, 'alice')
+        r = client.post('/contacts/sync', json={'contacts': ['bob']})
+        assert r.status_code == 200
+
+    def test_leave_group(self, client):
+        _register(client, 'alice')
+        bob = _new_client()
+        _register(bob, 'bob')
+        r = client.post('/groups', json={'name': 'Testgrp'})
+        gid = r.get_json()['group']['id']
+        client.post(f'/groups/{gid}/members', json={'username': 'bob'})
+        r2 = bob.post(f'/groups/{gid}/leave')
+        assert r2.status_code == 200
+        assert r2.get_json()['success'] is True
+
+    def test_polls_crud(self, client):
+        _register(client, 'alice')
+        bob = _setup_pair(client, 'alice', 'bob')
+        r = client.post('/polls', json={'question': 'Farge?', 'options': ['Rød', 'Blå'], 'target': 'bob', 'target_type': 'user'})
+        assert r.status_code == 200
+        pid = r.get_json().get('poll_id') or r.get_json().get('poll', {}).get('id')
+        if pid:
+            r3 = client.post(f'/polls/{pid}/close')
+            assert r3.status_code == 200
+
+    def test_link_preview(self, client):
+        _register(client, 'alice')
+        r = client.get('/link-preview?url=https://example.com')
+        assert r.status_code in (200, 400)
+
+    def test_verify_safety_number(self, client):
+        _register(client, 'alice')
+        bob = _setup_pair(client, 'alice', 'bob')
+        r = client.get('/verify/safety-number/bob')
+        assert r.status_code == 200
+
+    def test_verify_status(self, client):
+        _register(client, 'alice')
+        bob = _setup_pair(client, 'alice', 'bob')
+        r = client.get('/verify/status/bob')
+        assert r.status_code == 200
+
+    def test_verify_batch(self, client):
+        _register(client, 'alice')
+        bob = _setup_pair(client, 'alice', 'bob')
+        r = client.post('/verify/batch', json={'usernames': ['bob']})
+        assert r.status_code == 200
+
+    def test_key_export(self, client):
+        _register(client, 'alice')
+        r = client.get('/key/export')
+        assert r.status_code == 200
+
+    def test_key_import(self, client):
+        _register(client, 'alice')
+        r = client.post('/key/import', json={'publicKey': 'dGVzdA=='})
+        assert r.status_code in (200, 400)
+
+    def test_me_key(self, client):
+        _register(client, 'alice')
+        r = client.get('/me/key')
+        assert r.status_code == 200
+
+    def test_key_rotation_status(self, client):
+        _register(client, 'alice')
+        r = client.get('/key/rotation-status')
+        assert r.status_code == 200
+
+    def test_get_thread(self, client):
+        _register(client, 'alice')
+        bob = _setup_pair(client, 'alice', 'bob')
+        client.post('/send', json={'recipient': 'bob', 'ciphertext': 'threadmsg', 'type': 'text'})
+        import app as app_mod
+        msgs = app_mod.load_json(app_mod.MESSAGES_FILE, [])
+        mid = msgs[-1]['id']
+        r = client.get(f'/thread/{mid}')
+        assert r.status_code == 200
+
+    def test_admin_dashboard(self, client):
+        _register(client, 'alice')
+        import app as app_mod
+        users = app_mod.load_json(app_mod.USERS_FILE, {})
+        users['alice']['is_admin'] = True
+        app_mod.save_json(app_mod.USERS_FILE, users)
+        r = client.get('/admin/dashboard')
+        assert r.status_code in (200, 302)
+
+    def test_admin_messages(self, client):
+        _register(client, 'alice')
+        import app as app_mod
+        users = app_mod.load_json(app_mod.USERS_FILE, {})
+        users['alice']['is_admin'] = True
+        app_mod.save_json(app_mod.USERS_FILE, users)
+        r = client.get('/admin/messages')
+        assert r.status_code in (200, 302)
+
+    def test_call_ice(self, client):
+        _register(client, 'alice')
+        bob = _setup_pair(client, 'alice', 'bob')
+        r = client.post('/calls/init', json={'target': 'bob', 'type': 'video'})
+        if r.status_code == 200:
+            cid = r.get_json().get('call_id')
+            if cid:
+                r2 = client.get(f'/calls/ice/{cid}')
+                assert r2.status_code in (200, 404)
+
+    def test_stickers(self, client):
+        _register(client, 'alice')
+        r = client.get('/stickers')
+        assert r.status_code == 200
