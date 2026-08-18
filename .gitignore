@@ -13,4 +13,3 @@ android/app/build/
 android/.gradle/
 android/build/
 *.apk
-package-lock.json
