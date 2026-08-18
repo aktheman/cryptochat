@@ -6,6 +6,8 @@
 - **Full sjekk**: `bash scripts/check.sh` (Python-syntaks, JS-syntaks, pytest, pip-audit)
 - **Dev-server**: `.venv/bin/python app.py` (localhost:5000)
 - **Deploy**: `sudo systemctl restart cryptochat && sudo systemctl status cryptochat`
+- **Android sync**: `npx cap sync android`
+- **Android build** (krever x86_64): `cd android && ./gradlew assembleDebug`
 
 ## Nye endepunkter
 
@@ -25,6 +27,15 @@
 - `message_deleted` — melding slettet (bruk `messageId` felt)
 - `pair_key_rotated` — E2EE-nøkkel rotert
 
+## Android-app
+
+- **App-ID**: `no.aktheman.cryptochat`
+- **Oppsett**: Capacitor wrapper med WebView som peker til serveren
+- **Første lansering**: Bruker skriver inn server-URL og appen kobler til
+- **Bygg**: GitHub Actions CI (`.github/workflows/android.yml`) bygger debug + release APK
+- **ikoner**: Generert fra `static/img/icon-512.png` til alle mipmap-størrelser
+- **Tillatelser**: INTERNET, CAMERA, RECORD_AUDIO, NOTIFICATIONS, LOCATION
+
 ## Byggeendringer
 
 - `GET /config` returnerer `deleteEveryoneWindowSeconds` og `version`
@@ -32,3 +43,7 @@
 - `updateInvisibleIndicator()` oppdaterer onlineStatus-badge med "👻 Usynlig"
 - ASCII-norske tegn (`noekkel`, `maa`, `foerst`) er erstattet med Unicode (`nøkkel`, `må`, `først`)
 - `Unknown` → `Ukjent` i alle `device`-defaulter
+- Død kode fjernet: `deleteMessageWithUndo`, `getIceServers`, `updateE2EEStatus`, `setupIdleTimer`, `showForwardModal`
+- Tomme catch-blokker fylt med toast-feilmeldinger for brukervennlige feil
+- Aria-labels på alle ikon-knapper
+- `rotateKeyBtn` → `groupRotateKeyBtn` (gruppeadmin-modal)

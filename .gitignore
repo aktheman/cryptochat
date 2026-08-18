@@ -8,3 +8,9 @@ data/uploads/*
 secrets/
 tests/test_secret.key
 cookies.txt
+node_modules/
+android/app/build/
+android/.gradle/
+android/build/
+*.apk
+package-lock.json

@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>CryptoChat</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background:#0f1424; color:#e7e8f3; min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:20px; }
+    .splash { text-align:center; }
+    .splash h1 { font-size:2rem; margin-bottom:8px; }
+    .splash p { color:#6d8094; margin-bottom:24px; }
+    .logo { font-size:4rem; margin-bottom:16px; }
+    .config { width:100%; max-width:360px; }
+    .config input { width:100%; padding:12px 16px; background:#17213b; color:#e7e8f3; border:1px solid #2b3a4e; border-radius:12px; font-size:1rem; margin-bottom:12px; outline:none; }
+    .config input:focus { border-color:#6c8cff; }
+    .config button { width:100%; padding:12px; background:#6c8cff; color:#fff; border:none; border-radius:12px; font-size:1rem; font-weight:600; cursor:pointer; }
+    .config button:disabled { opacity:.5; }
+    .status { color:#6d8094; font-size:.85rem; margin-top:12px; min-height:20px; }
+    .status.error { color:#ef4444; }
+    .status.ok { color:#4ade80; }
+  </style>
+</head>
+<body>
+  <div class="splash">
+    <div class="logo">🔐</div>
+    <h1>CryptoChat</h1>
+    <p>Kryptert meldingsapp</p>
+    <div class="config">
+      <input id="serverUrl" type="url" placeholder="https://ditt-domene.no" autocomplete="url" />
+      <button id="connectBtn">Koble til</button>
+      <div id="status" class="status"></div>
+    </div>
+  </div>
+  <script>
+    const saved = localStorage.getItem('cryptochat_server_url');
+    if (saved) {
+      document.getElementById('serverUrl').value = saved;
+    }
+    document.getElementById('connectBtn').addEventListener('click', async () => {
+      const url = document.getElementById('serverUrl').value.trim().replace(/\/+$/, '');
+      const status = document.getElementById('status');
+      const btn = document.getElementById('connectBtn');
+      if (!url) { status.className = 'status error'; status.textContent = 'Skriv inn en URL'; return; }
+      status.className = 'status'; status.textContent = 'Kobler til...';
+      btn.disabled = true;
+      try {
+        const res = await fetch(url + '/health', { mode: 'cors' });
+        const data = await res.json();
+        if (data.success) {
+          status.className = 'status ok'; status.textContent = 'Tilkoblet! Laster app...';
+          localStorage.setItem('cryptochat_server_url', url);
+          window.location.href = url + '/chat';
+        } else {
+          status.className = 'status error'; status.textContent = 'Serveren svarte, men er ikke klar.';
+          btn.disabled = false;
+        }
+      } catch (e) {
+        status.className = 'status error';
+        status.textContent = 'Kunne ikke koble til: ' + (e.message || 'Ukjent feil');
+        btn.disabled = false;
+      }
+    });
+    document.getElementById('serverUrl').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') document.getElementById('connectBtn').click();
+    });
+    if (saved) {
+      document.getElementById('connectBtn').click();
+    }
+  </script>
+</body>
+</html>

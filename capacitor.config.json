@@ -1,0 +1,23 @@
+{
+  "appId": "no.aktheman.cryptochat",
+  "appName": "CryptoChat",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https",
+    "cleartext": true,
+    "allowNavigation": [
+      "127.0.0.1",
+      "localhost",
+      "10.0.2.2"
+    ]
+  },
+  "plugins": {
+    "PushNotifications": {
+      "presentationOptions": [
+        "badge",
+        "sound",
+        "alert"
+      ]
+    }
+  }
+}

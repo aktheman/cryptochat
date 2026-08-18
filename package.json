@@ -1,0 +1,11 @@
+{
+  "name": "cryptochat",
+  "version": "3.6.0",
+  "description": "CryptoChat Android",
+  "private": true,
+  "dependencies": {
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/cli": "^7.6.8",
+    "@capacitor/core": "^8.5.0"
+  }
+}
