@@ -39,6 +39,8 @@ def clean_data():
     conn.commit()
     conn.close()
     RATE_LIMIT_STORE.clear()
+    from sockets import online_users
+    online_users.clear()
     dict_files = {
         'users.json', 'keys.json', 'notifications.json', 'presence.json',
         'read_receipts.json', 'sessions.json', 'reactions.json', 'typing.json',
