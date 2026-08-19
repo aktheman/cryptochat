@@ -5,6 +5,7 @@
   "server": {
     "androidScheme": "https",
     "cleartext": true,
+    "url": "https://raspberrypi5.tail686286.ts.net",
     "allowNavigation": [
       "*.tail686286.ts.net",
       "raspberrypi5.tail686286.ts.net",
