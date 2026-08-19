@@ -6,6 +6,8 @@
     "androidScheme": "https",
     "cleartext": true,
     "allowNavigation": [
+      "*.tail686286.ts.net",
+      "raspberrypi5.tail686286.ts.net",
       "127.0.0.1",
       "localhost",
       "10.0.2.2"
@@ -13,11 +15,7 @@
   },
   "plugins": {
     "PushNotifications": {
-      "presentationOptions": [
-        "badge",
-        "sound",
-        "alert"
-      ]
+      "presentationOptions": ["badge", "sound", "alert"]
     }
   }
 }

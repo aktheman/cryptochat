@@ -37,29 +37,15 @@
     if (saved) {
       document.getElementById('serverUrl').value = saved;
     }
-    document.getElementById('connectBtn').addEventListener('click', async () => {
+    document.getElementById('connectBtn').addEventListener('click', () => {
       const url = document.getElementById('serverUrl').value.trim().replace(/\/+$/, '');
       const status = document.getElementById('status');
       const btn = document.getElementById('connectBtn');
       if (!url) { status.className = 'status error'; status.textContent = 'Skriv inn en URL'; return; }
       status.className = 'status'; status.textContent = 'Kobler til...';
       btn.disabled = true;
-      try {
-        const res = await fetch(url + '/health', { mode: 'cors' });
-        const data = await res.json();
-        if (data.success) {
-          status.className = 'status ok'; status.textContent = 'Tilkoblet! Laster app...';
-          localStorage.setItem('cryptochat_server_url', url);
-          window.location.href = url + '/chat';
-        } else {
-          status.className = 'status error'; status.textContent = 'Serveren svarte, men er ikke klar.';
-          btn.disabled = false;
-        }
-      } catch (e) {
-        status.className = 'status error';
-        status.textContent = 'Kunne ikke koble til: ' + (e.message || 'Ukjent feil');
-        btn.disabled = false;
-      }
+      localStorage.setItem('cryptochat_server_url', url);
+      window.location.href = url + '/chat';
     });
     document.getElementById('serverUrl').addEventListener('keydown', (e) => {
       if (e.key === 'Enter') document.getElementById('connectBtn').click();
