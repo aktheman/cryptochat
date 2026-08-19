@@ -2356,6 +2356,9 @@ class TestWebPushSend:
 
     def test_expired_subscription_removed(self, client):
         import app as app_mod
+        if not app_mod.VAPID_PUBLIC_KEY or not app_mod.VAPID_PRIVATE_KEY:
+            import pytest as _pt
+            _pt.skip('VAPID-nøkler mangler')
         server, captured = self._stub_server(410)
         endpoint = f'http://127.0.0.1:{server.server_address[1]}/push'
         sub = self._subscription(endpoint)
