@@ -41,6 +41,13 @@
 - **Cleanup**: utløpte tokens (HTTP 404/410) fjernes automatisk i `_notify_push`
 - **Krever**: `android/app/google-services.json` fra Firebase-konsollen (build.gradle apply'er google-services-pluginen kun hvis filen finnes)
 
+## Signerte release-bygg
+
+- Keystore: `secrets/cryptochat-release.keystore` (alias `cryptochat`, passord i `secrets/keystore-password`) — følges med i backupen
+- CI: `ANDROID_KEYSTORE_BASE64` + `ANDROID_KEYSTORE_PASSWORD` → dekodes til `android/app/release.keystore`, env `KEYSTORE_PATH`/`KEYSTORE_PASSWORD` styrer signingConfigs.release
+- Uten env-vars bygges release usignert (lokalt bygg fungerer fortsatt)
+- **Mistet keystore = kan aldri oppdatere appen** — ikke slett fra secrets/
+
 ## Android-app
 
 - **App-ID**: `no.aktheman.cryptochat`

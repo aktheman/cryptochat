@@ -16,10 +16,25 @@ android {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            def ksPass = System.getenv('KEYSTORE_PASSWORD') ?: ''
+            if (ksPass) {
+                storeFile file(System.getenv('KEYSTORE_PATH') ?: 'release.keystore')
+                storePassword ksPass
+                keyAlias 'cryptochat'
+                keyPassword ksPass
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            def ksPass = System.getenv('KEYSTORE_PASSWORD') ?: ''
+            if (ksPass) {
+                signingConfig signingConfigs.release
+            }
         }
     }
     compileOptions {

@@ -19,6 +19,9 @@ jobs:
       - name: Write google-services.json
         run: echo '${{ secrets.GOOGLE_SERVICES_JSON }}' > android/app/google-services.json
 
+      - name: Decode signing keystore
+        run: echo '${{ secrets.ANDROID_KEYSTORE_BASE64 }}' | base64 -d > android/app/release.keystore
+
       - uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
@@ -41,6 +44,9 @@ jobs:
 
       - name: Build Release APK
         working-directory: android
+        env:
+          KEYSTORE_PATH: app/release.keystore
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: ./gradlew assembleRelease
 
       - name: Upload Debug APK
@@ -53,4 +59,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: cryptochat-release
-          path: android/app/build/outputs/apk/release/app-release-unsigned.apk
+          path: android/app/build/outputs/apk/release/app-release.apk
