@@ -28,6 +28,12 @@
 - `message_deleted` — melding slettet (bruk `messageId` felt)
 - `pair_key_rotated` — E2EE-nøkkel rotert
 
+## Push-atferd (klient)
+
+- Utlogging (`logoutBtn`) avregistrerer push før `/auth/logout`: FCM-token i native-modus, web-push-endepunkt ellers; `fcmToken` fjernes fra localStorage
+- `pushNotificationActionPerformed` (bootstrap.js) navigerer til `data.url` fra FCM-payloaden ved tap på varsel
+- Cache-busting: statiske filer versjoneres med `?v=APP_VERSION` — bump `APP_VERSION` i app.py ved JS-endringer
+
 ## Native push (Android/FCM)
 
 - **Server**: `_send_fcm()` bruker FCM HTTP v1 med JWT signert av `secrets/firebase-service-account.json` (eller `GOOGLE_APPLICATION_CREDENTIALS`); access-token caches i minnet

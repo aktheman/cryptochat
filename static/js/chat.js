@@ -4804,6 +4804,21 @@
 
       document.getElementById('logoutBtn').addEventListener('click', async () => {
         if (!confirm('Logge ut?')) return;
+        try {
+          const body = {};
+          const nativeApp = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+          if (nativeApp) {
+            body.token = localStorage.getItem('fcmToken') || '';
+          } else if ('serviceWorker' in navigator) {
+            const reg = await navigator.serviceWorker.getRegistration();
+            const sub = reg ? await reg.pushManager.getSubscription() : null;
+            if (sub) body.endpoint = sub.endpoint;
+          }
+          if (body.token || body.endpoint) {
+            await fetch('/push/unsubscribe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => {});
+          }
+        } catch (e) {}
+        localStorage.removeItem('fcmToken');
         await fetch('/auth/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).catch(() => {});
         window.location.href = '/login';
       });

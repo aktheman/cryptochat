@@ -75,6 +75,10 @@
       Push.addListener('registrationError', (err) => {
         window.__fcmError = err;
       });
+      Push.addListener('pushNotificationActionPerformed', (action) => {
+        const url = action.notification?.data?.url;
+        if (typeof url === 'string' && url.startsWith('/') && !url.startsWith('//')) window.location.assign(url);
+      });
     } catch (e) {
       window.__fcmError = e;
     }

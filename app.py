@@ -668,7 +668,7 @@ def login_page():
 
 @app.context_processor
 def inject_common():
-    return {'version': os.environ.get('APP_VERSION', '3.6.0')}
+    return {'version': os.environ.get('APP_VERSION', '3.6.1')}
 
 @app.route('/webrtc/turn')
 @require_login
@@ -6329,7 +6329,7 @@ def health_check():
         'success': True,
         'status': 'healthy' if db_ok else 'degraded',
         'db': 'ok' if db_ok else 'error',
-        'version': os.environ.get('APP_VERSION', '3.6.0'),
+        'version': os.environ.get('APP_VERSION', '3.6.1'),
     })
 
 @app.route('/sw-test')
