@@ -13,3 +13,4 @@ android/app/build/
 android/.gradle/
 android/build/
 *.apk
+android/app/google-services.json

@@ -19,6 +19,7 @@
 | POST | `/groups/<id>/invite/<token>/key` | Lever wrappedKey til invitasjon | `require_login`, medlem |
 | POST | `/groups/<id>/keys/rotate` | Roter gruppe-E2EE-nøkkel | `require_login`, eier |
 | GET  | `/config` | Returnerer vindu for slett-for-alle + versjon | `require_login` |
+| POST | `/push/fcm` | Registrer FCM-token (native Android-push) | `require_login`, rate-limit 10/300s |
 
 ## Klient-side hendelser (socket)
 
@@ -26,6 +27,13 @@
 - `group_members_changed` — medlemsliste endret (bruk `groupId` felt)
 - `message_deleted` — melding slettet (bruk `messageId` felt)
 - `pair_key_rotated` — E2EE-nøkkel rotert
+
+## Native push (Android/FCM)
+
+- **Server**: `_send_fcm()` bruker FCM HTTP v1 med JWT signert av `secrets/firebase-service-account.json` (eller `GOOGLE_APPLICATION_CREDENTIALS`); access-token caches i minnet
+- **Klient**: `bootstrap.js` registrerer token via `Capacitor.Plugins.PushNotifications` når appen kjører native → POST `/push/fcm`
+- **Cleanup**: utløpte tokens (HTTP 404/410) fjernes automatisk i `_notify_push`
+- **Krever**: `android/app/google-services.json` fra Firebase-konsollen (build.gradle apply'er google-services-pluginen kun hvis filen finnes)
 
 ## Android-app
 

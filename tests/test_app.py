@@ -2307,6 +2307,54 @@ class TestPushSubscribe:
         subs = app_mod.load_json(app_mod.PUSH_SUBSCRIPTIONS_FILE, {})
         assert subs.get('alice') in (None, [])
 
+    def test_fcm_subscribe_and_unsubscribe(self, client):
+        import app as app_mod
+        _register(client, 'alice')
+        token = 'f' * 152
+        r = client.post('/push/fcm', json={'token': token, 'platform': 'android'})
+        assert r.status_code == 200
+        subs = app_mod.load_json(app_mod.PUSH_SUBSCRIPTIONS_FILE, {})
+        assert subs['alice'][0]['fcm_token'] == token
+        assert subs['alice'][0]['platform'] == 'android'
+        r = client.post('/push/unsubscribe', json={'token': token})
+        assert r.status_code == 200
+        subs = app_mod.load_json(app_mod.PUSH_SUBSCRIPTIONS_FILE, {})
+        assert subs['alice'] == []
+
+    def test_fcm_subscribe_replaces_duplicate_token(self, client):
+        import app as app_mod
+        _register(client, 'alice')
+        token = 'a' * 100
+        for _ in range(2):
+            r = client.post('/push/fcm', json={'token': token})
+            assert r.status_code == 200
+        subs = app_mod.load_json(app_mod.PUSH_SUBSCRIPTIONS_FILE, {})
+        assert len(subs['alice']) == 1
+
+    def test_fcm_subscribe_rejects_invalid_token(self, client):
+        import app as app_mod
+        _register(client, 'alice')
+        for bad_token in ('', 'kort', 'x' * 5000):
+            r = client.post('/push/fcm', json={'token': bad_token})
+            assert r.status_code == 400
+        r = client.post('/push/fcm', json={})
+        assert r.status_code == 400
+        subs = app_mod.load_json(app_mod.PUSH_SUBSCRIPTIONS_FILE, {})
+        assert subs.get('alice') in (None, [])
+
+    def test_expired_fcm_token_removed(self, client):
+        import app as app_mod
+        sub = {'fcm_token': 'tok' * 40, 'platform': 'android'}
+        app_mod.save_json(app_mod.PUSH_SUBSCRIPTIONS_FILE, {'alice': [sub]})
+        orig = app_mod._send_fcm
+        app_mod._send_fcm = lambda *args, **kwargs: 'expired'
+        try:
+            app_mod._notify_push('alice', 'T', 'B', '/chat')
+        finally:
+            app_mod._send_fcm = orig
+        subs = app_mod.load_json(app_mod.PUSH_SUBSCRIPTIONS_FILE, {})
+        assert subs.get('alice') == []
+
 
 class TestWebPushSend:
     def _stub_server(self, status_code):

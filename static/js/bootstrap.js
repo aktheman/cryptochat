@@ -46,11 +46,40 @@
     });
   });
 
-  if ('serviceWorker' in navigator) {
+  const isNativeApp = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+
+  if (!isNativeApp && 'serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js', { scope: '/' }).then(() => {
       setupPushSubscription();
     }).catch(() => {});
   }
+
+  async function setupFcmRegistration() {
+    try {
+      const Push = window.Capacitor?.Plugins?.PushNotifications;
+      if (!Push || !window.__APP__.username) return;
+      const result = await Push.requestPermissions();
+      if (result.receive !== 'granted') return;
+      Push.addListener('registration', async (token) => {
+        try {
+          await fetch('/push/fcm', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token: token.value, platform: window.Capacitor.getPlatform() }),
+          });
+          localStorage.setItem('fcmToken', token.value);
+        } catch (e) {
+          window.__fcmError = e;
+        }
+      });
+      Push.addListener('registrationError', (err) => {
+        window.__fcmError = err;
+      });
+    } catch (e) {
+      window.__fcmError = e;
+    }
+  }
+  if (isNativeApp) setupFcmRegistration();
 
   function urlBase64ToUint8Array(base64String) {
     const padding = '='.repeat((4 - (base64String.length % 4)) % 4);

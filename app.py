@@ -4759,6 +4759,89 @@ def _send_web_push(sub, title, body, url=''):
         logger.warning('web push failed: %s', e)
         return False
 
+# ── FCM (native Android-app via Capacitor PushNotifications) ──
+import urllib.error
+import urllib.request
+from urllib.parse import urlencode
+FCM_TOKEN_URL = 'https://oauth2.googleapis.com/token'
+FCM_SEND_URL = 'https://fcm.googleapis.com/v1/projects/{project}/messages:send'
+_fcm_access_token_cache = {'token': '', 'expires': 0}
+
+def _load_firebase_service_account():
+    path = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS', '') or 'secrets/firebase-service-account.json'
+    p = Path(path)
+    if not p.exists():
+        return None
+    try:
+        sa = json.loads(p.read_text(encoding='utf-8'))
+        if sa.get('client_email') and sa.get('private_key') and sa.get('project_id'):
+            return sa
+    except Exception as e:
+        logger.warning('kunne ikke lese firebase service account: %s', e)
+    return None
+
+def _get_fcm_access_token(sa):
+    now = int(time.time())
+    cached = _fcm_access_token_cache
+    if cached['token'] and cached['expires'] > now + 60:
+        return cached['token']
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import padding as asym_padding
+
+    def _b64(data):
+        return base64.urlsafe_b64encode(json.dumps(data).encode()).decode().rstrip('=')
+
+    header_claims = (
+        _b64({'alg': 'RS256', 'typ': 'JWT'}) + '.' + _b64({
+            'iss': sa['client_email'],
+            'scope': 'https://www.googleapis.com/auth/firebase.messaging',
+            'aud': FCM_TOKEN_URL,
+            'iat': now,
+            'exp': now + 3600,
+        })
+    )
+    key = serialization.load_pem_private_key(sa['private_key'].encode(), password=None)
+    sig = key.sign(header_claims.encode(), asym_padding.PKCS1v15(), hashes.SHA256())
+    assertion = header_claims + '.' + base64.urlsafe_b64encode(sig).decode().rstrip('=')
+    body = urlencode({'grant_type': 'urn:ietf:params:oauth:grant-type:jwt-bearer', 'assertion': assertion}).encode()
+    req = urllib.request.Request(FCM_TOKEN_URL, data=body, headers={'Content-Type': 'application/x-www-form-urlencoded'})
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        tok = json.loads(resp.read())
+    cached['token'] = tok.get('access_token', '')
+    cached['expires'] = now + int(tok.get('expires_in', 3600))
+    return cached['token']
+
+def _send_fcm(token, title, body, url=''):
+    sa = _load_firebase_service_account()
+    if not sa:
+        return False
+    try:
+        access = _get_fcm_access_token(sa)
+        payload = json.dumps({
+            'message': {
+                'token': token,
+                'notification': {'title': title, 'body': body},
+                'data': {'url': url},
+                'android': {'priority': 'HIGH'},
+            }
+        }).encode()
+        req = urllib.request.Request(
+            FCM_SEND_URL.format(project=sa['project_id']),
+            data=payload,
+            headers={'Authorization': 'Bearer ' + access, 'Content-Type': 'application/json; UTF-8'},
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            resp.read()
+        return True
+    except urllib.error.HTTPError as e:
+        if e.code in (404, 410):
+            return 'expired'
+        logger.warning('fcm push failed: %s', e)
+        return False
+    except Exception as e:
+        logger.warning('fcm push failed: %s', e)
+        return False
+
 def _notify_push(username, title, body, url=''):
     if username in online_users:
         return
@@ -4771,9 +4854,14 @@ def _notify_push(username, title, body, url=''):
             return
         changed = False
         for sub in list(entries):
-            res = _send_web_push(sub, title, body, url)
+            if sub.get('fcm_token'):
+                res = _send_fcm(sub['fcm_token'], title, body, url)
+                sub_id = sub.get('fcm_token')
+            else:
+                res = _send_web_push(sub, title, body, url)
+                sub_id = sub.get('endpoint')
             if res == 'expired':
-                subs[username] = [s for s in subs[username] if s.get('endpoint') != sub.get('endpoint')]
+                subs[username] = [s for s in subs[username] if (s.get('endpoint') or s.get('fcm_token')) != sub_id]
                 changed = True
         if changed:
             save_json(PUSH_SUBSCRIPTIONS_FILE, subs)
@@ -4802,6 +4890,25 @@ def push_subscribe():
     save_json(PUSH_SUBSCRIPTIONS_FILE, subs)
     return jsonify({'success': True})
 
+@app.route('/push/fcm', methods=['POST'])
+@rate_limit(max_requests=10, window_seconds=300)
+@require_login
+@require_csrf
+def push_fcm_subscribe():
+    me = session['username']
+    data = request.get_json(force=True, silent=True) or {}
+    token = data.get('token')
+    if not isinstance(token, str) or not (32 <= len(token) <= 4096):
+        return jsonify({'success': False, 'message': 'Ugyldig FCM-token.'}), 400
+    subs = load_json(PUSH_SUBSCRIPTIONS_FILE, {})
+    subs.setdefault(me, [])
+    subs[me] = [s for s in subs[me] if s.get('fcm_token') != token]
+    item = {'fcm_token': token, 'platform': (data.get('platform') or 'android')[:32]}
+    item['_payload'] = _encrypt_payload(json.dumps(item, ensure_ascii=False))
+    subs[me].append(item)
+    save_json(PUSH_SUBSCRIPTIONS_FILE, subs)
+    return jsonify({'success': True})
+
 @app.route('/push/unsubscribe', methods=['POST'])
 @rate_limit(max_requests=10, window_seconds=300)
 @require_login
@@ -4810,9 +4917,13 @@ def push_unsubscribe():
     me = session['username']
     data = request.get_json(force=True, silent=True) or {}
     endpoint = data.get('endpoint', '')
+    fcm_token = data.get('token', '')
     subs = load_json(PUSH_SUBSCRIPTIONS_FILE, {})
     if me in subs:
-        subs[me] = [s for s in subs[me] if s.get('endpoint') != endpoint]
+        subs[me] = [
+            s for s in subs[me]
+            if s.get('endpoint') != endpoint and s.get('fcm_token') != fcm_token
+        ]
         save_json(PUSH_SUBSCRIPTIONS_FILE, subs)
     return jsonify({'success': True})
 
