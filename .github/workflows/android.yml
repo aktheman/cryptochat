@@ -50,6 +50,13 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: ./gradlew assembleRelease
 
+      - name: Build Release AAB
+        working-directory: android
+        env:
+          KEYSTORE_PATH: release.keystore
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: ./gradlew bundleRelease
+
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
@@ -61,3 +68,9 @@ jobs:
         with:
           name: cryptochat-release
           path: android/app/build/outputs/apk/release/app-release.apk
+
+      - name: Upload Release AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: cryptochat-release-aab
+          path: android/app/build/outputs/bundle/release/app-release.aab

@@ -47,6 +47,7 @@
 - CI: `ANDROID_KEYSTORE_BASE64` + `ANDROID_KEYSTORE_PASSWORD` → dekodes til `android/app/release.keystore`, env `KEYSTORE_PATH`/`KEYSTORE_PASSWORD` styrer signingConfigs.release
 - Uten env-vars bygges release usignert (lokalt bygg fungerer fortsatt)
 - **Mistet keystore = kan aldri oppdatere appen** — ikke slett fra secrets/
+- Play Store: CI bygger også signert AAB (`cryptochat-release-aab` artefakt) — kreves av Google Play
 
 ## Android-app
 
