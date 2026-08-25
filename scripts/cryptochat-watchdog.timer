@@ -1,0 +1,10 @@
+[Unit]
+Description=Kjør CryptoChat vaktmester hvert 3. minutt
+
+[Timer]
+OnBootSec=60
+OnUnitActiveSec=3min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

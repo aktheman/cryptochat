@@ -1,0 +1,11 @@
+[Unit]
+Description=CryptoChat gjenopprettingstest (månedlig)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=aktheman
+WorkingDirectory=/home/aktheman/cryptochat
+ExecStart=/home/aktheman/cryptochat/.venv/bin/python scripts/restore_drill.py
+StandardOutput=journal
+StandardError=journal

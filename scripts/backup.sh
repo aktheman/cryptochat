@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # Kryptert, konsistent sikkerhetskopi av CryptoChat (data/ + secrets/).
 # Bruk: scripts/backup.sh [KEEP]   (KEEP = antall backups å beholde, standard 7)
+# Off-site: sett CRYPTOCHAT_OFFSITE_DEST=user@host:/path for rsync over Tailscale
 set -euo pipefail
 
 BASE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 BACKUP_DIR="${CRYPTOCHAT_BACKUP_DIR:-/var/backups/cryptochat}"
+OFFSITE_DEST="${CRYPTOCHAT_OFFSITE_DEST:-}"
 KEEP="${1:-7}"
 STAMP="$(date +%Y%m%d-%H%M%S-%N)"
 WORK="$(mktemp -d)"
@@ -54,5 +56,13 @@ ls -1t "$BACKUP_DIR"/cryptochat-backup-*.enc 2>/dev/null | tail -n +$((KEEP + 1)
 tar tzf "$WORK/verify.tar.gz" >/dev/null
 
 echo "Backup OK: $BACKUP_DIR/cryptochat-backup-$STAMP.enc ($(du -h "$BACKUP_DIR/cryptochat-backup-$STAMP.enc" | cut -f1))"
+
+# Off-site: rsync krypterte backups til ekstern maskin over Tailscale
+if [ -n "$OFFSITE_DEST" ]; then
+  echo "Synkroniserer til off-site: $OFFSITE_DEST"
+  rsync -az --timeout=60 "$BACKUP_DIR"/cryptochat-backup-*.enc "$OFFSITE_DEST" 2>&1 && \
+    echo "Off-site sync OK" || echo "OFFSITE SYNC FEILET (lokal backup er intakt)"
+fi
+
 echo "Siste $KEEP backups beholdt:"
 ls -1t "$BACKUP_DIR"/cryptochat-backup-*.enc | head -n "$KEEP"

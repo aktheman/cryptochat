@@ -1,0 +1,9 @@
+[Unit]
+Description=Kjør CryptoChat gjenopprettingstest månedlig
+
+[Timer]
+OnCalendar=monthly
+Persistent=true
+
+[Install]
+WantedBy=timers.target

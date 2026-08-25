@@ -1,0 +1,10 @@
+[Unit]
+Description=CryptoChat vaktmester (service-check + FCM-push ved feil)
+After=network-online.target cryptochat.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=aktheman
+WorkingDirectory=/home/aktheman/cryptochat
+ExecStart=/home/aktheman/cryptochat/.venv/bin/python scripts/watchdog.py

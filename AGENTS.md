@@ -8,6 +8,9 @@
 - **Deploy**: `sudo systemctl restart cryptochat && sudo systemctl status cryptochat`
 - **Android sync**: `npx cap sync android`
 - **Android build** (krever x86_64): `cd android && ./gradlew assembleDebug`
+- **Off-site backup**: sett `CRYPTOCHAT_OFFSITE_DEST=user@host:/path` i /etc/default/cryptochat (over Tailscale)
+- **Vaktmester**: `systemctl status cryptochat-watchdog.timer` — sender FCM-push ved servicefeil, hvert 3 min
+- **Gjenopprettingstest**: `.venv/bin/python scripts/restore_drill.py` — månedlig timer
 
 ## Nye endepunkter
 
