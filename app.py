@@ -7,7 +7,7 @@ from functools import wraps
 from urllib.parse import urlparse
 
 from flask import (
-    Flask, render_template, request, jsonify, session,
+    Flask, render_template, request, jsonify, session, g,
     redirect, url_for, send_file, send_from_directory, Response, make_response
 )
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -16,14 +16,66 @@ from cryptography.hazmat.primitives.asymmetric import x25519
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 import pyotp
 import logging
+from logging import Formatter, StreamHandler
 from db import load_json, save_json, init_db, migrate_json_files, invalidate_cache, _cache, _get_conn
 from config import *
 from flask_socketio import SocketIO
 from sockets import register_socket_handlers, notify_user, online_users
 
+# ── Strukturert logging ──
 logger = logging.getLogger('cryptochat')
+logging.getLogger('geventwebsocket').setLevel(logging.WARNING)
+logging.getLogger('werkzeug').setLevel(logging.WARNING)
+
+class _StructuredFormatter(Formatter):
+    def format(self, record):
+        parts = [f't={getattr(record, "asctime", "")}']
+        parts.append(f'lvl={record.levelname.lower()}')
+        parts.append(f'msg="{record.getMessage()}"')
+        if record.name != 'cryptochat':
+            parts.append(f'module={record.name}')
+        if hasattr(record, 'user'):
+            parts.append(f'user={record.user}')
+        if hasattr(record, 'request_id'):
+            parts.append(f'req_id={record.request_id}')
+        if hasattr(record, 'method'):
+            parts.append(f'method={record.method}')
+        if hasattr(record, 'path'):
+            parts.append(f'path={record.path}')
+        if hasattr(record, 'status'):
+            parts.append(f'status={record.status}')
+        if hasattr(record, 'latency_ms'):
+            parts.append(f'latency_ms={record.latency_ms}')
+        if record.exc_info and record.exc_info[0]:
+            parts.append(f'error="{self.formatException(record.exc_info)}"')
+        return ' '.join(parts)
+
+_handler = StreamHandler()
+_handler.setFormatter(_StructuredFormatter())
+logger.addHandler(_handler)
+logger.setLevel(logging.INFO)
 
 app = Flask(__name__)
+
+@app.before_request
+def _start_timer():
+    g.request_id = secrets.token_hex(8)
+    g.start_time = time.time()
+
+@app.after_request
+def _log_request(response):
+    if hasattr(g, 'start_time'):
+        latency = round((time.time() - g.start_time) * 1000)
+        logger.info('request',
+                     extra={
+                         'request_id': getattr(g, 'request_id', ''),
+                         'method': request.method,
+                         'path': request.path,
+                         'status': response.status_code,
+                         'latency_ms': latency,
+                         'user': session.get('username', '-'),
+                     })
+    return response
 
 @app.route('/favicon.ico')
 def favicon():
@@ -666,9 +718,13 @@ def login_page():
     resp.headers['Expires'] = '0'
     return resp
 
+@app.route('/privacy')
+def privacy_page():
+    return render_template('privacy.html')
+
 @app.context_processor
 def inject_common():
-    return {'version': os.environ.get('APP_VERSION', '3.6.1')}
+    return {'version': os.environ.get('APP_VERSION', '3.6.2')}
 
 @app.route('/webrtc/turn')
 @require_login
@@ -6329,7 +6385,7 @@ def health_check():
         'success': True,
         'status': 'healthy' if db_ok else 'degraded',
         'db': 'ok' if db_ok else 'error',
-        'version': os.environ.get('APP_VERSION', '3.6.1'),
+        'version': os.environ.get('APP_VERSION', '3.6.2'),
     })
 
 @app.route('/sw-test')

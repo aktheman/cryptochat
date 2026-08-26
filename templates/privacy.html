@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Personvernerklæring — CryptoChat</title>
+  <style>
+    body { font-family: -apple-system, system-ui, sans-serif; background: #0d0d0d; color: #eee; line-height: 1.7; padding: 2rem; max-width: 800px; margin: 0 auto; }
+    h1 { color: #fff; margin-bottom: 0.5rem; }
+    h2 { color: #ccc; margin-top: 2rem; border-top: 1px solid #333; padding-top: 1rem; }
+    .updated { color: #888; font-size: 0.9rem; margin-bottom: 2rem; }
+    a { color: #5b9bd5; }
+  </style>
+</head>
+<body>
+  <h1>Personvernerklæring</h1>
+  <p class="updated">Sist oppdatert: 23. august 2026</p>
+
+  <h2>1. Hva CryptoChat er</h2>
+  <p>CryptoChat er en ende-til-ende-kryptert meldingstjeneste. Kommunikasjonen din er kun tilgjengelig for deg og mottakeren — aldri for oss.</p>
+
+  <h2>2. Hvilke data vi samler inn</h2>
+  <ul>
+    <li><strong>Meldinger og filer:</strong> Kryptert innhold som kun kan dekrypteres på enheten din. Vi har ikke tilgang til meldingsteksten.</li>
+    <li><strong>Kontoinformasjon:</strong> Brukernavn og passord (lagret som saltsede hash — vi ser aldri passordet ditt).</li>
+    <li><strong>Enhetsinformasjon:</strong> Brukeragent-streng for å identifisere økter (f.eks. «Chrome på Android»). IP-adresse logges ikke permanent.</li>
+    <li><strong>Push-varsel-token:</strong> FCM-token for Android-enheter, eller push-abonnement for nettlesere. Benyttes kun til å sende deg varsler.</li>
+  </ul>
+
+  <h2>3. Ende-til-ende-kryptering (E2EE)</h2>
+  <p>Alle meldinger krypteres på enheten din før de sendes, og dekrypteres kun hos mottakeren. Selv om en uvedkommende fikk tilgang til serveren, ville de kun se kryptert tekst som er umulig å dekryptere uten nøklene dine.</p>
+
+  <h2>4. Vi deler ikke data</h2>
+  <p>CryptoChat selger, leier ut eller deler aldri informasjon med tredjeparter. Unntak: push-varsler sendes til Googles Firebase Cloud Messaging (FCM) for Android-enheter, og til nettleserens push-tjeneste for nett-varslene.</p>
+
+  <h2>5. Lagring og sletting</h2>
+  <ul>
+    <li><strong>Forsvinnende meldinger:</strong> Velg selv hvor lenge meldinger skal leve, fra 1 minutt til 1 uke. Når tiden utløper, slettes meldingen permanent fra alle enheter og serveren.</li>
+    <li><strong>Sletting av konto:</strong> Du kan slette kontoen din i innstillinger. Da slettes alle meldinger og data permanent.</li>
+    <li><strong>Tilbakekallelse av økter:</strong> Du kan logge ut enkelte enheter når som helst via «Dine enheter» i innstillinger.</li>
+  </ul>
+
+  <h2>6. Sikkerhet</h2>
+  <ul>
+    <li>Vi bruker HTTP Strict Transport Security (HSTS) og Session Cookies med HttpOnly-flagget.</li>
+    <li>To-faktor-autentisering (TOTP) er tilgjengelig og anbefales.</li>
+    <li>Brute-force-angrep begrenses automatisk med rate-limiting.</li>
+    <li>Automatiserte sikkerhetsoppdateringer installeres jevnlig.</li>
+  </ul>
+
+  <h2>7. Lokal installasjon</h2>
+  <p>CryptoChat kan kjøres som en lokal instans. Dersom du kjører din egen server, er det kun du som har tilgang til dataene.</p>
+
+  <h2>8. Barn under 13 år</h2>
+  <p>CryptoChat er ikke ment for brukere under 13 år.</p>
+
+  <h2>9. Endringer i denne erklæringen</h2>
+  <p>Ved vesentlige endringer oppdaterer vi datoen øverst og legger ut en kunngjøring i appen.</p>
+
+  <h2>10. Kontakt</h2>
+  <p>Spørsmål om personvern? Kontakt utvikleren via CryptoChat-appen.</p>
+
+  <p style="margin-top:3rem;"><a href="/">&larr; Tilbake til CryptoChat</a></p>
+</body>
+</html>
