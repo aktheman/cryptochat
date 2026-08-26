@@ -166,6 +166,19 @@ def set_security_headers(response):
         response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
     return response
 
+@app.errorhandler(404)
+def not_found(e):
+    if request.path.startswith('/api/') or request.path.startswith('/auth/'):
+        return jsonify({'success': False, 'message': 'Endepunkt ikke funnet.'}), 404
+    return render_template('error.html', code=404, message='Siden ble ikke funnet.'), 404
+
+@app.errorhandler(500)
+def server_error(e):
+    logger.error('internal_server_error', extra={'path': request.path, 'error': str(e)})
+    if request.path.startswith('/api/') or request.path.startswith('/auth/'):
+        return jsonify({'success': False, 'message': 'Serverfeil.'}), 500
+    return render_template('error.html', code=500, message='Noe gikk galt på serveren.'), 500
+
 def _rl_get(store, key):
     item = store.setdefault(key, {'ts': [], 'n': 0})
     return item
