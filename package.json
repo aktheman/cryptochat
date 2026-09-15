@@ -4,7 +4,7 @@
   "description": "CryptoChat Android",
   "private": true,
   "dependencies": {
-    "@capacitor/android": "^8.5.0",
+    "@capacitor/android": "^8.5.2",
     "@capacitor/cli": "^7.6.8",
     "@capacitor/core": "^8.5.0",
     "@capacitor/push-notifications": "^8.1.2"
